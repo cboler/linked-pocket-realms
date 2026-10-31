@@ -2,14 +2,28 @@
   <!-- TOP TACTICAL HEADER -->
   <header class="hud-header" role="banner">
     <div class="brand-cluster">
-      <span class="gate-sigil" aria-hidden="true">◈</span>
+      <span
+        class="gate-sigil"
+        aria-hidden="true"
+        title="Chaos Gate Anchor: Serverless P2P Pocket Realm Nexus"
+        >◈</span
+      >
       <div class="brand-titles">
         <h1 id="starter-title" class="brand-title">Linked Pocket Realms</h1>
-        <div class="gate-address-pill" data-testid="active-gate-address">
-          <span class="era-badge">{{ engine.activeGateAddress().era }}</span>
+        <div
+          class="gate-address-pill"
+          data-testid="active-gate-address"
+          title="3-Word Chaos Gate Address: [Era] + [Atmosphere] + [Theme] + [Biome]"
+        >
+          <span class="era-badge" title="Server Era Tier & Difficulty Multiplier">{{
+            engine.activeGateAddress().era
+          }}</span>
           <span class="address-words">{{ engine.activeGateAddress().formatted }}</span>
           @if (engine.isVisitingExternalRealm()) {
-            <span class="customs-badge" title="Host Customs Gate Active">
+            <span
+              class="customs-badge"
+              title="Customs Gate Active: Over-budget guest equipment is dynamically clamped to this realm's stat ceiling."
+            >
               Customs Cap: {{ engine.activeRealmDelta().ruleset.maxItemStatBudget }}
             </span>
           }
@@ -24,6 +38,7 @@
         class="role-btn"
         [class.active]="engine.perspective() === 'EXPLORER'"
         (click)="setPerspective('EXPLORER')"
+        title="Explorer Mode: Fog-of-War cartography, tactile room stage, and Perception-gated inspection."
         data-testid="role-explorer-btn"
       >
         <span aria-hidden="true">🧭</span> Explorer
@@ -33,6 +48,7 @@
         class="role-btn"
         [class.active]="engine.perspective() === 'ARCHITECT'"
         (click)="setPerspective('ARCHITECT')"
+        title="Architect Mode: God's-Eye full dungeon map, zero-syntax [+ Dig Room] nodes, and inline room editing."
         data-testid="role-architect-btn"
       >
         <span aria-hidden="true">⚙</span> Architect
@@ -42,6 +58,7 @@
         class="role-btn"
         [class.active]="engine.perspective() === 'SPECTATOR'"
         (click)="setPerspective('SPECTATOR')"
+        title="Spectator Mode: Scrub through recorded visitor delve and combat replays."
         data-testid="role-spectator-btn"
       >
         <span aria-hidden="true">📼</span> Spectator
@@ -55,6 +72,7 @@
         class="drawer-btn"
         [class.active]="engine.activeDrawer() === 'PAPERDOLL'"
         (click)="toggleDrawer('PAPERDOLL')"
+        title="Open 7-Slot Equipment Paperdoll, 5-Axis Attribute Radar Chart, and Inventory Vault"
         data-testid="drawer-paperdoll-btn"
       >
         🛡 Paperdoll
@@ -64,6 +82,7 @@
         class="drawer-btn"
         [class.active]="engine.activeDrawer() === 'COMBAT_TELEMETRY'"
         (click)="toggleDrawer('COMBAT_TELEMETRY')"
+        title="Open Combat DPS, Damage Mitigation Breakdown, and d100 Roll Histogram"
         data-testid="drawer-combat-btn"
       >
         📊 Combat DPS
@@ -73,6 +92,7 @@
         class="drawer-btn"
         [class.active]="engine.activeDrawer() === 'REALM_ANALYTICS'"
         (click)="toggleDrawer('REALM_ANALYTICS')"
+        title="Open Dungeon Lethality/Traffic Heatmap and Visitor Gravestones"
         data-testid="drawer-analytics-btn"
       >
         🔥 Heatmap & Graves
@@ -82,6 +102,7 @@
         class="drawer-btn"
         [class.active]="engine.activeDrawer() === 'CHRONICLE'"
         (click)="toggleDrawer('CHRONICLE')"
+        title="Open Traveler's Career Chronicle, Wealth/XP Curve, and Bestiary"
         data-testid="drawer-chronicle-btn"
       >
         📜 Chronicle
@@ -91,24 +112,41 @@
         class="drawer-btn"
         [class.active]="engine.activeDrawer() === 'NETWORK'"
         (click)="toggleDrawer('NETWORK')"
+        title="Open Serverless P2P Chaos Gate Portals (BroadcastChannel & WebRTC) and Realm Cartridges"
         data-testid="drawer-network-btn"
       >
         🌐 P2P Gate ({{ transport.activeVisitorsList().length }})
+      </button>
+      <button
+        type="button"
+        class="drawer-btn"
+        (click)="engine.needsOnboarding.set(true)"
+        title="Re-open Character Awakening & Chaos Gate Spin Modal"
+        data-testid="open-onboarding-btn"
+      >
+        ✨ Awaken
       </button>
     </div>
   </header>
 
   <!-- MAIN WORKSPACE GRID -->
   <main class="hud-main" role="main">
-    <!-- LEFT / PRIMARY PANEL: CARTOGRAPHY & PERSPECTIVE VIEWPORT -->
-    <section class="cartography-panel" aria-label="Realm Cartography and Perspective Lens">
+    <!-- LEFT PANEL: INTERACTIVE CLICK-TO-MOVE SVG NODE MAP -->
+    <section class="cartography-panel" aria-label="Interactive Click-to-Move Realm Map">
       <div class="panel-subbar">
         <div class="sector-title-group">
-          <span class="sector-label">Sector:</span>
-          <strong class="sector-name" data-testid="current-room-title">{{
-            engine.currentRoom().title
-          }}</strong>
-          <span class="mutator-tag">{{ engine.currentRoom().elementalMutator }} Resonance</span>
+          <span class="sector-label">Map:</span>
+          <strong class="sector-name">{{ engine.activeGateAddress().biome }} Graph</strong>
+          <span
+            class="mutator-tag"
+            [title]="
+              'Elemental Mutator (' +
+              engine.currentRoom().elementalMutator +
+              '): Matching elemental skills deal +15% resonance damage in this sector.'
+            "
+          >
+            {{ engine.currentRoom().elementalMutator }} +15%
+          </span>
         </div>
 
         <!-- Chaos Gate Quick Dialer -->
@@ -117,6 +155,7 @@
             aria-label="Server Era"
             [ngModel]="dialEra()"
             (ngModelChange)="dialEra.set($event)"
+            title="Select Server Era Tier (Δ, Θ, Λ, Σ, Ω)"
             data-testid="select-era"
           >
             @for (era of serverEras; track era) {
@@ -127,6 +166,7 @@
             aria-label="Atmosphere Word 1"
             [ngModel]="dialAtmosphere()"
             (ngModelChange)="dialAtmosphere.set($event)"
+            title="Word 1 (Atmosphere): Dictates lighting, elemental affinities, and loot rarity"
             data-testid="select-atmosphere"
           >
             @for (atmo of atmospheres; track atmo) {
@@ -137,6 +177,7 @@
             aria-label="Theme Word 2"
             [ngModel]="dialTheme()"
             (ngModelChange)="dialTheme.set($event)"
+            title="Word 2 (Structural Theme): Dictates monster family, traps, and graph topology"
             data-testid="select-theme"
           >
             @for (th of themes; track th) {
@@ -147,6 +188,7 @@
             aria-label="Biome Word 3"
             [ngModel]="dialBiome()"
             (ngModelChange)="dialBiome.set($event)"
+            title="Word 3 (Biome Noun): Dictates room descriptions, hazards, and Realm Boss"
             data-testid="select-biome"
           >
             @for (bm of biomes; track bm) {
@@ -157,6 +199,7 @@
             type="button"
             class="mini-action-btn"
             (click)="dialSelectedChaosGate(false)"
+            title="Generate & travel to this 3-Word Chaos Gate Address"
             data-testid="dial-gate-btn"
           >
             Dial Gate
@@ -174,7 +217,7 @@
         </div>
       </div>
 
-      <!-- SVG TOPOLOGICAL NODE GRAPH (ADAPTS TO EXPLORER FOG-OF-WAR vs. ARCHITECT GOD'S-EYE) -->
+      <!-- SVG TOPOLOGICAL NODE GRAPH (CLICK-TO-TRAVEL + UNEXPLORED NODE PREVIEWS + ARCHITECT GHOST NODES) -->
       <div class="svg-map-container">
         <svg
           class="topological-svg"
@@ -203,7 +246,7 @@
             />
           }
 
-          <!-- Topological Room Nodes -->
+          <!-- Topological Room Nodes (Click-to-Move) -->
           @for (node of visibleCartographyNodes(); track node.room.id) {
             <g
               class="map-node-group"
@@ -215,18 +258,25 @@
               [class.fog-rumor]="node.adjacentRumor && engine.perspective() === 'EXPLORER'"
               [attr.transform]="'translate(' + node.room.x + ',' + node.room.y + ')'"
               (click)="onNodeClick(node.room)"
+              (mouseenter)="hoveredMapNode.set(node)"
+              (mouseleave)="hoveredMapNode.set(null)"
               [attr.data-testid]="'map-node-' + node.room.id"
             >
+              <title>{{ node.sensoryPreview }}</title>
+
               @if (node.room.id === engine.character().currentRoomId) {
                 <circle r="38" fill="url(#activeNodeGlow)" />
               }
 
-              <!-- Node Outer Ring (Heatmap in Architect Mode or Legend Color in Explorer) -->
+              <!-- Node Outer Ring (Dashed [?] if unexplored in Explorer View) -->
               <circle
                 r="24"
                 [attr.fill]="engine.perspective() === 'ARCHITECT' ? node.heatmapColor : '#0f172a'"
                 [attr.stroke]="node.colorHex"
                 stroke-width="2.5"
+                [attr.stroke-dasharray]="
+                  node.adjacentRumor && engine.perspective() === 'EXPLORER' ? '5 4' : null
+                "
               />
 
               <!-- Semantic Legend Glyph -->
@@ -239,18 +289,22 @@
                 {{ node.glyph }}
               </text>
 
-              <!-- Room Label or Fog-of-War Rumor Signal -->
+              <!-- Room Label or Fog-of-War [?] Rumor -->
               <text y="36" text-anchor="middle" class="node-caption">
                 {{
                   node.adjacentRumor && engine.perspective() === 'EXPLORER'
-                    ? node.room.rumorSignal.slice(0, 26) + '...'
+                    ? '[?] ' + node.room.rumorSignal.slice(0, 20) + '...'
                     : node.room.title.slice(0, 22)
                 }}
               </text>
 
               <!-- Live P2P Visitor Radar Indicator -->
               @if (node.visitorNames.length > 0) {
-                <g transform="translate(18, -18)" class="visitor-radar-pip">
+                <g
+                  transform="translate(18, -18)"
+                  class="visitor-radar-pip"
+                  [attr.title]="'Active P2P Traveler: ' + node.visitorNames.join(', ')"
+                >
                   <circle r="9" fill="#c084fc" stroke="#090d16" stroke-width="1.5" />
                   <text
                     text-anchor="middle"
@@ -265,7 +319,55 @@
               }
             </g>
           }
+
+          <!-- Zero-Syntax Architect Ghost `[+ Dig Room]` Nodes on Map -->
+          @for (ghost of architectGhostDigDirections(); track ghost.direction) {
+            <g
+              class="map-node-group ghost-dig-node"
+              [attr.transform]="'translate(' + ghost.x + ',' + ghost.y + ')'"
+              (click)="openDigPopover(ghost.direction)"
+              [attr.data-testid]="'map-ghost-dig-' + ghost.direction"
+            >
+              <line
+                [attr.x1]="engine.currentRoom().x - ghost.x"
+                [attr.y1]="engine.currentRoom().y - ghost.y"
+                x2="0"
+                y2="0"
+                stroke="#38bdf8"
+                stroke-width="1.5"
+                stroke-dasharray="4 4"
+              />
+              <circle
+                r="20"
+                fill="rgba(56, 189, 248, 0.1)"
+                stroke="#38bdf8"
+                stroke-width="2"
+                stroke-dasharray="4 3"
+              />
+              <text
+                text-anchor="middle"
+                dominant-baseline="central"
+                fill="#38bdf8"
+                font-size="11"
+                font-weight="700"
+              >
+                +{{ ghost.direction }}
+              </text>
+              <text y="31" text-anchor="middle" class="node-caption" fill="#38bdf8">
+                [+ Dig {{ ghost.direction }}]
+              </text>
+            </g>
+          }
         </svg>
+
+        <!-- SENSORY HOVER PREVIEW BANNER OVER MAP -->
+        @if (hoveredMapNode(); as hov) {
+          <div class="map-sensory-tooltip" data-testid="map-sensory-tooltip">
+            <strong>{{ hov.visited ? hov.room.title : 'Unexplored Sector [?]' }}</strong>
+            <span>{{ hov.sensoryPreview }}</span>
+            <em class="click-hint">Click node to travel</em>
+          </div>
+        }
 
         <!-- SHARED & EXTENSIBLE LEGEND BAR OVERLAY -->
         <div class="legend-strip" aria-label="Universal Shared & Custom Map Legend">
@@ -273,7 +375,7 @@
             <span
               class="legend-chip"
               [class.custom-chip]="entry.isCustom"
-              [title]="entry.tooltipDescription"
+              [title]="entry.label + ': ' + entry.tooltipDescription"
             >
               <strong [style.color]="entry.colorHex">{{ entry.glyph }}</strong>
               <span>{{ entry.label }}</span>
@@ -282,136 +384,30 @@
         </div>
       </div>
 
-      <!-- PERSPECTIVE-SPECIFIC SUB-PANEL (EXPLORER INSPECTOR / ARCHITECT VISUAL EDITOR / SPECTATOR SCRUBBER) -->
+      <!-- PERSPECTIVE DOCK (EXPLORER COMPASS / ARCHITECT TOOLS / SPECTATOR SCRUBBER) -->
       @if (engine.perspective() === 'EXPLORER') {
         <div class="perspective-dock explorer-dock" data-testid="explorer-dock">
-          <!-- Mini-Compass & Quick Room Actions -->
           <div class="compass-cluster" role="group" aria-label="Navigation Compass">
+            <span class="dock-hint">Click any connected node on the map or use compass:</span>
             @for (dir of directions; track dir) {
               <button
                 type="button"
                 class="compass-btn"
                 [disabled]="!hasExitInDirection(dir)"
                 (click)="onDirectionClick(dir)"
+                [title]="'Move ' + dir"
                 [attr.data-testid]="'compass-' + dir"
               >
                 {{ dir }}
               </button>
             }
-            <button
-              type="button"
-              class="compass-btn action"
-              (click)="engine.inspectTarget()"
-              data-testid="inspect-room-btn"
-            >
-              🔍 Scan (PER {{ engine.effectiveAttributes().PER }})
-            </button>
-            @if (engine.currentRoom().legendType === 'safe-campfire') {
-              <button
-                type="button"
-                class="compass-btn rest"
-                (click)="engine.restAtCampfire()"
-                data-testid="rest-campfire-btn"
-              >
-                ♨ Campfire Rest
-              </button>
-            }
           </div>
-
-          <!-- Inspector Lens Output -->
-          @if (engine.inspectedEntity(); as lens) {
-            <div class="inspector-lens-card" data-testid="inspector-lens-card">
-              <div class="lens-header">
-                <strong>🔎 Inspector Lens: {{ lens.title }}</strong>
-                <span class="lens-sub">{{ lens.subtitle }}</span>
-              </div>
-              <ul class="lens-details">
-                @for (line of lens.details; track line) {
-                  <li>{{ line }}</li>
-                }
-              </ul>
-            </div>
-          }
         </div>
       } @else if (engine.perspective() === 'ARCHITECT') {
         <div class="perspective-dock architect-dock" data-testid="architect-dock">
           <div class="architect-grid">
-            <!-- Edit Selected Room Node -->
             <div class="arch-card">
-              <h3>Edit Node ({{ engine.selectedArchitectRoomId() }})</h3>
-              <div class="arch-row">
-                <input
-                  type="text"
-                  aria-label="Room Title"
-                  [ngModel]="editRoomTitle()"
-                  (ngModelChange)="editRoomTitle.set($event)"
-                  placeholder="Room Title"
-                  data-testid="arch-room-title-input"
-                />
-                <select
-                  aria-label="Legend Classification"
-                  [ngModel]="editRoomLegend()"
-                  (ngModelChange)="editRoomLegend.set($event)"
-                >
-                  <option value="anchor-portal">Anchor Portal</option>
-                  <option value="safe-campfire">Safe Campfire</option>
-                  <option value="elite-boss">Elite/Boss Chamber</option>
-                  <option value="puzzle-mechanism">Puzzle/Mechanism</option>
-                  <option value="lore-terminal">Lore Terminal</option>
-                  <option value="treasure-vault">Treasure Vault</option>
-                  <option value="hazard-trap">Hazard/Trap</option>
-                  <option value="merchant-shrine">Merchant/Shrine</option>
-                  <option value="corridor">Transit Hall</option>
-                </select>
-                <button
-                  type="button"
-                  class="mini-action-btn"
-                  (click)="saveArchitectRoomChanges()"
-                  data-testid="arch-save-room-btn"
-                >
-                  Save Delta
-                </button>
-              </div>
-              <input
-                type="text"
-                aria-label="Room Description"
-                [ngModel]="editRoomDesc()"
-                (ngModelChange)="editRoomDesc.set($event)"
-                placeholder="Room Description"
-                data-testid="arch-room-desc-input"
-              />
-            </div>
-
-            <!-- Excavate (@dig) & Declarative WHEN/IF/DO Trigger Builder -->
-            <div class="arch-card">
-              <h3>Excavate (@dig) & Declarative Triggers</h3>
-              <div class="arch-row">
-                <select
-                  aria-label="Dig Direction"
-                  [ngModel]="digDirection()"
-                  (ngModelChange)="digDirection.set($event)"
-                >
-                  @for (d of directions; track d) {
-                    <option [value]="d">{{ d }}</option>
-                  }
-                </select>
-                <input
-                  type="text"
-                  aria-label="New Chamber Name"
-                  [ngModel]="digTitle()"
-                  (ngModelChange)="digTitle.set($event)"
-                  placeholder="New Chamber Title"
-                  data-testid="arch-dig-title-input"
-                />
-                <button
-                  type="button"
-                  class="mini-action-btn accent"
-                  (click)="architectDigNewRoom()"
-                  data-testid="arch-dig-btn"
-                >
-                  + @dig Room
-                </button>
-              </div>
+              <h3>Declarative Triggers (WHEN / IF / DO)</h3>
               <div class="arch-row">
                 <select
                   aria-label="Trigger WHEN"
@@ -450,7 +446,6 @@
               </div>
             </div>
 
-            <!-- Register Extensible Custom Legend Entry -->
             <div class="arch-card">
               <h3>Custom Legend Symbol (@legend)</h3>
               <div class="arch-row">
@@ -532,28 +527,51 @@
       }
     </section>
 
-    <!-- RIGHT PANEL: SENSORY NARRATIVE TERMINAL + ATB TACTICAL COMBAT HUD -->
-    <section class="terminal-combat-panel" aria-label="Sensory Terminal and ATB Combat Controls">
-      <!-- VITALS & ARCHETYPE BAR -->
+    <!-- RIGHT / CENTER STAGE PANEL: PERSISTENT ROOM STAGE (TOP) + COMPACT NARRATIVE TICKER (BOTTOM) -->
+    <section
+      class="terminal-combat-panel"
+      aria-label="Persistent Room Stage and Compact Event Ticker"
+    >
+      <!-- CHARACTER VITALS & STAT TOOLTIPS BAR -->
       <div class="vitals-strip">
         <div class="char-identity">
           <strong data-testid="char-name">{{ engine.character().name }}</strong>
-          <span class="lvl-pill">Lv.{{ engine.character().level }}</span>
+          <span class="lvl-pill" title="Character Level & Experience Progress"
+            >Lv.{{ engine.character().level }}</span
+          >
           <select
             aria-label="Switch Class Core"
             class="archetype-select"
             [ngModel]="engine.character().archetype"
             (ngModelChange)="engine.switchArchetype($event)"
+            title="Equipped Class Core Archetype"
             data-testid="archetype-select"
           >
             @for (arch of archetypes; track arch) {
               <option [value]="arch">{{ arch }}</option>
             }
           </select>
+          <div class="stat-pills-inline">
+            <span
+              class="stat-chip"
+              title="Attack Rating (ATK): Base physical and elemental strike potency derived from STR, INT, and equipped weapons."
+              >ATK {{ engine.derivedStats().atk }}</span
+            >
+            <span
+              class="stat-chip"
+              title="Damage Mitigation (MIT): Percentage of incoming enemy damage absorbed by armor and Vitality."
+              >MIT {{ engine.derivedStats().mitigationPct }}%</span
+            >
+            <span
+              class="stat-chip"
+              title="Perception (PER): Unlocks hidden room exits, trap warnings, and enemy elemental weaknesses in the Inspector Lens."
+              >PER {{ engine.effectiveAttributes().PER }}</span
+            >
+          </div>
         </div>
 
         <div class="vital-gauges">
-          <div class="gauge-box" title="Health Points">
+          <div class="gauge-box" title="Health Points (HP): Restored at Safe Campfires or via healing skills.">
             <span class="gauge-label"
               >HP {{ engine.character().hp }}/{{ engine.derivedStats().maxHp }}</span
             >
@@ -565,7 +583,10 @@
             </div>
           </div>
 
-          <div class="gauge-box" title="Stamina / MP">
+          <div
+            class="gauge-box"
+            title="Stamina (STA): Consumed by active class skills; regenerates automatically every 100ms tick."
+          >
             <span class="gauge-label"
               >STA {{ engine.character().stamina | number: '1.0-0' }}/{{
                 engine.derivedStats().maxStamina
@@ -581,7 +602,10 @@
             </div>
           </div>
 
-          <div class="gauge-box" title="Active Time Battle Readiness Gauge">
+          <div
+            class="gauge-box"
+            title="Active Time Battle Readiness (ATB): Fills every 100ms based on DEX and Speed. Actions fire at 100%."
+          >
             <span class="gauge-label" data-testid="atb-gauge-label"
               >ATB {{ engine.character().atbGauge | number: '1.0-0' }}%</span
             >
@@ -592,59 +616,527 @@
         </div>
       </div>
 
-      <!-- ACTIVE ROOM COMBATANTS READOUT -->
-      @if (engine.livingRoomMonsters().length > 0) {
-        <div class="combat-encounter-banner" data-testid="combat-encounter-banner">
-          @for (mob of engine.livingRoomMonsters(); track mob.id) {
+      <!-- ===================================================================== -->
+      <!-- ZONE 1 (TOP): THE PERSISTENT ROOM STAGE (ALWAYS VISIBLE, NEVER SCROLLS OFF) -->
+      <!-- ===================================================================== -->
+      <div class="persistent-room-stage" data-testid="persistent-room-stage">
+        <!-- 1A. ROOM STAGE HEADER -->
+        <div class="stage-room-header">
+          <div class="stage-title-block">
+            <span
+              class="stage-legend-badge"
+              [style.borderColor]="currentRoomLegend().colorHex"
+              [style.color]="currentRoomLegend().colorHex"
+              [title]="currentRoomLegend().tooltipDescription"
+            >
+              {{ currentRoomLegend().glyph }} {{ currentRoomLegend().label }}
+            </span>
+            <h2 class="stage-room-title" data-testid="current-room-title">
+              {{ engine.currentRoom().title }}
+            </h2>
+            <span
+              class="stage-mutator-pill"
+              [title]="
+                'Atmosphere Effect: ' +
+                engine.currentRoom().atmosphereEffect +
+                ' (' +
+                engine.currentRoom().elementalMutator +
+                ' skills gain +15% damage)'
+              "
+            >
+              ⚡ {{ engine.currentRoom().elementalMutator }} Mutator
+            </span>
+          </div>
+
+          <div class="stage-header-actions">
             <button
               type="button"
-              class="mob-card"
-              [class.targeted]="engine.selectedTargetId() === mob.id"
-              (click)="engine.selectedTargetId.set(mob.id)"
+              class="mini-action-btn"
+              (click)="
+                engine.dispatchCommandIntent({
+                  type: 'INSPECT',
+                  rawInput: 'inspect',
+                  source: 'HUD'
+                })
+              "
+              title="Scan the current room for hidden doors, traps, and lore (Uses PER stat)"
+              data-testid="inspect-room-btn"
             >
-              <div class="mob-top">
-                <strong>{{ mob.name }}</strong>
-                <span class="mob-elem">{{ mob.element }}</span>
-              </div>
-              <div class="mob-bars">
-                <div class="mini-bar hp">
-                  <div [style.width.%]="(mob.hp / mob.maxHp) * 100"></div>
+              🔍 Scan Room (PER {{ engine.effectiveAttributes().PER }})
+            </button>
+            @if (engine.perspective() === 'ARCHITECT') {
+              <button
+                type="button"
+                class="mini-action-btn accent"
+                (click)="openInlineRoomEditor()"
+                title="Edit this room's title, description, or legend category inline"
+                data-testid="edit-room-inline-btn"
+              >
+                ✏️ Edit Room
+              </button>
+            }
+          </div>
+        </div>
+
+        <!-- INLINE ROOM EDITOR (WHEN CLICKING `[✏️ Edit Room]` IN ARCHITECT MODE) -->
+        @if (inlineEditingRoom()) {
+          <div class="inline-room-editor-card" data-testid="inline-room-editor">
+            <div class="arch-row">
+              <input
+                type="text"
+                aria-label="Edit Room Title"
+                [ngModel]="editRoomTitle()"
+                (ngModelChange)="editRoomTitle.set($event)"
+                placeholder="Room Title"
+                data-testid="arch-room-title-input"
+              />
+              <select
+                aria-label="Edit Room Legend Type"
+                [ngModel]="editRoomLegend()"
+                (ngModelChange)="editRoomLegend.set($event)"
+              >
+                <option value="corridor">Normal / Transit Hall</option>
+                <option value="elite-boss">Elite/Boss Chamber</option>
+                <option value="treasure-vault">Treasure Vault</option>
+                <option value="puzzle-mechanism">Puzzle/Mechanism</option>
+                <option value="safe-campfire">Safe Campfire</option>
+                <option value="lore-terminal">Lore Terminal</option>
+                <option value="hazard-trap">Hazard/Trap</option>
+                <option value="anchor-portal">Anchor Portal</option>
+              </select>
+              <button
+                type="button"
+                class="mini-action-btn accent"
+                (click)="saveArchitectRoomChanges()"
+                data-testid="arch-save-room-btn"
+              >
+                💾 Save Room
+              </button>
+              <button
+                type="button"
+                class="mini-action-btn"
+                (click)="inlineEditingRoom.set(false)"
+              >
+                Cancel
+              </button>
+            </div>
+            <textarea
+              rows="2"
+              aria-label="Edit Room Description"
+              [ngModel]="editRoomDesc()"
+              (ngModelChange)="editRoomDesc.set($event)"
+              data-testid="arch-room-desc-input"
+            ></textarea>
+          </div>
+        }
+
+        <!-- 1B. ROOM NARRATIVE CARD -->
+        <div class="stage-narrative-card" data-testid="stage-narrative-card">
+          <p class="room-prose">{{ engine.currentRoom().description }}</p>
+          <div class="sensory-hook-line">
+            <span>🌫 {{ engine.currentRoom().atmosphereEffect }}</span>
+          </div>
+        </div>
+
+        <!-- INSPECTOR LENS POPUP CARD (WHEN INSPECTING AN ENTITY OR ROOM) -->
+        @if (engine.inspectedEntity(); as lens) {
+          <div class="inspector-lens-card" data-testid="inspector-lens-card">
+            <div class="lens-header">
+              <strong>🔎 Inspector Lens: {{ lens.title }} ({{ lens.subtitle }})</strong>
+              <button
+                type="button"
+                class="lens-close"
+                (click)="engine.inspectedEntity.set(null)"
+              >
+                ✕
+              </button>
+            </div>
+            <ul class="lens-details">
+              @for (line of lens.details; track line) {
+                <li>{{ line }}</li>
+              }
+            </ul>
+          </div>
+        }
+
+        <!-- 1C. INTERACTIVE ENTITY CARDS GRID (MONSTERS, LOOT, PROPS & MECHANISMS) -->
+        <div class="stage-entities-grid" data-testid="stage-entities-grid">
+          <!-- MONSTER CARDS -->
+          @for (mob of engine.livingRoomMonsters(); track mob.id) {
+            <div
+              class="entity-card monster-entity-card"
+              [class.targeted]="engine.selectedTargetId() === mob.id"
+              [attr.data-testid]="'stage-monster-card-' + mob.id"
+            >
+              <div class="entity-card-top">
+                <div>
+                  <span class="entity-badge hostile">
+                    {{ mob.isBoss ? '☠ BOSS' : '⚔ Lv.' + mob.level }}
+                  </span>
+                  <strong class="entity-name">{{ mob.name }}</strong>
                 </div>
-                <div class="mini-bar atb">
-                  <div [style.width.%]="mob.atbGauge"></div>
+                <span
+                  class="elem-pill"
+                  [title]="'Elemental Affinity: ' + mob.element + ' | Weakness: ' + mob.weakness"
+                >
+                  {{ mob.element }}
+                </span>
+              </div>
+
+              <div class="entity-bars">
+                <div class="bar-row">
+                  <span>HP {{ mob.hp }}/{{ mob.maxHp }}</span>
+                  <div class="mini-bar hp">
+                    <div [style.width.%]="(mob.hp / mob.maxHp) * 100"></div>
+                  </div>
+                </div>
+                <div class="bar-row">
+                  <span>ATB {{ mob.atbGauge | number: '1.0-0' }}%</span>
+                  <div class="mini-bar atb">
+                    <div [style.width.%]="mob.atbGauge"></div>
+                  </div>
                 </div>
               </div>
-              <div class="mob-meta">
-                <span>HP {{ mob.hp }}/{{ mob.maxHp }}</span>
-                @for (st of mob.statuses; track st.tag) {
-                  <span class="status-tag">{{ st.tag }} ({{ st.stacks }})</span>
-                }
+
+              @if (mob.statuses.length > 0) {
+                <div class="entity-status-row">
+                  @for (st of mob.statuses; track st.tag) {
+                    <span class="status-tag" [title]="'Active Status Effect: ' + st.tag">
+                      {{ st.tag }} x{{ st.stacks }}
+                    </span>
+                  }
+                </div>
+              }
+
+              <div class="entity-actions-row">
+                <button
+                  type="button"
+                  class="entity-btn danger"
+                  (click)="onStageAttackMonster(mob)"
+                  [attr.data-testid]="'attack-mob-btn-' + mob.id"
+                >
+                  ⚔ Attack
+                </button>
+                <div class="skill-dropdown-wrap">
+                  <button
+                    type="button"
+                    class="entity-btn accent"
+                    (click)="
+                      activeSkillMenuMonsterId.set(
+                        activeSkillMenuMonsterId() === mob.id ? null : mob.id
+                      )
+                    "
+                    [attr.data-testid]="'skills-menu-btn-' + mob.id"
+                  >
+                    ⚡ Skills ▾
+                  </button>
+                  @if (activeSkillMenuMonsterId() === mob.id) {
+                    <div class="skill-popover-menu" data-testid="monster-skill-popover">
+                      @for (sk of engine.character().activeSkills; track sk.id) {
+                        <button
+                          type="button"
+                          class="skill-popover-item"
+                          [disabled]="sk.currentCooldownMs > 0"
+                          (click)="onStageCastSkillOnMonster(sk, mob)"
+                        >
+                          <strong>{{ sk.name }}</strong>
+                          <span>{{ sk.element }} • {{ sk.staminaCost }} STA</span>
+                        </button>
+                      }
+                    </div>
+                  }
+                </div>
+                <button
+                  type="button"
+                  class="entity-btn"
+                  (click)="onStageInspectMonster(mob)"
+                  [attr.data-testid]="'inspect-mob-btn-' + mob.id"
+                >
+                  🔍 Inspect
+                </button>
               </div>
+            </div>
+          }
+
+          <!-- GROUND LOOT / ITEM CARDS -->
+          @for (item of engine.currentRoom().items; track item.id) {
+            <div
+              class="entity-card loot-entity-card"
+              [attr.data-rarity]="item.rarity"
+              [attr.data-testid]="'stage-item-card-' + item.id"
+            >
+              <div class="entity-card-top">
+                <div>
+                  <span class="entity-badge loot">{{ item.rarity }} {{ item.slot }}</span>
+                  <strong class="entity-name">❖ {{ item.name }}</strong>
+                </div>
+                <span class="prov-badge" [class.verified]="item.provenance === 'Verified Drop'">
+                  {{ item.provenance }}
+                </span>
+              </div>
+              <p class="entity-subtext">
+                Stat Budget: {{ item.totalStatBudget }} • {{ computeStatComparisonTooltip(item) }}
+              </p>
+              <div class="entity-actions-row">
+                <button
+                  type="button"
+                  class="entity-btn accent"
+                  (click)="onStageTakeItem(item)"
+                  [attr.data-testid]="'take-item-btn-' + item.id"
+                >
+                  ✋ Take
+                </button>
+                <button
+                  type="button"
+                  class="entity-btn success"
+                  (click)="onStageTakeAndEquipItem(item)"
+                  [attr.data-testid]="'take-equip-item-btn-' + item.id"
+                >
+                  🛡 Take & Equip
+                </button>
+                <button
+                  type="button"
+                  class="entity-btn"
+                  (click)="onStageInspectItem(item)"
+                  [attr.data-testid]="'inspect-item-btn-' + item.id"
+                >
+                  🔍 Inspect
+                </button>
+              </div>
+            </div>
+          }
+
+          <!-- INTERACTABLE ROOM PROPS (CAMPFIRE / PUZZLE MECHANISMS / LORE TERMINALS) -->
+          @if (engine.currentRoom().legendType === 'safe-campfire') {
+            <div class="entity-card prop-entity-card" data-testid="stage-campfire-card">
+              <div class="entity-card-top">
+                <span class="entity-badge sanctuary">♨ Sanctuary</span>
+                <strong class="entity-name">Azure Sanctuary Campfire</strong>
+              </div>
+              <p class="entity-subtext">
+                Restores 100% HP & Stamina and purges negative status effects.
+              </p>
+              <div class="entity-actions-row">
+                <button
+                  type="button"
+                  class="entity-btn success"
+                  (click)="
+                    engine.dispatchCommandIntent({
+                      type: 'REST_CAMPFIRE',
+                      rawInput: 'rest',
+                      source: 'HUD'
+                    })
+                  "
+                  data-testid="rest-campfire-btn"
+                >
+                  ♨ Rest at Campfire
+                </button>
+              </div>
+            </div>
+          }
+
+          @if (
+            engine.currentRoom().triggers.length > 0 ||
+            engine.currentRoom().legendType === 'puzzle-mechanism' ||
+            engine.currentRoom().legendType === 'lore-terminal'
+          ) {
+            <div class="entity-card prop-entity-card" data-testid="stage-mechanism-card">
+              <div class="entity-card-top">
+                <span class="entity-badge mechanism">⚙ Mechanism</span>
+                <strong class="entity-name"
+                  >{{ engine.activeGateAddress().theme }} Contraption</strong
+                >
+              </div>
+              <p class="entity-subtext">
+                Interactive room mechanism governed by Perception and declarative triggers.
+              </p>
+              <div class="entity-actions-row">
+                <button
+                  type="button"
+                  class="entity-btn accent"
+                  (click)="engine.useOrPullRoomMechanisms()"
+                  data-testid="use-mechanism-btn"
+                >
+                  ⚙ Use / Pull
+                </button>
+                <button
+                  type="button"
+                  class="entity-btn"
+                  (click)="
+                    engine.dispatchCommandIntent({
+                      type: 'INSPECT',
+                      rawInput: 'inspect',
+                      source: 'HUD'
+                    })
+                  "
+                >
+                  🔍 Inspect
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+
+        <!-- 1D. DIRECT EXIT & PORTAL BAR (SINGLE-CLICK TRAVEL + ARCHITECT `[+ Dig Room]` GHOST BUTTONS) -->
+        <div
+          class="stage-exits-bar"
+          role="navigation"
+          aria-label="Direct Room Exits and Chaos Gate Portals"
+          data-testid="stage-exits-bar"
+        >
+          @for (ex of currentRoomStageExits(); track ex.direction) {
+            <button
+              type="button"
+              class="exit-pill-btn"
+              [class.unvisited]="!ex.visited"
+              [class.locked]="ex.isLocked"
+              (click)="onDirectionClick(ex.direction)"
+              [title]="ex.visited ? 'Travel to ' + ex.targetTitle : 'Rumor: ' + ex.rumorSignal"
+              [attr.data-testid]="'stage-exit-' + ex.direction"
+            >
+              <span class="exit-arrow">{{ ex.arrow }}</span>
+              <span class="exit-text">{{ ex.dirLabel }}: {{ ex.targetTitle }}</span>
+            </button>
+          }
+
+          <!-- Chaos Gate Portals in Anchor Room -->
+          @if (engine.currentRoom().legendType === 'anchor-portal') {
+            @for (peer of transport.activeVisitorsList(); track peer.peerId) {
+              <button
+                type="button"
+                class="exit-pill-btn portal"
+                (click)="
+                  engine.dispatchCommandIntent({
+                    type: 'ENTER_PORTAL',
+                    rawInput: 'portal ' + peer.gateAddress,
+                    source: 'HUD',
+                    targetId: peer.gateAddress
+                  })
+                "
+                [title]="'Traverse P2P Chaos Gate Portal into ' + peer.playerName + 's realm'"
+                [attr.data-testid]="'stage-portal-' + peer.peerId"
+              >
+                🌀 Chaos Gate: {{ peer.gateAddress }} ({{ peer.playerName }})
+              </button>
+            }
+          }
+
+          <!-- Zero-Syntax Architect `[+ Dig Room]` Ghost Buttons on Room Stage -->
+          @for (ghost of architectGhostDigDirections(); track ghost.direction) {
+            <button
+              type="button"
+              class="exit-pill-btn ghost-dig"
+              (click)="openDigPopover(ghost.direction)"
+              [attr.data-testid]="'stage-ghost-dig-' + ghost.direction"
+            >
+              ➕ [+ Dig Room {{ ghost.direction }}]
             </button>
           }
         </div>
-      }
 
-      <!-- SENSORY TERMINAL LOG WITH CLICKABLE ENTITY BADGES -->
-      <div class="terminal-log" role="log" aria-live="polite" data-testid="terminal-log">
-        @for (line of engine.terminalFeed(); track line.id) {
-          <div class="term-line" [attr.data-category]="line.category">
-            <span class="term-time">[{{ line.timestamp }}]</span>
-            <span class="term-text">{{ line.text }}</span>
-            @if (line.badges && line.badges.length > 0) {
-              <div class="term-badges">
-                @for (b of line.badges; track b.label) {
-                  <button
-                    type="button"
-                    class="inline-entity-badge"
-                    [style.borderColor]="b.colorHex || '#38bdf8'"
-                    (click)="onBadgeClick(b)"
-                  >
-                    {{ b.label }}
-                  </button>
-                }
+        <!-- ZERO-SYNTAX ARCHITECT `[+ DIG ROOM]` CREATION POPOVER -->
+        @if (digPopoverDirection(); as digDir) {
+          <div class="architect-dig-popover" data-testid="architect-dig-popover">
+            <div class="popover-head">
+              <strong>✨ Excavate New Room ({{ digDir }} Exit)</strong>
+              <div class="popover-head-btns">
+                <button
+                  type="button"
+                  class="mini-action-btn accent"
+                  (click)="rollProceduralRoomDraft()"
+                  data-testid="roll-procedural-room-btn"
+                >
+                  🎲 Roll Procedural Room
+                </button>
+                <button
+                  type="button"
+                  class="mini-action-btn"
+                  (click)="digPopoverDirection.set(null)"
+                >
+                  ✕
+                </button>
               </div>
-            }
+            </div>
+
+            <div class="popover-grid">
+              <label>
+                <span>Room Title</span>
+                <input
+                  type="text"
+                  [ngModel]="digTitle()"
+                  (ngModelChange)="digTitle.set($event)"
+                  data-testid="arch-dig-title-input"
+                />
+              </label>
+
+              <label>
+                <span>Legend Category</span>
+                <select
+                  [ngModel]="digLegendType()"
+                  (ngModelChange)="digLegendType.set($event)"
+                  data-testid="arch-dig-legend-select"
+                >
+                  <option value="corridor">Normal / Transit Hall</option>
+                  <option value="elite-boss">Elite/Boss Chamber</option>
+                  <option value="treasure-vault">Treasure Vault</option>
+                  <option value="puzzle-mechanism">Puzzle/Mechanism</option>
+                  <option value="safe-campfire">Safe Campfire</option>
+                </select>
+              </label>
+
+              <label class="full-col">
+                <span>Room Description</span>
+                <input
+                  type="text"
+                  [ngModel]="digDescription()"
+                  (ngModelChange)="digDescription.set($event)"
+                />
+              </label>
+
+              <label>
+                <span>Add Monster</span>
+                <select
+                  [ngModel]="digSpawnMonster()"
+                  (ngModelChange)="digSpawnMonster.set($event)"
+                >
+                  <option value="NONE">None</option>
+                  <option value="Chrono-Automaton">Chrono-Automaton</option>
+                  <option value="Mycelial Hulk">Mycelial Hulk</option>
+                  <option value="Void Weaver">Void Weaver</option>
+                  <option value="Runic Golem">Runic Golem</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Add Loot / Relic</span>
+                <select [ngModel]="digSpawnLoot()" (ngModelChange)="digSpawnLoot.set($event)">
+                  <option value="NONE">None</option>
+                  <option value="Astral Resonance Blade">Astral Resonance Blade</option>
+                  <option value="Clockwork Aegis Plate">Clockwork Aegis Plate</option>
+                  <option value="Rusted Vault Key">Rusted Vault Key</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Add Hazard / Trap</span>
+                <select [ngModel]="digSpawnTrap()" (ngModelChange)="digSpawnTrap.set($event)">
+                  <option value="NONE">None</option>
+                  <option value="Arc-Flash Floorplate">Arc-Flash Floorplate</option>
+                  <option value="Pendulum Scythe Trap">Pendulum Scythe Trap</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="popover-footer">
+              <button
+                type="button"
+                class="mini-action-btn accent"
+                (click)="confirmVisualDigRoom()"
+                data-testid="arch-dig-btn"
+              >
+                🔨 Create Room ({{ digDir }})
+              </button>
+            </div>
           </div>
         }
       </div>
@@ -656,6 +1148,7 @@
           class="auto-toggle-btn"
           [class.active]="engine.character().autoAttackEnabled"
           (click)="engine.toggleAutoAttack()"
+          title="Toggle automatic basic attacks whenever ATB reaches 100%"
           data-testid="auto-attack-toggle"
         >
           ⚔ Auto: {{ engine.character().autoAttackEnabled ? 'ON' : 'OFF' }}
@@ -681,24 +1174,285 @@
         }
       </div>
 
-      <!-- DUAL-INPUT COMMAND LINE -->
-      <form class="terminal-input-row" (ngSubmit)="submitTerminalCommand()">
-        <label for="mud-cmd-input" class="sr-only">MUD Command Terminal Input</label>
-        <span class="prompt-caret" aria-hidden="true">&gt;</span>
-        <input
-          id="mud-cmd-input"
-          name="command"
-          type="text"
-          autocomplete="off"
-          [ngModel]="terminalCommandText()"
-          (ngModelChange)="terminalCommandText.set($event)"
-          placeholder="Type command (e.g. cast sunder goblin, inspect, n/s/e/w, @dig E Vault)..."
-          data-testid="terminal-input"
-        />
-        <button type="submit" class="send-cmd-btn" data-testid="terminal-submit-btn">Send</button>
-      </form>
+      <!-- ===================================================================== -->
+      <!-- ZONE 2 (BOTTOM): COMPACT EVENT & COMBAT TICKER (~25-30% HEIGHT)        -->
+      <!-- ===================================================================== -->
+      <div
+        class="compact-ticker-zone"
+        [class.collapsed]="engine.tickerCollapsed()"
+        data-testid="compact-ticker-zone"
+      >
+        <div class="ticker-header">
+          <div class="ticker-title">
+            <span>📜 Event & Combat Ticker</span>
+            <span class="syntax-teach-hint"
+              >(Visual actions echo power-user syntax badges here)</span
+            >
+          </div>
+          <button
+            type="button"
+            class="ticker-collapse-btn"
+            (click)="engine.tickerCollapsed.set(!engine.tickerCollapsed())"
+            data-testid="toggle-ticker-btn"
+          >
+            {{ engine.tickerCollapsed() ? '▲ Expand Log' : '▼ Compact' }}
+          </button>
+        </div>
+
+        @if (!engine.tickerCollapsed()) {
+          <div class="terminal-log" role="log" aria-live="polite" data-testid="terminal-log">
+            @for (line of engine.terminalFeed(); track line.id) {
+              <div class="term-line" [attr.data-category]="line.category">
+                <span class="term-time">[{{ line.timestamp }}]</span>
+                @if (line.syntaxEcho) {
+                  <code class="syntax-echo-badge" data-testid="syntax-echo-badge">{{
+                    line.syntaxEcho
+                  }}</code>
+                }
+                <span class="term-text">{{ line.text }}</span>
+                @if (line.badges && line.badges.length > 0) {
+                  <div class="term-badges">
+                    @for (b of line.badges; track b.label) {
+                      <button
+                        type="button"
+                        class="inline-entity-badge"
+                        [style.borderColor]="b.colorHex || '#38bdf8'"
+                        (click)="onBadgeClick(b)"
+                      >
+                        {{ b.label }}
+                      </button>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        }
+
+        <!-- CONTEXTUAL QUICK-COMMAND CHIPS BAR -->
+        <div class="quick-command-chips" aria-label="Contextual Quick Commands">
+          <button
+            type="button"
+            class="quick-chip"
+            (click)="
+              engine.dispatchCommandIntent({ type: 'LOOK', rawInput: 'look', source: 'HUD' })
+            "
+            data-testid="quick-chip-look"
+          >
+            👁 Look
+          </button>
+          <button
+            type="button"
+            class="quick-chip"
+            (click)="
+              engine.dispatchCommandIntent({
+                type: 'REST_CAMPFIRE',
+                rawInput: 'rest',
+                source: 'HUD'
+              })
+            "
+            data-testid="quick-chip-rest"
+          >
+            ♨ Rest at Campfire
+          </button>
+          <button
+            type="button"
+            class="quick-chip"
+            (click)="toggleDrawer('NETWORK')"
+            data-testid="quick-chip-gate"
+          >
+            🌀 Open Chaos Gate
+          </button>
+          <button
+            type="button"
+            class="quick-chip"
+            (click)="engine.toggleAutoAttack()"
+            data-testid="quick-chip-autombat"
+          >
+            ⚔ Auto-Combat: {{ engine.character().autoAttackEnabled ? 'ON' : 'OFF' }}
+          </button>
+        </div>
+
+        <!-- OPTIONAL POWER-USER COMMAND INPUT BAR -->
+        <form class="terminal-input-row" (ngSubmit)="submitTerminalCommand()">
+          <label for="mud-cmd-input" class="sr-only">MUD Command Terminal Input</label>
+          <span class="prompt-caret" aria-hidden="true">&gt;</span>
+          <input
+            id="mud-cmd-input"
+            name="command"
+            type="text"
+            autocomplete="off"
+            [ngModel]="terminalCommandText()"
+            (ngModelChange)="terminalCommandText.set($event)"
+            placeholder="Optional terminal input (or play 100% via cards & map above)..."
+            data-testid="terminal-input"
+          />
+          <button type="submit" class="send-cmd-btn" data-testid="terminal-submit-btn">
+            Send
+          </button>
+        </form>
+      </div>
     </section>
   </main>
+
+  <!-- ========================================================================= -->
+  <!-- FIRST-TIME USER ONBOARDING: CHARACTER & REALM AWAKENING MODAL              -->
+  <!-- ========================================================================= -->
+  @if (engine.needsOnboarding()) {
+    <div
+      class="onboarding-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Character and Pocket Realm Awakening"
+      data-testid="onboarding-modal"
+    >
+      <div class="onboarding-modal-card">
+        <div class="onboarding-header">
+          <div>
+            <span class="era-badge">◈ CHAOS GATE INITIALIZATION</span>
+            <h2>Awaken Your Traveler & Pocket Realm</h2>
+            <p>
+              Every browser hosts a persistent dungeon in <code>IndexedDB</code>. Choose your
+              Class Core and spin your initial 3-Word Chaos Gate seed.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="close-drawer-btn"
+            (click)="engine.needsOnboarding.set(false)"
+            data-testid="skip-onboarding-btn"
+          >
+            ✕ Skip
+          </button>
+        </div>
+
+        <!-- Step 1: Character Name & 4 Class Core Cards -->
+        <div class="onboarding-section">
+          <label class="onboard-name-label">
+            <span>1. Traveler Callsign</span>
+            <input
+              type="text"
+              [ngModel]="onboardingName()"
+              (ngModelChange)="onboardingName.set($event)"
+              placeholder="Enter Character Name..."
+              data-testid="onboarding-name-input"
+            />
+          </label>
+
+          <div class="class-cards-grid">
+            @for (arch of archetypes; track arch) {
+              @let meta = archetypeCatalog[arch];
+              <button
+                type="button"
+                class="class-core-card"
+                [class.selected]="onboardingArchetype() === arch"
+                (click)="onboardingArchetype.set(arch)"
+                [attr.data-testid]="'onboard-class-' + arch"
+              >
+                <div class="cc-top">
+                  <strong>{{ arch }}</strong>
+                  <span class="cc-tag">Class Core</span>
+                </div>
+                <div class="cc-stats">
+                  <span>STR {{ meta.baseAttributes.STR }}</span>
+                  <span>DEX {{ meta.baseAttributes.DEX }}</span>
+                  <span>INT {{ meta.baseAttributes.INT }}</span>
+                  <span>PER {{ meta.baseAttributes.PER }}</span>
+                  <span>VIT {{ meta.baseAttributes.VIT }}</span>
+                </div>
+                <div class="cc-skills">
+                  @for (sk of meta.skills; track sk.id) {
+                    <span class="cc-skill-pill">{{ sk.name }} ({{ sk.element }})</span>
+                  }
+                </div>
+              </button>
+            }
+          </div>
+        </div>
+
+        <!-- Step 2: Spin or Pick 3-Word Chaos Gate Address -->
+        <div class="onboarding-section">
+          <div class="onboard-gate-header">
+            <span>2. Initial 3-Word Chaos Gate Address</span>
+            <button
+              type="button"
+              class="mini-action-btn accent"
+              (click)="spinRandomOnboardingGate()"
+              data-testid="spin-chaos-gate-btn"
+            >
+              🎲 Spin Random Chaos Gate
+            </button>
+          </div>
+
+          <div class="onboard-gate-selectors">
+            <select
+              aria-label="Initial Server Era"
+              [ngModel]="onboardingEra()"
+              (ngModelChange)="onboardingEra.set($event)"
+            >
+              @for (e of serverEras; track e) {
+                <option [value]="e">Era {{ e }}</option>
+              }
+            </select>
+            <select
+              aria-label="Initial Atmosphere Word"
+              [ngModel]="onboardingAtmosphere()"
+              (ngModelChange)="onboardingAtmosphere.set($event)"
+            >
+              @for (a of atmospheres; track a) {
+                <option [value]="a">{{ a }}</option>
+              }
+            </select>
+            <select
+              aria-label="Initial Theme Word"
+              [ngModel]="onboardingTheme()"
+              (ngModelChange)="onboardingTheme.set($event)"
+            >
+              @for (t of themes; track t) {
+                <option [value]="t">{{ t }}</option>
+              }
+            </select>
+            <select
+              aria-label="Initial Biome Word"
+              [ngModel]="onboardingBiome()"
+              (ngModelChange)="onboardingBiome.set($event)"
+            >
+              @for (b of biomes; track b) {
+                <option [value]="b">{{ b }}</option>
+              }
+            </select>
+          </div>
+
+          <div class="gate-preview-badges">
+            <span class="preview-chip">
+              <strong>Address:</strong> {{ onboardingEra() }}: {{ onboardingAtmosphere() }}
+              {{ onboardingTheme() }} {{ onboardingBiome() }}
+            </span>
+            <span class="preview-chip">
+              <strong>Atmosphere:</strong> {{ onboardingAtmosphere() }} Elemental Mutator
+            </span>
+            <span class="preview-chip">
+              <strong>Architecture:</strong> {{ onboardingTheme() }} Constructs & Traps
+            </span>
+            <span class="preview-chip">
+              <strong>Sanctum:</strong> {{ onboardingBiome() }} Boss Chamber
+            </span>
+          </div>
+        </div>
+
+        <div class="onboarding-footer">
+          <button
+            type="button"
+            class="awaken-submit-btn"
+            (click)="finishOnboardingModal()"
+            data-testid="confirm-awakening-btn"
+          >
+            ◈ Materialize in Pocket Realm
+          </button>
+        </div>
+      </div>
+    </div>
+  }
 
   <!-- SLIDE-OVER ON-DEMAND DATA, GRAPHS & TELEMETRY DRAWERS -->
   @if (engine.activeDrawer() !== 'NONE') {
@@ -744,7 +1498,6 @@
           <!-- 1. PAPERDOLL & CHARACTER SHEET DRAWER -->
           @if (engine.activeDrawer() === 'PAPERDOLL') {
             <div class="drawer-split-grid" data-testid="paperdoll-drawer-content">
-              <!-- Interactive SVG/CSS Paperdoll (7 Slots) -->
               <div class="paperdoll-card">
                 <h3>
                   Interactive Paperdoll (Weight: {{ engine.equippedWeight() }}/{{
@@ -801,13 +1554,10 @@
                   aria-label="Core Attributes Radar Chart"
                   data-testid="attribute-radar-svg"
                 >
-                  <!-- Concentric Web Rings -->
                   <circle cx="110" cy="110" r="26" class="radar-ring" />
                   <circle cx="110" cy="110" r="52" class="radar-ring" />
                   <circle cx="110" cy="110" r="78" class="radar-ring" />
-                  <!-- Attribute Polygon -->
                   <polygon [attr.points]="radarPolygonPoints()" class="radar-polygon" />
-                  <!-- Axis Labels -->
                   @for (ax of radarAxisLabels(); track ax.label) {
                     <text
                       [attr.x]="ax.x"
@@ -822,15 +1572,15 @@
                 </svg>
 
                 <div class="derived-curves-list">
-                  <div>
+                  <div title="Attack Rating computed from STR, INT, and equipped weapons">
                     <span>Attack Rating (ATK)</span>
                     <strong>{{ engine.derivedStats().atk }}</strong>
                   </div>
-                  <div>
+                  <div title="Damage Mitigation % computed from VIT and armor">
                     <span>Damage Mitigation</span>
                     <strong>{{ engine.derivedStats().mitigationPct }}%</strong>
                   </div>
-                  <div>
+                  <div title="Critical Hit Chance & Multiplier computed from DEX and PER">
                     <span>Crit Chance / Mult</span>
                     <strong
                       >{{ engine.derivedStats().critChancePct }}% ({{
@@ -838,7 +1588,7 @@
                       }}x)</strong
                     >
                   </div>
-                  <div>
+                  <div title="ATB Gauge percentage gained every 100ms tick">
                     <span>ATB Fill Rate / 100ms</span>
                     <strong>{{ engine.derivedStats().atbFillRatePerTick }}%</strong>
                   </div>
@@ -924,7 +1674,6 @@
           <!-- 2. COMBAT TELEMETRY & LOG ANALYTICS DRAWER -->
           @if (engine.activeDrawer() === 'COMBAT_TELEMETRY') {
             <div class="drawer-split-grid" data-testid="combat-telemetry-drawer-content">
-              <!-- DPS & Mitigation Horizontal Stacked Bars -->
               <div class="telemetry-card">
                 <h3>DPS, Mitigation & Overkill Breakdown</h3>
                 <div class="stacked-bars-list">
@@ -959,7 +1708,6 @@
                 </div>
               </div>
 
-              <!-- RNG Roll Distribution SVG Histogram -->
               <div class="telemetry-card">
                 <h3>RNG Roll Distribution Histogram (d100) & Status Uptime</h3>
                 <svg
@@ -1136,7 +1884,6 @@
           <!-- 5. SERVERLESS P2P NETWORKING & CUSTOMS GATE DRAWER -->
           @if (engine.activeDrawer() === 'NETWORK') {
             <div class="drawer-split-grid" data-testid="network-drawer-content">
-              <!-- BroadcastChannel Active Chaos Gate Portals -->
               <div class="telemetry-card">
                 <h3>BroadcastChannel & Active Chaos Gate Portals</h3>
                 <p class="card-help">
@@ -1172,7 +1919,6 @@
                 </div>
               </div>
 
-              <!-- WebRTC SDP Handshake & Base64 Realm Cartridge Export -->
               <div class="telemetry-card">
                 <h3>WebRTC SDP Handshake & JSON Delta Cartridge</h3>
                 <div class="arch-row">
@@ -1203,7 +1949,11 @@
                     (ngModelChange)="remoteHandshakeInput.set($event)"
                     placeholder="Paste Peer SDP Offer/Answer..."
                   />
-                  <button type="button" class="mini-action-btn" (click)="acceptWebRtcHandshake()">
+                  <button
+                    type="button"
+                    class="mini-action-btn"
+                    (click)="acceptWebRtcHandshake()"
+                  >
                     Connect Peer
                   </button>
                 </div>
@@ -1235,18 +1985,22 @@
   <!-- COMPACT TACTICAL STATUS FOOTER -->
   <footer class="hud-footer" role="contentinfo">
     <div class="footer-left">
-      <span
+      <span title="Unique Peer Identifier for BroadcastChannel and WebRTC handshakes"
         >Local Peer ID: <code>{{ transport.localPeerId }}</code></span
       >
       <span>•</span>
-      <span
+      <span title="Deterministic 32-bit Mulberry32 PRNG Seed derived from the 3-Word Chaos Gate"
         >Seed: <code>0x{{ engine.activeGateAddress().seed.toString(16).toUpperCase() }}</code></span
       >
     </div>
     <div class="footer-right">
-      <span>SubtleCrypto ECDSA Provenance: Active</span>
+      <span title="Boss drops are cryptographically signed using your browser's ECDSA P-256 keypair"
+        >SubtleCrypto ECDSA Provenance: Active</span
+      >
       <span>•</span>
-      <span>100ms Deterministic ATB Loop</span>
+      <span title="Combat readiness and status effects advance on a deterministic 100ms tick"
+        >100ms Deterministic ATB Loop</span
+      >
     </div>
   </footer>
 </div>

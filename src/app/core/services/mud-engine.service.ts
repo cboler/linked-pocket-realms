@@ -353,6 +353,9 @@ export class MudEngineService implements OnDestroy {
   readonly heatmapMode = signal<HeatmapMode>('LETHALITY');
   readonly selectedArchitectRoomId = signal<string>('room-0');
   readonly selectedTargetId = signal<string | null>(null);
+  readonly needsOnboarding = signal<boolean>(false);
+  readonly tickerCollapsed = signal<boolean>(false);
+  private pendingSyntaxEcho: string | undefined;
   readonly inspectedEntity = signal<{
     type: 'MONSTER' | 'ITEM' | 'ROOM';
     title: string;
@@ -521,6 +524,9 @@ export class MudEngineService implements OnDestroy {
     const savedChar = await this.storage.loadCharacterState();
     if (savedChar && savedChar.name) {
       this.character.set(savedChar);
+      this.needsOnboarding.set(false);
+    } else {
+      this.needsOnboarding.set(true);
     }
     const savedTel = await this.storage.loadTelemetryLog();
     if (savedTel && savedTel.combatSamples) {
@@ -687,8 +693,15 @@ export class MudEngineService implements OnDestroy {
   /**
    * Dual-Input Parity Dispatcher:
    * Both terminal text commands (`cast sunder goblin`) and HUD button clicks dispatch `CommandIntent`.
+   * When dispatched from the tactile HUD (`source === 'HUD'`), attaches a `[cmd: ...]` syntax echo
+   * to the next log line so players organically learn power-user commands.
    */
   dispatchCommandIntent(intent: CommandIntent): void {
+    if (intent.source === 'HUD' && intent.rawInput) {
+      this.pendingSyntaxEcho = `[cmd: ${intent.rawInput}]`;
+    } else {
+      this.pendingSyntaxEcho = undefined;
+    }
     switch (intent.type) {
       case 'MOVE':
         if (intent.direction) {
@@ -1632,6 +1645,43 @@ export class MudEngineService implements OnDestroy {
     void this.storage.saveCharacterState(this.character());
   }
 
+  takeAndEquipRoomItem(itemId: string): void {
+    const room = this.currentRoom();
+    const targetItem = room.items.find((i) => i.id === itemId);
+    if (!targetItem) return;
+    this.pendingSyntaxEcho = `[cmd: take ${targetItem.name.toLowerCase()} && equip ${targetItem.name.toLowerCase()}]`;
+    this.takeRoomItem(itemId);
+    this.equipInventoryItem(itemId);
+  }
+
+  useOrPullRoomMechanisms(): void {
+    const room = this.currentRoom();
+    this.pendingSyntaxEcho = `[cmd: use ${room.title.toLowerCase()}]`;
+    if (room.triggers.length > 0) {
+      this.evaluateDeclarativeTriggers('ON_INSPECT');
+    } else if (room.legendType === 'safe-campfire') {
+      this.restAtCampfire();
+    } else {
+      this.inspectTarget(room.id);
+    }
+  }
+
+  completeOnboardingAwakening(
+    playerName: string,
+    archetype: ArchetypeClass,
+    era: ServerEraLetter,
+    atmosphere: AtmospherePrefix,
+    theme: StructuralTheme,
+    biome: BiomeNoun,
+  ): void {
+    const cleanName = playerName.trim() || 'Wayfarer_01';
+    this.switchArchetype(archetype);
+    this.character.update((c) => ({ ...c, name: cleanName }));
+    this.dialChaosGate(era, atmosphere, theme, biome, false);
+    this.needsOnboarding.set(false);
+    void this.storage.saveCharacterState(this.character());
+  }
+
   equipInventoryItem(itemId: string): void {
     const char = this.character();
     const idx = char.inventory.findIndex((i) => i.id === itemId);
@@ -1858,6 +1908,13 @@ export class MudEngineService implements OnDestroy {
     const fromRoom = this.currentRoom();
     const dir = (payload['direction'] as ExitDirection) || 'E';
     const title = payload['title'] || 'Architect Excavated Chamber';
+    const description =
+      payload['description'] ||
+      `An Architect-excavated chamber branching ${dir} from ${fromRoom.title}.`;
+    const legendType = (payload['legendType'] as CoreLegendType) || 'custom';
+    const spawnMonsterName = payload['spawnMonsterName'];
+    const spawnLootName = payload['spawnLootName'];
+    const spawnTrapName = payload['spawnTrapName'];
     const newRoomId = `room-custom-${Date.now().toString(36).slice(-4)}`;
 
     const offsetMap: Record<ExitDirection, { dx: number; dy: number; rev: ExitDirection }> = {
@@ -1872,20 +1929,69 @@ export class MudEngineService implements OnDestroy {
     const newX = Math.max(70, Math.min(890, fromRoom.x + off.dx));
     const newY = Math.max(60, Math.min(520, fromRoom.y + off.dy));
 
+    const customMonsters: MonsterEntity[] = [];
+    if (spawnMonsterName && spawnMonsterName !== 'NONE') {
+      customMonsters.push({
+        id: `mob-${newRoomId}`,
+        templateId: spawnMonsterName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        name: `${this.activeGateAddress().era}-Rank ${spawnMonsterName}`,
+        level: this.character().level,
+        isBoss: legendType === 'elite-boss',
+        hp: legendType === 'elite-boss' ? 160 : 75,
+        maxHp: legendType === 'elite-boss' ? 160 : 75,
+        atk: legendType === 'elite-boss' ? 20 : 13,
+        mitigationPct: 14,
+        speed: 12,
+        atbGauge: 25,
+        element: fromRoom.elementalMutator,
+        weakness: 'Fire',
+        statuses: [],
+        loreSnippet: `Architect-placed ${spawnMonsterName} guarding ${title}.`,
+        secretWeaknessHint: 'Vulnerable to Sunder + Elemental burst combos.',
+        lootTable: [],
+      });
+    }
+
+    const customItems: EquipmentItem[] = [];
+    if (spawnLootName && spawnLootName !== 'NONE') {
+      customItems.push({
+        id: `item-${newRoomId}`,
+        name: spawnLootName,
+        slot: 'Main-Hand',
+        rarity: 'Relic',
+        weight: 4,
+        provenance: 'Architect Forged',
+        originGateAddress: this.activeGateAddress().formatted,
+        statBonuses: { STR: 4, DEX: 3, atkBonus: 7, speedPctBonus: 4 },
+        totalStatBudget: 18,
+      });
+    }
+
+    const customTriggers: DeclarativeTrigger[] = [];
+    if (spawnTrapName && spawnTrapName !== 'NONE') {
+      customTriggers.push({
+        id: `trig-${newRoomId}`,
+        when: 'ON_ENTER',
+        ifCondition: 'ALWAYS',
+        doAction: 'DEAL_HAZARD',
+        actionPayload: `${spawnTrapName}:12`,
+      });
+    }
+
     const newRoom: RoomNode = {
       id: newRoomId,
       title,
-      description: `An Architect-excavated chamber branching ${dir} from ${fromRoom.title}.`,
+      description,
       x: newX,
       y: newY,
       depthTier: fromRoom.depthTier + 1,
-      legendType: 'custom',
+      legendType,
       atmosphereEffect: fromRoom.atmosphereEffect,
       elementalMutator: fromRoom.elementalMutator,
       exits: [{ direction: off.rev, targetRoomId: fromRoom.id }],
-      monsters: [],
-      items: [],
-      triggers: [],
+      monsters: customMonsters,
+      items: customItems,
+      triggers: customTriggers,
       rumorSignal: `Architect Signal: ${title}`,
       isCustomDug: true,
     };
@@ -1914,8 +2020,11 @@ export class MudEngineService implements OnDestroy {
           roomId: newRoomId,
           title: newRoom.title,
           description: newRoom.description,
-          legendType: 'custom',
+          legendType,
           exits: newRoom.exits,
+          customMonsters,
+          customItems,
+          triggers: customTriggers,
           x: newX,
           y: newY,
           isCustomDug: true,
@@ -2188,17 +2297,21 @@ export class MudEngineService implements OnDestroy {
     category: TerminalFeedLine['category'],
     text: string,
     badges?: TerminalFeedLine['badges'],
+    explicitSyntaxEcho?: string,
   ): void {
     const now = new Date();
     const timestamp = now.toTimeString().slice(0, 8);
+    const syntaxEcho = explicitSyntaxEcho ?? this.pendingSyntaxEcho;
+    this.pendingSyntaxEcho = undefined;
     const line: TerminalFeedLine = {
       id: `ln-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       timestamp,
       category,
       text,
+      syntaxEcho,
       badges,
     };
-    this.terminalFeed.update((prev) => [...prev.slice(-80), line]);
+    this.terminalFeed.update((prev) => [line, ...prev.slice(0, 80)]);
   }
 
   private createInitialRealmDelta(): RealmDelta {

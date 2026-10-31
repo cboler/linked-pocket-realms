@@ -210,5 +210,42 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
       expect(compiled.querySelector('[data-testid="paperdoll-drawer-content"]')).toBeTruthy();
       expect(compiled.querySelector('[data-testid="attribute-radar-svg"]')).toBeTruthy();
     });
+
+    it('should echo terminal syntax badges on HUD actions, complete First-Boot Onboarding, and excavate rooms via Zero-Syntax Architect Popover', async () => {
+      const fixture = TestBed.createComponent(App);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const app = fixture.componentInstance;
+
+      // 1. Complete First-Boot Onboarding Awakening
+      app.onboardingName.set('Kite');
+      app.onboardingArchetype.set('Chronomancer');
+      app.finishOnboardingModal();
+      expect(engine.needsOnboarding()).toBe(false);
+      expect(engine.character().name).toBe('Kite');
+      expect(engine.character().archetype).toBe('Chronomancer');
+
+      // 2. Click a stage exit button (HUD source) and verify Syntax Echo badge `[cmd: n]` is attached
+      app.onDirectionClick('N');
+      const latestWithEcho = engine.terminalFeed().find((l) => l.syntaxEcho === '[cmd: n]');
+      expect(latestWithEcho).toBeTruthy();
+
+      // 3. Zero-Syntax Architect Popover: open ghost dig popover, roll procedural draft, and create room with monster + loot + trap
+      app.setPerspective('ARCHITECT');
+      app.openDigPopover('E');
+      app.rollProceduralRoomDraft();
+      app.digSpawnMonster.set('Chrono-Automaton');
+      app.digSpawnLoot.set('Astral Resonance Blade');
+      app.digSpawnTrap.set('Arc-Flash Floorplate');
+      const beforeCount = engine.rooms().length;
+      app.confirmVisualDigRoom();
+
+      expect(engine.rooms().length).toBe(beforeCount + 1);
+      const customRoom = engine.rooms()[engine.rooms().length - 1];
+      expect(customRoom.isCustomDug).toBe(true);
+      expect(customRoom.monsters.length).toBe(1);
+      expect(customRoom.items.length).toBe(1);
+      expect(customRoom.triggers.length).toBe(1);
+    });
   });
 });

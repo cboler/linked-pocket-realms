@@ -373,6 +373,7 @@ export interface TerminalFeedLine {
   timestamp: string;
   category: 'NARRATIVE' | 'COMBAT' | 'SYSTEM' | 'LORE' | 'ARCHITECT' | 'NETWORK';
   text: string;
+  syntaxEcho?: string; // e.g. "[cmd: take rusted key]" when triggered via tactile UI
   badges?: {
     label: string;
     targetId: string;

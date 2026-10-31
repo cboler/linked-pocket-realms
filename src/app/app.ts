@@ -12,6 +12,7 @@ import {
   ExitDirection,
   GuestbookGravestoneEntry,
   HeatmapMode,
+  MonsterEntity,
   PaperdollSlotType,
   PerspectiveRole,
   RoomNode,
@@ -28,7 +29,7 @@ import {
   STRUCTURAL_THEMES,
 } from './core/services/chaos-gate.service';
 import { LegendRegistryService } from './core/services/legend-registry.service';
-import { MudEngineService } from './core/services/mud-engine.service';
+import { ARCHETYPE_CATALOG, MudEngineService } from './core/services/mud-engine.service';
 import { StorageService } from './core/services/storage.service';
 import { TransportService } from './core/services/transport.service';
 
@@ -47,6 +48,7 @@ export class App {
   readonly chaosGate = inject(ChaosGateService);
 
   // Constants exposed for templates
+  readonly archetypeCatalog = ARCHETYPE_CATALOG;
   readonly serverEras: ServerEraLetter[] = ['Δ', 'Θ', 'Λ', 'Σ', 'Ω'];
   readonly atmospheres: AtmospherePrefix[] = ATMOSPHERE_PREFIXES;
   readonly themes: StructuralTheme[] = STRUCTURAL_THEMES;
@@ -62,6 +64,7 @@ export class App {
     'Relic 2',
   ];
   readonly directions: ExitDirection[] = ['N', 'S', 'E', 'W', 'U', 'D'];
+  readonly cardinalDirections: ExitDirection[] = ['N', 'S', 'E', 'W'];
   readonly trackedStatusTags: StatusTag[] = ['Burn', 'Chill', 'Sunder', 'Overcharge'];
   readonly heatmapModes: HeatmapMode[] = ['LETHALITY', 'TRAFFIC', 'TIME_SPENT', 'LOOT'];
 
@@ -74,12 +77,39 @@ export class App {
   readonly dialTheme = signal<StructuralTheme>('Clockwork');
   readonly dialBiome = signal<BiomeNoun>('Catacombs');
 
-  // Architect Visual Editor Form Signals
+  // Onboarding Awakening Modal State
+  readonly onboardingName = signal<string>('Vanguard_01');
+  readonly onboardingArchetype = signal<ArchetypeClass>('Vanguard');
+  readonly onboardingEra = signal<ServerEraLetter>('Θ');
+  readonly onboardingAtmosphere = signal<AtmospherePrefix>('Scorching');
+  readonly onboardingTheme = signal<StructuralTheme>('Clockwork');
+  readonly onboardingBiome = signal<BiomeNoun>('Catacombs');
+
+  // Interactive Stage & Map Popovers / Tooltips
+  readonly hoveredMapNode = signal<{
+    room: RoomNode;
+    visited: boolean;
+    adjacentRumor: boolean;
+    sensoryPreview: string;
+  } | null>(null);
+  readonly activeSkillMenuMonsterId = signal<string | null>(null);
+  readonly inlineEditingRoom = signal<boolean>(false);
+  readonly digPopoverDirection = signal<ExitDirection | null>(null);
+
+  // Visual Dig Popover & Inline Room Editor Form Signals
   readonly editRoomTitle = signal<string>('');
   readonly editRoomDesc = signal<string>('');
   readonly editRoomLegend = signal<CoreLegendType>('corridor');
   readonly digDirection = signal<ExitDirection>('E');
   readonly digTitle = signal<string>('Astral Relay Vault');
+  readonly digDescription = signal<string>(
+    'A newly excavated chamber humming with dormant Chaos Gate resonance.',
+  );
+  readonly digLegendType = signal<CoreLegendType>('corridor');
+  readonly digSpawnMonster = signal<string>('NONE');
+  readonly digSpawnLoot = signal<string>('NONE');
+  readonly digSpawnTrap = signal<string>('NONE');
+
   readonly triggerWhen = signal<DeclarativeTrigger['when']>('ON_ENTER');
   readonly triggerIf = signal<string>('PER >= 12');
   readonly triggerDo = signal<DeclarativeTrigger['doAction']>('EMIT_LORE');
@@ -99,6 +129,89 @@ export class App {
   readonly exportedCartridgeText = signal<string>('');
   readonly remoteHandshakeInput = signal<string>('');
 
+  // Computed Current Room Legend & Exits for Persistent Room Stage
+  readonly currentRoomLegend = computed(() => {
+    const r = this.engine.currentRoom();
+    return this.legendRegistry.resolveEntry(r.legendType, r.customLegendId);
+  });
+
+  readonly currentRoomStageExits = computed<
+    {
+      direction: ExitDirection;
+      arrow: string;
+      dirLabel: string;
+      targetRoomId: string;
+      targetTitle: string;
+      visited: boolean;
+      isLocked: boolean;
+      isSecret: boolean;
+      rumorSignal: string;
+    }[]
+  >(() => {
+    const cur = this.engine.currentRoom();
+    const allRooms = this.engine.rooms();
+    const visitedSet = new Set(this.engine.character().visitedRoomIds);
+    const per = this.engine.effectiveAttributes().PER;
+    const role = this.engine.perspective();
+
+    const dirMeta: Record<ExitDirection, { arrow: string; label: string }> = {
+      N: { arrow: '⬆', label: 'North' },
+      S: { arrow: '⬇', label: 'South' },
+      E: { arrow: '➡', label: 'East' },
+      W: { arrow: '⬅', label: 'West' },
+      U: { arrow: '⤊', label: 'Up' },
+      D: { arrow: '⤋', label: 'Down' },
+    };
+
+    return cur.exits
+      .filter((ex) => !ex.isSecret || per >= 12 || role === 'ARCHITECT')
+      .map((ex) => {
+        const target = allRooms.find((r) => r.id === ex.targetRoomId);
+        const visited = visitedSet.has(ex.targetRoomId);
+        const meta = dirMeta[ex.direction] ?? { arrow: '•', label: ex.direction };
+        return {
+          direction: ex.direction,
+          arrow: meta.arrow,
+          dirLabel: meta.label,
+          targetRoomId: ex.targetRoomId,
+          targetTitle:
+            visited || role === 'ARCHITECT' ? (target?.title ?? 'Sector') : 'Unknown [?]',
+          visited,
+          isLocked: !!ex.isLocked,
+          isSecret: !!ex.isSecret,
+          rumorSignal: target?.rumorSignal ?? 'Uncharted resonance readings',
+        };
+      });
+  });
+
+  // Ghost `[+ Dig Room]` nodes on N/S/E/W edges in Architect Mode
+  readonly architectGhostDigDirections = computed<
+    { direction: ExitDirection; label: string; x: number; y: number }[]
+  >(() => {
+    if (this.engine.perspective() !== 'ARCHITECT') return [];
+    const cur = this.engine.currentRoom();
+    const existingDirs = new Set(cur.exits.map((e) => e.direction));
+    const offsets: { direction: ExitDirection; label: string; dx: number; dy: number }[] = [
+      {
+        direction: 'N',
+        label: '+ Dig North',
+        dx: cur.y < 120 ? 75 : 0,
+        dy: cur.y < 120 ? -55 : -90,
+      },
+      { direction: 'S', label: '+ Dig South', dx: 0, dy: 90 },
+      { direction: 'E', label: '+ Dig East', dx: 115, dy: 0 },
+      { direction: 'W', label: '+ Dig West', dx: -115, dy: 0 },
+    ];
+    return offsets
+      .filter((o) => !existingDirs.has(o.direction))
+      .map((o) => ({
+        direction: o.direction,
+        label: o.label,
+        x: Math.max(45, Math.min(895, cur.x + o.dx)),
+        y: Math.max(28, Math.min(525, cur.y + o.dy)),
+      }));
+  });
+
   // Computed Map Edges & Fog-of-War Nodes
   readonly visibleCartographyNodes = computed<
     {
@@ -109,6 +222,7 @@ export class App {
       colorHex: string;
       heatmapColor: string;
       visitorNames: string[];
+      sensoryPreview: string;
     }[]
   >(() => {
     const allRooms = this.engine.rooms();
@@ -118,13 +232,14 @@ export class App {
     const visitors = this.transport.activeVisitorsList();
     const metrics = this.engine.telemetry().roomMetrics;
     const heatMode = this.engine.heatmapMode();
+    const per = this.engine.effectiveAttributes().PER;
 
     // Find rooms adjacent to visited rooms
     const adjacentSet = new Set<string>();
     for (const r of allRooms) {
       if (visitedSet.has(r.id)) {
         for (const ex of r.exits) {
-          if (!ex.isSecret || this.engine.effectiveAttributes().PER >= 12 || role === 'ARCHITECT') {
+          if (!ex.isSecret || per >= 12 || role === 'ARCHITECT') {
             adjacentSet.add(ex.targetRoomId);
           }
         }
@@ -153,6 +268,18 @@ export class App {
         }
         const heatmapColor = this.interpolateHeatColor(heatVal);
 
+        const dangerLevel =
+          r.legendType === 'elite-boss'
+            ? 'Extreme (Boss)'
+            : r.monsters.length > 0
+              ? 'Elevated (Hostiles)'
+              : r.legendType === 'safe-campfire'
+                ? 'Safe Sanctuary'
+                : 'Low';
+        const sensoryPreview = visited
+          ? `${r.title} • ${leg.label}`
+          : `Danger: ${dangerLevel} | ${r.rumorSignal} (PER ${per} Scan)`;
+
         return {
           room: r,
           visited,
@@ -161,6 +288,7 @@ export class App {
           colorHex: visited || role !== 'EXPLORER' ? leg.colorHex : '#64748b',
           heatmapColor,
           visitorNames: roomVisitors,
+          sensoryPreview,
         };
       });
   });
@@ -412,6 +540,60 @@ export class App {
     this.terminalCommandText.set('');
   }
 
+  // Tactile Stage Entity Actions (with automatic Syntax Echo Teaching)
+  onStageAttackMonster(mob: MonsterEntity): void {
+    this.engine.selectedTargetId.set(mob.id);
+    this.engine.dispatchCommandIntent({
+      type: 'ATTACK',
+      rawInput: `attack ${mob.name.toLowerCase()}`,
+      source: 'HUD',
+      targetId: mob.id,
+    });
+  }
+
+  onStageCastSkillOnMonster(skill: SkillSlot, mob: MonsterEntity): void {
+    this.engine.selectedTargetId.set(mob.id);
+    this.activeSkillMenuMonsterId.set(null);
+    this.engine.dispatchCommandIntent({
+      type: 'CAST_SKILL',
+      rawInput: `cast ${skill.commandKey} ${mob.name.toLowerCase()}`,
+      source: 'HUD',
+      skillKey: skill.commandKey,
+      targetId: mob.id,
+    });
+  }
+
+  onStageInspectMonster(mob: MonsterEntity): void {
+    this.engine.dispatchCommandIntent({
+      type: 'INSPECT',
+      rawInput: `inspect ${mob.name.toLowerCase()}`,
+      source: 'HUD',
+      targetId: mob.id,
+    });
+  }
+
+  onStageTakeItem(item: EquipmentItem): void {
+    this.engine.dispatchCommandIntent({
+      type: 'TAKE_ITEM',
+      rawInput: `take ${item.name.toLowerCase()}`,
+      source: 'HUD',
+      targetId: item.id,
+    });
+  }
+
+  onStageTakeAndEquipItem(item: EquipmentItem): void {
+    this.engine.takeAndEquipRoomItem(item.id);
+  }
+
+  onStageInspectItem(item: EquipmentItem): void {
+    this.engine.dispatchCommandIntent({
+      type: 'INSPECT',
+      rawInput: `inspect ${item.name.toLowerCase()}`,
+      source: 'HUD',
+      targetId: item.id,
+    });
+  }
+
   onBadgeClick(badge: NonNullable<TerminalFeedLine['badges']>[number]): void {
     if (badge.actionType === 'ATTACK') {
       this.engine.selectedTargetId.set(badge.targetId);
@@ -446,13 +628,15 @@ export class App {
   }
 
   onSkillButtonClick(skill: SkillSlot): void {
-    const targetId = this.engine.selectedTargetId() ?? this.engine.livingRoomMonsters()[0]?.id;
+    const targetMob =
+      this.engine.livingRoomMonsters().find((m) => m.id === this.engine.selectedTargetId()) ??
+      this.engine.livingRoomMonsters()[0];
     this.engine.dispatchCommandIntent({
       type: 'CAST_SKILL',
-      rawInput: `cast ${skill.commandKey}`,
+      rawInput: `cast ${skill.commandKey}${targetMob ? ' ' + targetMob.name.toLowerCase() : ''}`,
       source: 'HUD',
       skillKey: skill.commandKey,
-      targetId,
+      targetId: targetMob?.id,
     });
   }
 
@@ -473,18 +657,69 @@ export class App {
   }
 
   onNodeClick(room: RoomNode): void {
-    if (this.engine.perspective() === 'ARCHITECT') {
-      this.engine.selectedArchitectRoomId.set(room.id);
-      this.syncArchitectEditorWithSelectedRoom();
-      return;
-    }
     const curRoom = this.engine.currentRoom();
     const exit = curRoom.exits.find((e) => e.targetRoomId === room.id);
     if (exit) {
       this.onDirectionClick(exit.direction);
-    } else if (this.engine.character().visitedRoomIds.includes(room.id)) {
+      if (this.engine.perspective() === 'ARCHITECT') {
+        this.engine.selectedArchitectRoomId.set(room.id);
+        this.syncArchitectEditorWithSelectedRoom();
+      }
+      return;
+    }
+    if (this.engine.perspective() === 'ARCHITECT') {
+      this.engine.selectedArchitectRoomId.set(room.id);
+      this.engine.moveToRoom(room.id);
+      this.syncArchitectEditorWithSelectedRoom();
+      return;
+    }
+    if (this.engine.character().visitedRoomIds.includes(room.id)) {
       this.engine.moveToRoom(room.id);
     }
+  }
+
+  openDigPopover(dir: ExitDirection): void {
+    this.digDirection.set(dir);
+    this.digPopoverDirection.set(dir);
+    this.rollProceduralRoomDraft();
+  }
+
+  rollProceduralRoomDraft(): void {
+    const addr = this.engine.activeGateAddress();
+    const adjectives = ['Resonant', 'Gilded', 'Forgotten', 'Sunken', 'Subterranean', 'Astral'];
+    const nouns = ['Reliquary', 'Dynamo', 'Vestry', 'Conduit', 'Gallery', 'Laboratory'];
+    const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const noun = nouns[Math.floor(Math.random() * nouns.length)];
+    this.digTitle.set(`${addr.atmosphere} ${adj} ${noun}`);
+    this.digDescription.set(
+      `A ${addr.theme.toLowerCase()} ${noun.toLowerCase()} pulsing with ${addr.atmosphere.toLowerCase()} ley-energy within the ${addr.biome.toLowerCase()}.`,
+    );
+  }
+
+  confirmVisualDigRoom(): void {
+    const dir = this.digDirection();
+    this.engine.dispatchCommandIntent({
+      type: 'MOO_DIG',
+      rawInput: `@dig ${dir} ${this.digTitle()}`,
+      source: 'HUD',
+      payload: {
+        direction: dir,
+        title: this.digTitle(),
+        description: this.digDescription(),
+        legendType: this.digLegendType(),
+        spawnMonsterName: this.digSpawnMonster(),
+        spawnLootName: this.digSpawnLoot(),
+        spawnTrapName: this.digSpawnTrap(),
+      },
+    });
+    this.digPopoverDirection.set(null);
+    this.syncArchitectEditorWithSelectedRoom();
+  }
+
+  openInlineRoomEditor(): void {
+    this.engine.selectedArchitectRoomId.set(this.engine.currentRoom().id);
+    this.syncArchitectEditorWithSelectedRoom();
+    this.inlineEditingRoom.set(true);
   }
 
   syncArchitectEditorWithSelectedRoom(): void {
@@ -509,19 +744,11 @@ export class App {
         legendType: this.editRoomLegend(),
       },
     });
+    this.inlineEditingRoom.set(false);
   }
 
   architectDigNewRoom(): void {
-    this.engine.dispatchCommandIntent({
-      type: 'MOO_DIG',
-      rawInput: `@dig ${this.digDirection()} ${this.digTitle()}`,
-      source: 'HUD',
-      payload: {
-        direction: this.digDirection(),
-        title: this.digTitle(),
-      },
-    });
-    this.syncArchitectEditorWithSelectedRoom();
+    this.confirmVisualDigRoom();
   }
 
   architectAddTrigger(): void {
@@ -559,6 +786,29 @@ export class App {
       this.dialTheme(),
       this.dialBiome(),
       asGuest,
+    );
+  }
+
+  spinRandomOnboardingGate(): void {
+    const rand = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+    this.onboardingEra.set(rand(this.serverEras));
+    this.onboardingAtmosphere.set(rand(this.atmospheres));
+    this.onboardingTheme.set(rand(this.themes));
+    this.onboardingBiome.set(rand(this.biomes));
+  }
+
+  finishOnboardingModal(): void {
+    this.dialEra.set(this.onboardingEra());
+    this.dialAtmosphere.set(this.onboardingAtmosphere());
+    this.dialTheme.set(this.onboardingTheme());
+    this.dialBiome.set(this.onboardingBiome());
+    this.engine.completeOnboardingAwakening(
+      this.onboardingName(),
+      this.onboardingArchetype(),
+      this.onboardingEra(),
+      this.onboardingAtmosphere(),
+      this.onboardingTheme(),
+      this.onboardingBiome(),
     );
   }
 
