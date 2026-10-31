@@ -72,10 +72,10 @@
         class="drawer-btn"
         [class.active]="engine.activeDrawer() === 'PAPERDOLL'"
         (click)="toggleDrawer('PAPERDOLL')"
-        title="Open 7-Slot Equipment Paperdoll, 5-Axis Attribute Radar Chart, and Inventory Vault"
+        title="Open 7-Slot Equipment, 5-Axis Attribute Radar Chart, and Inventory Vault"
         data-testid="drawer-paperdoll-btn"
       >
-        🛡 Paperdoll
+        🛡 Equipment
       </button>
       <button
         type="button"
@@ -571,7 +571,10 @@
         </div>
 
         <div class="vital-gauges">
-          <div class="gauge-box" title="Health Points (HP): Restored at Safe Campfires or via healing skills.">
+          <div
+            class="gauge-box"
+            title="Health Points (HP): Restored at Safe Campfires or via healing skills."
+          >
             <span class="gauge-label"
               >HP {{ engine.character().hp }}/{{ engine.derivedStats().maxHp }}</span
             >
@@ -656,7 +659,7 @@
                 engine.dispatchCommandIntent({
                   type: 'INSPECT',
                   rawInput: 'inspect',
-                  source: 'HUD'
+                  source: 'HUD',
                 })
               "
               title="Scan the current room for hidden doors, traps, and lore (Uses PER stat)"
@@ -712,11 +715,7 @@
               >
                 💾 Save Room
               </button>
-              <button
-                type="button"
-                class="mini-action-btn"
-                (click)="inlineEditingRoom.set(false)"
-              >
+              <button type="button" class="mini-action-btn" (click)="inlineEditingRoom.set(false)">
                 Cancel
               </button>
             </div>
@@ -743,11 +742,7 @@
           <div class="inspector-lens-card" data-testid="inspector-lens-card">
             <div class="lens-header">
               <strong>🔎 Inspector Lens: {{ lens.title }} ({{ lens.subtitle }})</strong>
-              <button
-                type="button"
-                class="lens-close"
-                (click)="engine.inspectedEntity.set(null)"
-              >
+              <button type="button" class="lens-close" (click)="engine.inspectedEntity.set(null)">
                 ✕
               </button>
             </div>
@@ -924,7 +919,7 @@
                     engine.dispatchCommandIntent({
                       type: 'REST_CAMPFIRE',
                       rawInput: 'rest',
-                      source: 'HUD'
+                      source: 'HUD',
                     })
                   "
                   data-testid="rest-campfire-btn"
@@ -966,7 +961,7 @@
                     engine.dispatchCommandIntent({
                       type: 'INSPECT',
                       rawInput: 'inspect',
-                      source: 'HUD'
+                      source: 'HUD',
                     })
                   "
                 >
@@ -1010,7 +1005,7 @@
                     type: 'ENTER_PORTAL',
                     rawInput: 'portal ' + peer.gateAddress,
                     source: 'HUD',
-                    targetId: peer.gateAddress
+                    targetId: peer.gateAddress,
                   })
                 "
                 [title]="'Traverse P2P Chaos Gate Portal into ' + peer.playerName + 's realm'"
@@ -1095,10 +1090,7 @@
 
               <label>
                 <span>Add Monster</span>
-                <select
-                  [ngModel]="digSpawnMonster()"
-                  (ngModelChange)="digSpawnMonster.set($event)"
-                >
+                <select [ngModel]="digSpawnMonster()" (ngModelChange)="digSpawnMonster.set($event)">
                   <option value="NONE">None</option>
                   <option value="Chrono-Automaton">Chrono-Automaton</option>
                   <option value="Mycelial Hulk">Mycelial Hulk</option>
@@ -1248,7 +1240,7 @@
               engine.dispatchCommandIntent({
                 type: 'REST_CAMPFIRE',
                 rawInput: 'rest',
-                source: 'HUD'
+                source: 'HUD',
               })
             "
             data-testid="quick-chip-rest"
@@ -1287,9 +1279,7 @@
             placeholder="Optional terminal input (or play 100% via cards & map above)..."
             data-testid="terminal-input"
           />
-          <button type="submit" class="send-cmd-btn" data-testid="terminal-submit-btn">
-            Send
-          </button>
+          <button type="submit" class="send-cmd-btn" data-testid="terminal-submit-btn">Send</button>
         </form>
       </div>
     </section>
@@ -1312,8 +1302,8 @@
             <span class="era-badge">◈ CHAOS GATE INITIALIZATION</span>
             <h2>Awaken Your Traveler & Pocket Realm</h2>
             <p>
-              Every browser hosts a persistent dungeon in <code>IndexedDB</code>. Choose your
-              Class Core and spin your initial 3-Word Chaos Gate seed.
+              Every browser hosts a persistent dungeon in <code>IndexedDB</code>. Choose your Class
+              Core and spin your initial 3-Word Chaos Gate seed.
             </p>
           </div>
           <button
@@ -1468,7 +1458,7 @@
           <h2>
             @switch (engine.activeDrawer()) {
               @case ('PAPERDOLL') {
-                🛡 Equipment Paperdoll, Attribute Radar & Inventory
+                🛡 Equipment, Attribute Radar & Inventory
               }
               @case ('COMBAT_TELEMETRY') {
                 📊 Combat Telemetry, DPS Breakdown & RNG Histogram
@@ -1500,7 +1490,7 @@
             <div class="drawer-split-grid" data-testid="paperdoll-drawer-content">
               <div class="paperdoll-card">
                 <h3>
-                  Interactive Paperdoll (Weight: {{ engine.equippedWeight() }}/{{
+                  Equipment (Weight: {{ engine.equippedWeight() }}/{{
                     engine.character().maxWeight
                   }})
                 </h3>
@@ -1949,11 +1939,7 @@
                     (ngModelChange)="remoteHandshakeInput.set($event)"
                     placeholder="Paste Peer SDP Offer/Answer..."
                   />
-                  <button
-                    type="button"
-                    class="mini-action-btn"
-                    (click)="acceptWebRtcHandshake()"
-                  >
+                  <button type="button" class="mini-action-btn" (click)="acceptWebRtcHandshake()">
                     Connect Peer
                   </button>
                 </div>
