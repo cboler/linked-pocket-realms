@@ -1,33 +1,74 @@
 <div class="hud-viewport" role="application" aria-label="Linked Pocket Realms Tactical HUD">
   <!-- TOP TACTICAL HEADER -->
   <header class="hud-header" role="banner">
-    <div class="brand-cluster">
-      <span
-        class="gate-sigil"
-        aria-hidden="true"
-        title="Chaos Gate Anchor: Serverless P2P Pocket Realm Nexus"
-        >◈</span
-      >
-      <div class="brand-titles">
-        <h1 id="starter-title" class="brand-title">Linked Pocket Realms</h1>
-        <div
-          class="gate-address-pill"
-          data-testid="active-gate-address"
-          title="3-Word Chaos Gate Address: [Era] + [Atmosphere] + [Theme] + [Biome]"
+    <div class="header-top-row">
+      <div class="brand-cluster">
+        <span
+          class="gate-sigil"
+          aria-hidden="true"
+          title="Chaos Gate Anchor: Serverless P2P Pocket Realm Nexus"
+          >◈</span
         >
-          <span class="era-badge" title="Server Era Tier & Difficulty Multiplier">{{
-            engine.activeGateAddress().era
-          }}</span>
-          <span class="address-words">{{ engine.activeGateAddress().formatted }}</span>
-          @if (engine.isVisitingExternalRealm()) {
-            <span
-              class="customs-badge"
-              title="Customs Gate Active: Over-budget guest equipment is dynamically clamped to this realm's stat ceiling."
-            >
-              Customs Cap: {{ engine.activeRealmDelta().ruleset.maxItemStatBudget }}
-            </span>
-          }
+        <div class="brand-titles">
+          <h1 id="starter-title" class="brand-title">Linked Pocket Realms</h1>
+          <div
+            class="gate-address-pill"
+            data-testid="active-gate-address"
+            title="3-Word Chaos Gate Address: [Era] + [Atmosphere] + [Theme] + [Biome]"
+          >
+            <span class="era-badge" title="Server Era Tier & Difficulty Multiplier">{{
+              engine.activeGateAddress().era
+            }}</span>
+            <span class="address-words">{{ engine.activeGateAddress().formatted }}</span>
+            @if (engine.isVisitingExternalRealm()) {
+              <span
+                class="customs-badge"
+                title="Customs Gate Active: Over-budget guest equipment is dynamically clamped to this realm's stat ceiling."
+              >
+                Customs Cap: {{ engine.activeRealmDelta().ruleset.maxItemStatBudget }}
+              </span>
+            }
+          </div>
         </div>
+      </div>
+
+      <!-- MOBILE VIEWPORT MODE SWITCHER (SPLIT / STAGE / MAP) -->
+      <div
+        class="mobile-view-switcher"
+        role="group"
+        aria-label="Mobile Layout Mode"
+        data-testid="mobile-view-switcher"
+      >
+        <button
+          type="button"
+          class="view-mode-btn"
+          [class.active]="mobileLayoutMode() === 'SPLIT'"
+          (click)="setMobileLayoutMode('SPLIT')"
+          title="Split Deck: Map Radar + Room Stage"
+          data-testid="view-mode-split"
+        >
+          split
+        </button>
+        <button
+          type="button"
+          class="view-mode-btn"
+          [class.active]="mobileLayoutMode() === 'STAGE'"
+          (click)="setMobileLayoutMode('STAGE')"
+          title="Stage Focus: Full-screen Room Stage & Combat"
+          data-testid="view-mode-stage"
+        >
+          ⚔ stage
+        </button>
+        <button
+          type="button"
+          class="view-mode-btn"
+          [class.active]="mobileLayoutMode() === 'MAP'"
+          (click)="setMobileLayoutMode('MAP')"
+          title="Map Focus: Full-screen Topological Cartography"
+          data-testid="view-mode-map"
+        >
+          🗺 map
+        </button>
       </div>
     </div>
 
@@ -64,73 +105,84 @@
         <span aria-hidden="true">📼</span> Spectator
       </button>
     </nav>
-
-    <!-- ON-DEMAND TELEMETRY & DATA DRAWER TOGGLES -->
-    <div class="drawer-toolbar" role="toolbar" aria-label="On-Demand Data & Telemetry Drawers">
-      <button
-        type="button"
-        class="drawer-btn"
-        [class.active]="engine.activeDrawer() === 'PAPERDOLL'"
-        (click)="toggleDrawer('PAPERDOLL')"
-        title="Open 7-Slot Equipment, 5-Axis Attribute Radar Chart, and Inventory Vault"
-        data-testid="drawer-paperdoll-btn"
-      >
-        🛡 Equipment
-      </button>
-      <button
-        type="button"
-        class="drawer-btn"
-        [class.active]="engine.activeDrawer() === 'COMBAT_TELEMETRY'"
-        (click)="toggleDrawer('COMBAT_TELEMETRY')"
-        title="Open Combat DPS, Damage Mitigation Breakdown, and d100 Roll Histogram"
-        data-testid="drawer-combat-btn"
-      >
-        📊 Combat DPS
-      </button>
-      <button
-        type="button"
-        class="drawer-btn"
-        [class.active]="engine.activeDrawer() === 'REALM_ANALYTICS'"
-        (click)="toggleDrawer('REALM_ANALYTICS')"
-        title="Open Dungeon Lethality/Traffic Heatmap and Visitor Gravestones"
-        data-testid="drawer-analytics-btn"
-      >
-        🔥 Heatmap & Graves
-      </button>
-      <button
-        type="button"
-        class="drawer-btn"
-        [class.active]="engine.activeDrawer() === 'CHRONICLE'"
-        (click)="toggleDrawer('CHRONICLE')"
-        title="Open Traveler's Career Chronicle, Wealth/XP Curve, and Bestiary"
-        data-testid="drawer-chronicle-btn"
-      >
-        📜 Chronicle
-      </button>
-      <button
-        type="button"
-        class="drawer-btn"
-        [class.active]="engine.activeDrawer() === 'NETWORK'"
-        (click)="toggleDrawer('NETWORK')"
-        title="Open Serverless P2P Chaos Gate Portals (BroadcastChannel & WebRTC) and Realm Cartridges"
-        data-testid="drawer-network-btn"
-      >
-        🌐 P2P Gate ({{ transport.activeVisitorsList().length }})
-      </button>
-      <button
-        type="button"
-        class="drawer-btn"
-        (click)="engine.needsOnboarding.set(true)"
-        title="Re-open Character Awakening & Chaos Gate Spin Modal"
-        data-testid="open-onboarding-btn"
-      >
-        ✨ Awaken
-      </button>
-    </div>
   </header>
 
+  <!-- THUMB-ZONE BOTTOM NAVIGATION DOCK (MOBILE) / TOP TOOLBAR (DESKTOP BROWSER) -->
+  <nav
+    class="drawer-toolbar"
+    role="toolbar"
+    aria-label="On-Demand Data & Telemetry Drawers"
+    data-testid="drawer-toolbar"
+  >
+    <button
+      type="button"
+      class="drawer-btn"
+      [class.active]="engine.activeDrawer() === 'PAPERDOLL'"
+      (click)="toggleDrawer('PAPERDOLL')"
+      title="Open 7-Slot Equipment, 5-Axis Attribute Radar Chart, and Inventory Vault"
+      data-testid="drawer-paperdoll-btn"
+    >
+      <span class="drawer-icon" aria-hidden="true">🛡</span>
+      <span class="drawer-label">Equipment</span>
+    </button>
+    <button
+      type="button"
+      class="drawer-btn"
+      [class.active]="engine.activeDrawer() === 'COMBAT_TELEMETRY'"
+      (click)="toggleDrawer('COMBAT_TELEMETRY')"
+      title="Open Combat DPS, Damage Mitigation Breakdown, and d100 Roll Histogram"
+      data-testid="drawer-combat-btn"
+    >
+      <span class="drawer-icon" aria-hidden="true">📊</span>
+      <span class="drawer-label">Combat DPS</span>
+    </button>
+    <button
+      type="button"
+      class="drawer-btn"
+      [class.active]="engine.activeDrawer() === 'REALM_ANALYTICS'"
+      (click)="toggleDrawer('REALM_ANALYTICS')"
+      title="Open Dungeon Lethality/Traffic Heatmap and Visitor Gravestones"
+      data-testid="drawer-analytics-btn"
+    >
+      <span class="drawer-icon" aria-hidden="true">🔥</span>
+      <span class="drawer-label">Heatmap &amp; Graves</span>
+    </button>
+    <button
+      type="button"
+      class="drawer-btn"
+      [class.active]="engine.activeDrawer() === 'CHRONICLE'"
+      (click)="toggleDrawer('CHRONICLE')"
+      title="Open Traveler's Career Chronicle, Wealth/XP Curve, and Bestiary"
+      data-testid="drawer-chronicle-btn"
+    >
+      <span class="drawer-icon" aria-hidden="true">📜</span>
+      <span class="drawer-label">Chronicle</span>
+    </button>
+    <button
+      type="button"
+      class="drawer-btn"
+      [class.active]="engine.activeDrawer() === 'NETWORK'"
+      (click)="toggleDrawer('NETWORK')"
+      title="Open Serverless P2P Chaos Gate Portals (BroadcastChannel & WebRTC) and Realm Cartridges"
+      data-testid="drawer-network-btn"
+    >
+      <span class="drawer-icon" aria-hidden="true">🌐</span>
+      <span class="drawer-label">P2P Gate ({{ transport.activeVisitorsList().length }})</span>
+    </button>
+    <button
+      type="button"
+      class="drawer-btn"
+      (click)="engine.needsOnboarding.set(true)"
+      title="Re-open Character Awakening & Chaos Gate Spin Modal"
+      data-testid="open-onboarding-btn"
+    >
+      <span class="drawer-icon" aria-hidden="true">✨</span>
+      <span class="drawer-label">Awaken</span>
+    </button>
+  </nav>
+
   <!-- MAIN WORKSPACE GRID -->
-  <main class="hud-main" role="main">
+  <main class="hud-main" role="main" [attr.data-mobile-view]="mobileLayoutMode()">
     <!-- LEFT PANEL: INTERACTIVE CLICK-TO-MOVE SVG NODE MAP -->
     <section class="cartography-panel" aria-label="Interactive Click-to-Move Realm Map">
       <div class="panel-subbar">
@@ -1454,6 +1506,7 @@
       data-testid="active-drawer-panel"
     >
       <div class="drawer-sheet">
+        <div class="sheet-grab-handle" aria-hidden="true"></div>
         <div class="drawer-header">
           <h2>
             @switch (engine.activeDrawer()) {

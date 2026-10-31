@@ -31,11 +31,22 @@ test.describe('Linked Pocket Realms — Tactical HUD, Perspectives & Drawers E2E
     await expect(page.getByTestId('realm-svg-map')).toBeVisible();
     await expect(page.getByTestId('persistent-room-stage')).toBeVisible();
 
-    // 3. Verify zero horizontal overflow
+    // 3. Verify zero horizontal overflow & Mobile Layout Switcher on narrow viewports
     const hasHorizontalOverflow = await page.evaluate(() => {
       return document.documentElement.scrollWidth > window.innerWidth;
     });
     expect(hasHorizontalOverflow).toBeFalsy();
+
+    const mobileSwitcher = page.getByTestId('mobile-view-switcher');
+    if (await mobileSwitcher.isVisible()) {
+      await page.getByTestId('view-mode-stage').click();
+      await expect(page.getByTestId('persistent-room-stage')).toBeVisible();
+      await page.getByTestId('view-mode-map').click();
+      await expect(page.getByTestId('realm-svg-map')).toBeVisible();
+      await page.getByTestId('view-mode-split').click();
+      await expect(page.getByTestId('realm-svg-map')).toBeVisible();
+      await expect(page.getByTestId('persistent-room-stage')).toBeVisible();
+    }
 
     // 4. Tactile Point-and-Click Navigation on Persistent Room Stage & Syntax Echo Verification
     await expect(page.getByTestId('stage-exits-bar')).toBeVisible();

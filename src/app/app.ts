@@ -85,6 +85,10 @@ export class App {
   readonly onboardingTheme = signal<StructuralTheme>('Clockwork');
   readonly onboardingBiome = signal<BiomeNoun>('Catacombs');
 
+  // Mobile-First Viewport & Ergonomic State
+  readonly mobileLayoutMode = signal<'SPLIT' | 'STAGE' | 'MAP'>('SPLIT');
+  readonly gateDialerExpanded = signal<boolean>(false);
+
   // Interactive Stage & Map Popovers / Tooltips
   readonly hoveredMapNode = signal<{
     room: RoomNode;
@@ -509,8 +513,15 @@ export class App {
     this.syncArchitectEditorWithSelectedRoom();
   }
 
+  setMobileLayoutMode(mode: 'SPLIT' | 'STAGE' | 'MAP'): void {
+    this.mobileLayoutMode.set(mode);
+  }
+
   setPerspective(role: PerspectiveRole): void {
     this.engine.perspective.set(role);
+    if (this.mobileLayoutMode() === 'STAGE') {
+      this.mobileLayoutMode.set('SPLIT');
+    }
     if (role === 'ARCHITECT') {
       this.syncArchitectEditorWithSelectedRoom();
     } else if (role === 'SPECTATOR' && !this.engine.activeReplayEntry()) {

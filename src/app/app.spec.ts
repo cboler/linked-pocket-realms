@@ -201,8 +201,17 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
       expect(compiled.querySelector('[data-testid="realm-svg-map"]')).toBeTruthy();
 
       const app = fixture.componentInstance;
+      expect(app.mobileLayoutMode()).toBe('SPLIT');
+      app.setMobileLayoutMode('STAGE');
+      fixture.detectChanges();
+      expect(compiled.querySelector('main.hud-main')?.getAttribute('data-mobile-view')).toBe(
+        'STAGE',
+      );
+
+      // Switching perspective automatically restores SPLIT if in STAGE focus so docks are visible
       app.setPerspective('ARCHITECT');
       fixture.detectChanges();
+      expect(app.mobileLayoutMode()).toBe('SPLIT');
       expect(compiled.querySelector('[data-testid="architect-dock"]')).toBeTruthy();
 
       app.toggleDrawer('PAPERDOLL');
