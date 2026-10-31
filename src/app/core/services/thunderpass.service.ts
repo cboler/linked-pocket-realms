@@ -243,6 +243,7 @@ export class ThunderpassService {
       triChord: addr.formatted,
       forgedItems: char.inventory.filter((i) => i.provenance === 'Architect Forged'),
       encounterTimestampIso: new Date().toISOString(),
+      heraldGreeting: char.heraldGreeting?.formatted,
     };
 
     const sporePayload: ThunderpassSporePayload = {
@@ -250,6 +251,7 @@ export class ThunderpassService {
       playerName: char.name,
       triChord: addr.formatted,
       echo: localEcho,
+      heraldGreeting: char.heraldGreeting?.formatted,
       timestampMs: Date.now(),
     };
 
@@ -312,6 +314,7 @@ export class ThunderpassService {
       remoteSpore.echo,
     );
 
+    const greeting = remoteSpore.heraldGreeting || remoteSpore.echo?.heraldGreeting;
     const encounter: ThunderpassEncounter = {
       id: `enc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       zoneHash,
@@ -321,14 +324,16 @@ export class ThunderpassService {
       timestampIso: new Date().toISOString(),
       echo: remoteSpore.echo,
       roomsGrafted: graftedRooms.map((r) => r.id),
+      heraldGreeting: greeting,
     };
 
     this.streetPassLog.update((prev) => [encounter, ...prev.slice(0, 49)]);
     void this.saveStreetLog();
 
+    const greetingNotice = greeting ? ` Motto: "${greeting}"` : '';
     this.engine.appendFeed(
       'NETWORK',
-      `⚡ [Thunderpass StreetPass Match!] Crossed paths with ${remoteSpore.playerName} (${remoteSpore.triChord})! Sprouted ${graftedRooms.length} Overgrowth incursion rooms into your realm.`,
+      `⚡ [Thunderpass StreetPass Match!] Crossed paths with ${remoteSpore.playerName} (${remoteSpore.triChord})!${greetingNotice} Sprouted ${graftedRooms.length} Overgrowth incursion rooms into your realm.`,
     );
   }
 
@@ -345,6 +350,7 @@ export class ThunderpassService {
       archetype: 'Chronomancer',
       level: 4,
       triChord,
+      heraldGreeting: 'Praise the Harmonic Loom! Time to triumph.',
       forgedItems: [
         {
           id: `sim-item-${Date.now()}`,
@@ -366,6 +372,7 @@ export class ThunderpassService {
       playerName: peerName,
       triChord,
       echo: mockEcho,
+      heraldGreeting: 'Praise the Harmonic Loom! Time to triumph.',
       timestampMs: Date.now(),
     };
 

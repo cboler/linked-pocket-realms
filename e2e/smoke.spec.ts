@@ -20,6 +20,9 @@ test.describe('Linked Pocket Realms — Tactical HUD, Perspectives & Drawers E2E
     const onboardingModal = page.getByTestId('onboarding-modal');
     await expect(onboardingModal).toBeVisible();
     await page.getByTestId('onboard-class-Vanguard').click();
+    await expect(page.getByTestId('onboarding-herald-section')).toBeVisible();
+    await page.getByTestId('roll-herald-greeting-btn').click();
+    await expect(page.getByTestId('herald-motto-preview')).toBeVisible();
     await page.getByTestId('confirm-awakening-btn').click();
     await expect(onboardingModal).toBeHidden();
 
@@ -61,6 +64,24 @@ test.describe('Linked Pocket Realms — Tactical HUD, Perspectives & Drawers E2E
     await page.getByTestId('stage-exit-N').click();
     await expect(page.getByTestId('current-room-title')).toContainText('Vaulted Crypt 1');
     await expect(page.getByTestId('syntax-echo-badge').first()).toContainText('[cmd: n]');
+
+    // 4b. Local P2P Broadcast Chat & Adventurer Roster ("Who's Here")
+    await page.getByTestId('presence-roster-pill').click();
+    await expect(page.getByTestId('terminal-log')).toContainText('👥 [Adventurers In Realm]');
+
+    const cmdInput = page.getByTestId('terminal-input');
+    await cmdInput.fill('say Greetings from the outer crypts!');
+    await page.getByTestId('terminal-submit-btn').click();
+    await expect(page.getByTestId('terminal-log')).toContainText(
+      '💬 [Say] You: "Greetings from the outer crypts!"',
+    );
+
+    await cmdInput.fill('@greeting roll');
+    await page.getByTestId('terminal-submit-btn').click();
+    await expect(page.getByTestId('terminal-log')).toContainText('🎲 [Herald Greeting Rolled]');
+
+    await page.getByTestId('quick-chip-who').click();
+    await expect(page.getByTestId('terminal-log')).toContainText('Chat & Herald:');
 
     // 5. Interact with Monster Card directly on the Persistent Room Stage
     const firstAttackBtn = page.locator('[data-testid^="attack-mob-btn-"]').first();
@@ -105,6 +126,7 @@ test.describe('Linked Pocket Realms — Tactical HUD, Perspectives & Drawers E2E
     // Verify Loom sub-tabs
     await page.getByTestId('loom-tab-thunderpass').click();
     await expect(page.getByTestId('toggle-walk-mode-btn')).toBeVisible();
+    await expect(page.getByTestId('herald-tuning-card')).toBeVisible();
 
     await page.getByTestId('loom-tab-webrtc').click();
     await page.getByTestId('traverse-portal-peer-astral-echo').click();

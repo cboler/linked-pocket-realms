@@ -20,6 +20,7 @@ import {
   HeatmapMode,
   MonsterEntity,
   NetworkPacket,
+  P2PChatMessage,
   PaperdollSlotType,
   PassiveTrait,
   PerspectiveRole,
@@ -32,6 +33,12 @@ import {
   TelemetryLog,
   TerminalFeedLine,
   TravelerEcho,
+  HeraldGreeting,
+  HERALD_ADJECTIVES,
+  HERALD_NOUNS,
+  HERALD_VERBS,
+  formatHeraldGreeting,
+  rollRandomHeraldGreeting,
 } from '../models/domain.models';
 import { ChaosGateService, createMulberry32 } from './chaos-gate.service';
 import { LegendRegistryService } from './legend-registry.service';
@@ -392,6 +399,7 @@ export class MudEngineService implements OnDestroy {
 
   // Terminal Feed
   readonly terminalFeed = signal<TerminalFeedLine[]>([]);
+  readonly chatLog = signal<P2PChatMessage[]>([]);
 
   // Telemetry & Analytics State
   readonly telemetry = signal<TelemetryLog>(this.createInitialTelemetry());
@@ -513,6 +521,7 @@ export class MudEngineService implements OnDestroy {
       inCombat: true,
       lastSeenMs: Date.now(),
       transport: 'BroadcastChannel',
+      heraldGreeting: 'Beware: Eldritch Shadow lurks ahead.',
     });
 
     this.startAtbLoop();
@@ -530,6 +539,9 @@ export class MudEngineService implements OnDestroy {
     }
     const savedChar = await this.storage.loadCharacterState();
     if (savedChar && savedChar.name) {
+      if (!savedChar.heraldGreeting) {
+        savedChar.heraldGreeting = formatHeraldGreeting(0, 'Radiant', 'Beacon', 'triumph');
+      }
       this.character.set(savedChar);
       this.needsOnboarding.set(false);
     } else {
@@ -560,6 +572,7 @@ export class MudEngineService implements OnDestroy {
         char.level,
         this.inActiveCombat(),
         cartridge,
+        char.heraldGreeting?.formatted,
       );
     }, 4000);
   }
@@ -774,6 +787,12 @@ export class MudEngineService implements OnDestroy {
       case 'BARTER_ECHO':
         if (intent.targetId && intent.payload?.['itemId']) {
           this.barterEcho(intent.targetId, intent.payload['itemId']);
+        }
+        break;
+      case 'CHAT_MESSAGE':
+        if (intent.payload?.['text']) {
+          const channel = intent.payload['channel'] === 'ROOM' ? 'ROOM' : 'SHOUT';
+          this.broadcastChatMessage(channel, intent.payload['text']);
         }
         break;
     }
@@ -999,9 +1018,104 @@ export class MudEngineService implements OnDestroy {
       return intent;
     }
 
+    // P2P Broadcast Chat: say / ' (room) and shout / chat / broadcast (realm-wide)
+    if (verb === 'say' || verb === '@say' || lower.startsWith("'")) {
+      const msg = lower.startsWith("'")
+        ? trimmed.substring(1).trim()
+        : parts.slice(1).join(' ').trim();
+      if (!msg) {
+        this.appendFeed('SYSTEM', "Say what? Syntax: say <message> or '<message>");
+        return null;
+      }
+      const intent: CommandIntent = {
+        type: 'CHAT_MESSAGE',
+        rawInput: trimmed,
+        source: 'TERMINAL',
+        payload: { channel: 'ROOM', text: msg },
+      };
+      this.dispatchCommandIntent(intent);
+      return intent;
+    }
+
+    if (
+      verb === 'shout' ||
+      verb === 'yell' ||
+      verb === 'chat' ||
+      verb === '@chat' ||
+      verb === '@shout' ||
+      verb === 'broadcast'
+    ) {
+      const msg = parts.slice(1).join(' ').trim();
+      if (!msg) {
+        this.appendFeed('SYSTEM', 'Broadcast what? Syntax: shout <message> or chat <message>');
+        return null;
+      }
+      const intent: CommandIntent = {
+        type: 'CHAT_MESSAGE',
+        rawInput: trimmed,
+        source: 'TERMINAL',
+        payload: { channel: 'SHOUT', text: msg },
+      };
+      this.dispatchCommandIntent(intent);
+      return intent;
+    }
+
+    if (verb === 'who' || verb === '@who' || verb === 'players' || verb === 'adventurers') {
+      this.listAdventurersInRealm();
+      return { type: 'LOOK', rawInput: trimmed, source: 'TERMINAL' };
+    }
+
+    if (verb === '@greeting' || verb === '@motto' || verb === '@herald' || verb === 'motto') {
+      const rest = parts.slice(1).join(' ').trim();
+      if (!rest) {
+        const cur = this.character().heraldGreeting?.formatted;
+        this.appendFeed(
+          'SYSTEM',
+          `📜 Current Herald Motto: "${cur}". Commands: @greeting roll, or @greeting <tmplId> <adjective> <noun> [verb]`,
+        );
+        return { type: 'LOOK', rawInput: trimmed, source: 'TERMINAL' };
+      }
+      if (rest.toLowerCase() === 'roll' || rest.toLowerCase() === 'random') {
+        this.rollRandomHeraldGreeting();
+        return { type: 'LOOK', rawInput: trimmed, source: 'TERMINAL' };
+      }
+
+      let tmplId = 0;
+      let adj: string = HERALD_ADJECTIVES[0];
+      let noun: string = HERALD_NOUNS[0];
+      let verbWord: string = HERALD_VERBS[0];
+
+      const subParts = rest.split(/\s+/);
+      let offset = 0;
+      if (!isNaN(parseInt(subParts[0], 10))) {
+        tmplId = parseInt(subParts[0], 10);
+        offset = 1;
+      }
+      if (subParts[offset]) {
+        const foundAdj = HERALD_ADJECTIVES.find(
+          (a) => a.toLowerCase() === subParts[offset].toLowerCase(),
+        );
+        if (foundAdj) adj = foundAdj;
+      }
+      if (subParts[offset + 1]) {
+        const foundNoun = HERALD_NOUNS.find(
+          (n) => n.toLowerCase() === subParts[offset + 1].toLowerCase(),
+        );
+        if (foundNoun) noun = foundNoun;
+      }
+      if (subParts[offset + 2]) {
+        const foundVerb = HERALD_VERBS.find(
+          (v) => v.toLowerCase() === subParts[offset + 2].toLowerCase(),
+        );
+        if (foundVerb) verbWord = foundVerb;
+      }
+      this.setHeraldGreeting(tmplId, adj, noun, verbWord);
+      return { type: 'LOOK', rawInput: trimmed, source: 'TERMINAL' };
+    }
+
     this.appendFeed(
       'SYSTEM',
-      `Unrecognized command "${verb}". Try: look, n/s/e/w, cast sunder <target>, inspect <target>, rest, @dig E <Title>, @describe <Text>, @craft Main-Hand <Name>.`,
+      `Unrecognized command "${verb}". Try: say <msg>, shout <msg>, who, look, n/s/e/w, cast sunder <target>, inspect, rest, @prune.`,
     );
     return null;
   }
@@ -1765,10 +1879,18 @@ export class MudEngineService implements OnDestroy {
     atmosphere: AtmospherePrefix,
     theme: StructuralTheme,
     biome: BiomeNoun,
+    heraldGreeting?: HeraldGreeting,
   ): void {
     const cleanName = playerName.trim() || 'Wayfarer_01';
     this.switchArchetype(archetype);
-    this.character.update((c) => ({ ...c, name: cleanName }));
+    this.character.update((c) => ({
+      ...c,
+      name: cleanName,
+      heraldGreeting:
+        heraldGreeting ??
+        c.heraldGreeting ??
+        formatHeraldGreeting(0, 'Radiant', 'Beacon', 'triumph'),
+    }));
     this.dialChaosGate(era, atmosphere, theme, biome, false);
     this.needsOnboarding.set(false);
     void this.storage.saveCharacterState(this.character());
@@ -2515,6 +2637,114 @@ export class MudEngineService implements OnDestroy {
     return true;
   }
 
+  broadcastChatMessage(channel: 'ROOM' | 'SHOUT', text: string): P2PChatMessage {
+    const char = this.character();
+    const room = this.currentRoom();
+    const cleanText = text.trim();
+
+    const chatMsg: P2PChatMessage = {
+      id: `chat-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      senderPeerId: this.transport.localPeerId,
+      senderName: char.name,
+      channel,
+      text: cleanText,
+      roomId: room.id,
+      roomTitle: room.title,
+      timestampIso: new Date().toISOString(),
+    };
+
+    this.chatLog.update((prev) => [chatMsg, ...prev].slice(0, 50));
+
+    if (channel === 'ROOM') {
+      this.appendFeed('CHAT', `💬 [Say] You: "${cleanText}"`, undefined, `[cmd: say ${cleanText}]`);
+    } else {
+      this.appendFeed(
+        'CHAT',
+        `📢 [Broadcast] You: "${cleanText}"`,
+        undefined,
+        `[cmd: shout ${cleanText}]`,
+      );
+    }
+
+    this.transport.broadcastChatMessage(
+      char.name,
+      this.activeGateAddress().formatted,
+      room.id,
+      chatMsg,
+    );
+
+    return chatMsg;
+  }
+
+  setHeraldGreeting(
+    templateId: number,
+    adjective: string,
+    noun: string,
+    verb: string,
+  ): HeraldGreeting {
+    const greeting = formatHeraldGreeting(templateId, adjective, noun, verb);
+    this.character.update((c) => ({ ...c, heraldGreeting: greeting }));
+    void this.storage.saveCharacterState(this.character());
+    this.appendFeed(
+      'SYSTEM',
+      `📜 [Herald Greeting Updated] "${greeting.formatted}"`,
+      undefined,
+      `[@greeting ${greeting.formatted}]`,
+    );
+    return greeting;
+  }
+
+  rollRandomHeraldGreeting(): HeraldGreeting {
+    const greeting = rollRandomHeraldGreeting();
+    this.character.update((c) => ({ ...c, heraldGreeting: greeting }));
+    void this.storage.saveCharacterState(this.character());
+    this.appendFeed(
+      'SYSTEM',
+      `🎲 [Herald Greeting Rolled] "${greeting.formatted}"`,
+      undefined,
+      `[@greeting ${greeting.formatted}]`,
+    );
+    return greeting;
+  }
+
+  listAdventurersInRealm(): void {
+    const char = this.character();
+    const room = this.currentRoom();
+    const visitors = this.transport.activeVisitorsList();
+
+    this.appendFeed('SYSTEM', `👥 [Adventurers In Realm] (${visitors.length + 1} Present)`);
+    const myGreeting = char.heraldGreeting?.formatted
+      ? ` — "${char.heraldGreeting.formatted}"`
+      : '';
+    this.appendFeed(
+      'SYSTEM',
+      `• You: ${char.name} (Lv.${char.level} ${char.archetype}) in "${room.title}" [Host]${myGreeting}`,
+    );
+
+    if (visitors.length === 0) {
+      this.appendFeed(
+        'SYSTEM',
+        'No other adventurers detected in your mesh right now. Open another browser tab or connect via the Resonance Loom to delve & chat together!',
+      );
+    } else {
+      for (const v of visitors) {
+        const location =
+          v.currentRoomId === room.id
+            ? `Here with you (${room.title})`
+            : `Sector ${v.currentRoomId}`;
+        const peerGreeting = v.heraldGreeting ? ` — "${v.heraldGreeting}"` : '';
+        this.appendFeed(
+          'SYSTEM',
+          `• ${v.playerName} (Lv.${v.level} ${v.archetype}) -- ${location} [${v.transport}]${peerGreeting}`,
+        );
+      }
+    }
+    this.appendFeed(
+      'SYSTEM',
+      'Chat & Herald: say <msg> (room), shout <msg> (realm), who (players), @greeting roll (change motto).',
+    );
+  }
+
   private onNetworkPacket(pkt: NetworkPacket): void {
     if (pkt.type === 'GATE_BEACON' && pkt.realmCartridgeBase64) {
       const imported = this.storage.importCartridgeBase64(pkt.realmCartridgeBase64);
@@ -2525,6 +2755,24 @@ export class MudEngineService implements OnDestroy {
       const remoteAddr = this.chaosGate.parseAddressString(pkt.spore.triChord);
       if (remoteAddr) {
         this.graftOvergrowthIncursion(remoteAddr, pkt.spore.playerName, pkt.spore.echo);
+      }
+    } else if (pkt.type === 'CHAT_MESSAGE' && pkt.chat) {
+      const chat = pkt.chat;
+      this.chatLog.update((prev) => [chat, ...prev].slice(0, 50));
+      if (chat.channel === 'ROOM') {
+        if (pkt.roomId === this.currentRoom().id) {
+          this.appendFeed('CHAT', `💬 [Say] ${pkt.senderName}: "${chat.text}"`);
+        } else {
+          this.appendFeed(
+            'CHAT',
+            `💬 [Overheard] ${pkt.senderName} speaks from ${chat.roomTitle || 'a nearby chamber'}: "${chat.text}"`,
+          );
+        }
+      } else {
+        this.appendFeed(
+          'CHAT',
+          `📢 [Broadcast] ${pkt.senderName} (@${chat.roomTitle || 'The Void'}): "${chat.text}"`,
+        );
       }
     } else if (pkt.type === 'COOP_COMBAT_INTENT' && pkt.combatIntent) {
       this.appendFeed(
@@ -2739,6 +2987,7 @@ export class MudEngineService implements OnDestroy {
         'chrono-automaton': { kills: 2, inspectedLevel: 2 },
       },
       resonanceShards: 25,
+      heraldGreeting: formatHeraldGreeting(0, 'Radiant', 'Beacon', 'triumph'),
     };
   }
 

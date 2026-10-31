@@ -659,6 +659,11 @@
         <span class="target-label"
           >Echo: <strong>{{ echo.playerName }}</strong> ({{ echo.triChord }})</span
         >
+        @if (echo.heraldGreeting) {
+          <div class="echo-herald-motto" data-testid="fp-echo-greeting">
+            💬 &ldquo;{{ echo.heraldGreeting }}&rdquo;
+          </div>
+        }
         @if (echo.forgedItems.length > 0) {
           <button
             type="button"

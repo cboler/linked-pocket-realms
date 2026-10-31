@@ -7,6 +7,7 @@ import {
   GuestbookGravestoneEntry,
   NetworkPacket,
   NetworkPeerVisitor,
+  P2PChatMessage,
 } from '../models/domain.models';
 
 const CHANNEL_NAME = 'linked_pocket_realms_chaos_gate_bus_v1';
@@ -81,6 +82,7 @@ export class TransportService implements OnDestroy {
             inCombat: packet.visitorState?.inCombat ?? existing?.inCombat ?? false,
             lastSeenMs: Date.now(),
             transport,
+            heraldGreeting: packet.heraldGreeting || existing?.heraldGreeting,
           },
         };
       });
@@ -126,6 +128,7 @@ export class TransportService implements OnDestroy {
     level: number,
     inCombat: boolean,
     realmCartridgeBase64?: string,
+    heraldGreeting?: string,
   ): void {
     this.sendPacket({
       senderName,
@@ -133,6 +136,7 @@ export class TransportService implements OnDestroy {
       gateAddress,
       roomId,
       realmCartridgeBase64,
+      heraldGreeting,
       visitorState: {
         archetype,
         level,
@@ -186,6 +190,40 @@ export class TransportService implements OnDestroy {
     });
   }
 
+  broadcastChatMessage(
+    senderName: string,
+    gateAddress: string,
+    roomId: string,
+    chat: P2PChatMessage,
+  ): NetworkPacket {
+    return this.sendPacket({
+      senderName,
+      type: 'CHAT_MESSAGE',
+      gateAddress,
+      roomId,
+      chat,
+    });
+  }
+
+  /**
+   * Inject a packet directly into the local transport stream for testing or simulation
+   */
+  injectSimulatedPacket(packet: Partial<NetworkPacket>): NetworkPacket {
+    const fullPacket: NetworkPacket = {
+      packetId:
+        packet.packetId || `sim-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      senderPeerId: packet.senderPeerId || 'peer-simulated',
+      senderName: packet.senderName || 'Simulated_Traveler',
+      timestampMs: packet.timestampMs || Date.now(),
+      type: packet.type || 'CHAT_MESSAGE',
+      gateAddress: packet.gateAddress || 'Θ: Scorching Clockwork Catacombs',
+      roomId: packet.roomId || 'room-0',
+      ...packet,
+    };
+    this.handleIncomingPacket(fullPacket, 'BroadcastChannel');
+    return fullPacket;
+  }
+
   /**
    * Simulate a local Loopback Peer Portal for single-tab testing or demo discovery
    */
@@ -200,6 +238,7 @@ export class TransportService implements OnDestroy {
         gateAddress: peer.gateAddress,
         roomId: peer.currentRoomId,
         realmCartridgeBase64: cartridgeBase64,
+        heraldGreeting: peer.heraldGreeting,
         visitorState: {
           archetype: peer.archetype,
           level: peer.level,

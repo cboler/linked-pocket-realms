@@ -33,7 +33,7 @@
           <!-- OVERGROWTH & RESONANCE SHARDS METER PILL -->
           <div
             class="overgrowth-meter-pill"
-            title="Overgrowth Incursion Encroachment & Resonance Shards"
+            title="Overgrowth Incursion Encroachment, Resonance Shards & Adventurers"
             data-testid="overgrowth-meter-pill"
           >
             <span class="meter-item overgrowth-item" [class.alert]="engine.overgrowthCount() > 0">
@@ -42,6 +42,15 @@
             <span class="meter-item shards-item">
               💎 Shards: <strong>{{ engine.character().resonanceShards || 0 }}</strong>
             </span>
+            <button
+              type="button"
+              class="meter-item presence-item"
+              (click)="engine.listAdventurersInRealm()"
+              title="Inspect adventurers currently in realm"
+              data-testid="presence-roster-pill"
+            >
+              👥 Adventurers: <strong>{{ transport.activeVisitorsList().length + 1 }}</strong>
+            </button>
           </div>
         </div>
       </div>
@@ -1392,6 +1401,33 @@
           </button>
           <button
             type="button"
+            class="quick-chip chat-chip"
+            (click)="quickSayPrompt()"
+            title="Chat in current chamber (say <message>)"
+            data-testid="quick-chip-say"
+          >
+            💬 Say
+          </button>
+          <button
+            type="button"
+            class="quick-chip chat-chip"
+            (click)="quickShoutPrompt()"
+            title="Broadcast chat across realm (shout <message>)"
+            data-testid="quick-chip-shout"
+          >
+            📢 Shout
+          </button>
+          <button
+            type="button"
+            class="quick-chip"
+            (click)="engine.listAdventurersInRealm()"
+            title="List adventurers in realm (who)"
+            data-testid="quick-chip-who"
+          >
+            👥 Who
+          </button>
+          <button
+            type="button"
             class="quick-chip"
             (click)="
               engine.dispatchCommandIntent({
@@ -1433,7 +1469,7 @@
             autocomplete="off"
             [ngModel]="terminalCommandText()"
             (ngModelChange)="terminalCommandText.set($event)"
-            placeholder="Optional terminal input (or play 100% via cards & map above)..."
+            placeholder="say <msg>, shout <msg>, who, look, rest, n/s/e/w (or play via cards above)..."
             data-testid="terminal-input"
           />
           <button type="submit" class="send-cmd-btn" data-testid="terminal-submit-btn">Send</button>
@@ -1584,6 +1620,89 @@
             <span class="preview-chip">
               <strong>Sanctum:</strong> {{ onboardingBiome() }} Boss Chamber
             </span>
+          </div>
+        </div>
+
+        <!-- Step 3: Traveler's Herald Greeting (StreetPass & Incursion Motto) -->
+        <div class="onboarding-section" data-testid="onboarding-herald-section">
+          <div class="onboard-gate-header">
+            <span>3. Traveler's Herald Greeting (StreetPass & Proximity Motto)</span>
+            <button
+              type="button"
+              class="mini-action-btn accent"
+              (click)="rollHeraldGreeting()"
+              data-testid="roll-herald-greeting-btn"
+            >
+              🎲 Roll Random Motto
+            </button>
+          </div>
+          <p class="section-help-text">
+            Clean, short, and sweet. Transmitted to peers who connect to your MUD or cross paths on
+            Thunderpass walks.
+          </p>
+
+          <div class="herald-motto-preview-box" data-testid="herald-motto-preview">
+            💬 &ldquo;{{ heraldPreview() }}&rdquo;
+          </div>
+
+          <div class="herald-selectors-grid">
+            <label class="herald-select-col">
+              <span class="col-label">Template</span>
+              <select
+                aria-label="Herald Greeting Template"
+                [ngModel]="heraldTemplateId()"
+                (ngModelChange)="heraldTemplateId.set(+$event)"
+                data-testid="herald-template-select"
+              >
+                @for (t of heraldTemplates; track t.id) {
+                  <option [value]="t.id">{{ t.pattern }}</option>
+                }
+              </select>
+            </label>
+
+            <label class="herald-select-col">
+              <span class="col-label">Adjective</span>
+              <select
+                aria-label="Herald Adjective"
+                [ngModel]="heraldAdjective()"
+                (ngModelChange)="heraldAdjective.set($event)"
+                data-testid="herald-adj-select"
+              >
+                @for (adj of heraldAdjectives; track adj) {
+                  <option [value]="adj">{{ adj }}</option>
+                }
+              </select>
+            </label>
+
+            <label class="herald-select-col">
+              <span class="col-label">Noun</span>
+              <select
+                aria-label="Herald Noun"
+                [ngModel]="heraldNoun()"
+                (ngModelChange)="heraldNoun.set($event)"
+                data-testid="herald-noun-select"
+              >
+                @for (noun of heraldNouns; track noun) {
+                  <option [value]="noun">{{ noun }}</option>
+                }
+              </select>
+            </label>
+
+            @if (heraldTemplates[heraldTemplateId()].usesVerb) {
+              <label class="herald-select-col">
+                <span class="col-label">Verb</span>
+                <select
+                  aria-label="Herald Verb"
+                  [ngModel]="heraldVerb()"
+                  (ngModelChange)="heraldVerb.set($event)"
+                  data-testid="herald-verb-select"
+                >
+                  @for (verb of heraldVerbs; track verb) {
+                    <option [value]="verb">{{ verb }}</option>
+                  }
+                </select>
+              </label>
+            }
           </div>
         </div>
 
@@ -2330,6 +2449,102 @@
                     </div>
                   </div>
 
+                  <!-- HERALD GREETING TUNING CARD -->
+                  <div class="telemetry-card" data-testid="herald-tuning-card">
+                    <div class="card-header-flex">
+                      <h3>Traveler's Herald Greeting (StreetPass Motto)</h3>
+                      <button
+                        type="button"
+                        class="mini-action-btn accent"
+                        (click)="rollHeraldGreeting()"
+                        data-testid="loom-roll-herald-btn"
+                      >
+                        🎲 Roll Random
+                      </button>
+                    </div>
+                    <p class="card-help">
+                      Clean and curated. Broadcast to peers who connect to your MUD or cross paths
+                      on Thunderpass walks.
+                    </p>
+
+                    <div class="herald-motto-preview-box">
+                      Active:
+                      <strong
+                        >&ldquo;{{ engine.character().heraldGreeting.formatted }}&rdquo;</strong
+                      >
+                    </div>
+
+                    <div class="herald-selectors-grid">
+                      <label class="herald-select-col">
+                        <span class="col-label">Template</span>
+                        <select
+                          aria-label="Herald Greeting Template"
+                          [ngModel]="heraldTemplateId()"
+                          (ngModelChange)="heraldTemplateId.set(+$event)"
+                        >
+                          @for (t of heraldTemplates; track t.id) {
+                            <option [value]="t.id">{{ t.pattern }}</option>
+                          }
+                        </select>
+                      </label>
+
+                      <label class="herald-select-col">
+                        <span class="col-label">Adjective</span>
+                        <select
+                          aria-label="Herald Adjective"
+                          [ngModel]="heraldAdjective()"
+                          (ngModelChange)="heraldAdjective.set($event)"
+                        >
+                          @for (adj of heraldAdjectives; track adj) {
+                            <option [value]="adj">{{ adj }}</option>
+                          }
+                        </select>
+                      </label>
+
+                      <label class="herald-select-col">
+                        <span class="col-label">Noun</span>
+                        <select
+                          aria-label="Herald Noun"
+                          [ngModel]="heraldNoun()"
+                          (ngModelChange)="heraldNoun.set($event)"
+                        >
+                          @for (noun of heraldNouns; track noun) {
+                            <option [value]="noun">{{ noun }}</option>
+                          }
+                        </select>
+                      </label>
+
+                      @if (heraldTemplates[heraldTemplateId()].usesVerb) {
+                        <label class="herald-select-col">
+                          <span class="col-label">Verb</span>
+                          <select
+                            aria-label="Herald Verb"
+                            [ngModel]="heraldVerb()"
+                            (ngModelChange)="heraldVerb.set($event)"
+                          >
+                            @for (verb of heraldVerbs; track verb) {
+                              <option [value]="verb">{{ verb }}</option>
+                            }
+                          </select>
+                        </label>
+                      }
+                    </div>
+
+                    <div class="arch-row" style="margin-top: 0.5rem">
+                      <span class="preview-inline"
+                        >Draft: <em>&ldquo;{{ heraldPreview() }}&rdquo;</em></span
+                      >
+                      <button
+                        type="button"
+                        class="mini-action-btn accent"
+                        (click)="applyHeraldGreeting()"
+                        data-testid="apply-herald-motto-btn"
+                      >
+                        💾 Save Herald Motto
+                      </button>
+                    </div>
+                  </div>
+
                   <div class="telemetry-card">
                     <h3>Thunderpass Street-Log</h3>
                     <p class="card-help">
@@ -2346,6 +2561,11 @@
                           <div class="enc-sub">
                             Tri-Chord: <code>{{ enc.triChord }}</code>
                           </div>
+                          @if (enc.echo.heraldGreeting || enc.heraldGreeting) {
+                            <div class="enc-herald-quote" data-testid="encounter-herald-quote">
+                              💬 &ldquo;{{ enc.echo.heraldGreeting || enc.heraldGreeting }}&rdquo;
+                            </div>
+                          }
                           <div class="enc-actions">
                             <span>Grafted Chambers: {{ enc.roomsGrafted.length }}</span>
                             @if (enc.echo.forgedItems.length > 0) {

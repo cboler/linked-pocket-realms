@@ -21,6 +21,12 @@ import {
   StatusTag,
   StructuralTheme,
   TerminalFeedLine,
+  HERALD_ADJECTIVES,
+  HERALD_NOUNS,
+  HERALD_TEMPLATES,
+  HERALD_VERBS,
+  formatHeraldGreeting,
+  rollRandomHeraldGreeting,
 } from './core/models/domain.models';
 import {
   ATMOSPHERE_PREFIXES,
@@ -70,6 +76,28 @@ export class App {
   readonly cardinalDirections: ExitDirection[] = ['N', 'S', 'E', 'W'];
   readonly trackedStatusTags: StatusTag[] = ['Burn', 'Chill', 'Sunder', 'Overcharge'];
   readonly heatmapModes: HeatmapMode[] = ['LETHALITY', 'TRAFFIC', 'TIME_SPENT', 'LOOT'];
+
+  // Approved Herald Greeting Catalog
+  readonly heraldTemplates = HERALD_TEMPLATES;
+  readonly heraldAdjectives = HERALD_ADJECTIVES;
+  readonly heraldNouns = HERALD_NOUNS;
+  readonly heraldVerbs = HERALD_VERBS;
+
+  // Herald Motto Composer State
+  readonly heraldTemplateId = signal<number>(0);
+  readonly heraldAdjective = signal<string>(HERALD_ADJECTIVES[0]);
+  readonly heraldNoun = signal<string>(HERALD_NOUNS[0]);
+  readonly heraldVerb = signal<string>(HERALD_VERBS[0]);
+
+  readonly heraldPreview = computed<string>(
+    () =>
+      formatHeraldGreeting(
+        this.heraldTemplateId(),
+        this.heraldAdjective(),
+        this.heraldNoun(),
+        this.heraldVerb(),
+      ).formatted,
+  );
 
   // Terminal Input
   readonly terminalCommandText = signal<string>('');
@@ -594,6 +622,40 @@ export class App {
     this.terminalCommandText.set('');
   }
 
+  quickSayPrompt(): void {
+    const current = this.terminalCommandText().trim();
+    if (
+      current &&
+      !current.toLowerCase().startsWith('say ') &&
+      !current.startsWith("'") &&
+      !current.toLowerCase().startsWith('shout ')
+    ) {
+      this.engine.broadcastChatMessage('ROOM', current);
+      this.terminalCommandText.set('');
+    } else {
+      this.terminalCommandText.set('say Greetings, travelers of the Loom!');
+      const el = document.getElementById('mud-cmd-input') as HTMLInputElement | null;
+      el?.focus();
+    }
+  }
+
+  quickShoutPrompt(): void {
+    const current = this.terminalCommandText().trim();
+    if (
+      current &&
+      !current.toLowerCase().startsWith('say ') &&
+      !current.startsWith("'") &&
+      !current.toLowerCase().startsWith('shout ')
+    ) {
+      this.engine.broadcastChatMessage('SHOUT', current);
+      this.terminalCommandText.set('');
+    } else {
+      this.terminalCommandText.set('shout Echoes resound across the Chaos Gate!');
+      const el = document.getElementById('mud-cmd-input') as HTMLInputElement | null;
+      el?.focus();
+    }
+  }
+
   // Tactile Stage Entity Actions (with automatic Syntax Echo Teaching)
   onStageAttackMonster(mob: MonsterEntity): void {
     this.engine.selectedTargetId.set(mob.id);
@@ -843,6 +905,23 @@ export class App {
     );
   }
 
+  rollHeraldGreeting(): void {
+    const rolled = rollRandomHeraldGreeting();
+    this.heraldTemplateId.set(rolled.templateId);
+    this.heraldAdjective.set(rolled.adjective);
+    this.heraldNoun.set(rolled.noun);
+    this.heraldVerb.set(rolled.verb);
+  }
+
+  applyHeraldGreeting(): void {
+    this.engine.setHeraldGreeting(
+      this.heraldTemplateId(),
+      this.heraldAdjective(),
+      this.heraldNoun(),
+      this.heraldVerb(),
+    );
+  }
+
   spinRandomOnboardingGate(): void {
     const rand = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
     this.onboardingEra.set(rand(this.serverEras));
@@ -856,6 +935,12 @@ export class App {
     this.dialAtmosphere.set(this.onboardingAtmosphere());
     this.dialTheme.set(this.onboardingTheme());
     this.dialBiome.set(this.onboardingBiome());
+    const greeting = formatHeraldGreeting(
+      this.heraldTemplateId(),
+      this.heraldAdjective(),
+      this.heraldNoun(),
+      this.heraldVerb(),
+    );
     this.engine.completeOnboardingAwakening(
       this.onboardingName(),
       this.onboardingArchetype(),
@@ -863,6 +948,7 @@ export class App {
       this.onboardingAtmosphere(),
       this.onboardingTheme(),
       this.onboardingBiome(),
+      greeting,
     );
   }
 

@@ -10,7 +10,14 @@ import { MudEngineService } from './core/services/mud-engine.service';
 import { StorageService } from './core/services/storage.service';
 import { TransportService } from './core/services/transport.service';
 import { ThunderpassService } from './core/services/thunderpass.service';
-import { EquipmentItem } from './core/models/domain.models';
+import {
+  EquipmentItem,
+  HERALD_ADJECTIVES,
+  HERALD_NOUNS,
+  HERALD_VERBS,
+  formatHeraldGreeting,
+  rollRandomHeraldGreeting,
+} from './core/models/domain.models';
 
 describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
   let chaosGate: ChaosGateService;
@@ -414,6 +421,200 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
       expect(barterResult).toBe(true);
       expect(engine.character().inventory.length).toBe(invBefore + 1);
       expect(engine.character().resonanceShards).toBe(shardsBefore - 15);
+    });
+  });
+
+  describe('Feature Evolution: Local P2P Broadcast Chat & Adventurer Roster ("Who\'s Here")', () => {
+    it('should parse "say" and "\'" commands and broadcast to peers in the current chamber', () => {
+      const intent = engine.parseAndDispatchTerminalInput('say Hail travelers of the Loom!');
+      expect(intent).not.toBeNull();
+      expect(intent?.type).toBe('CHAT_MESSAGE');
+      expect(intent?.payload?.['channel']).toBe('ROOM');
+
+      const log = engine.terminalFeed();
+      const lastLine = log[0];
+      expect(lastLine.category).toBe('CHAT');
+      expect(lastLine.text).toContain('💬 [Say] You: "Hail travelers of the Loom!"');
+      expect(lastLine.syntaxEcho).toContain('[cmd: say Hail travelers of the Loom!]');
+
+      // Also test quote shorthand "'"
+      engine.parseAndDispatchTerminalInput("'The resonance chords align.");
+      const lastLineQuote = engine.terminalFeed()[0];
+      expect(lastLineQuote.text).toContain('💬 [Say] You: "The resonance chords align."');
+    });
+
+    it('should parse "shout" and "chat" commands and broadcast realm-wide', () => {
+      const intent = engine.parseAndDispatchTerminalInput(
+        'shout Warning: Chaos Gate incursion detected!',
+      );
+      expect(intent).not.toBeNull();
+      expect(intent?.type).toBe('CHAT_MESSAGE');
+      expect(intent?.payload?.['channel']).toBe('SHOUT');
+
+      const log = engine.terminalFeed();
+      const lastLine = log[0];
+      expect(lastLine.category).toBe('CHAT');
+      expect(lastLine.text).toContain(
+        '📢 [Broadcast] You: "Warning: Chaos Gate incursion detected!"',
+      );
+    });
+
+    it('should print the active adventurer roster on "who" command', () => {
+      const intent = engine.parseAndDispatchTerminalInput('who');
+      expect(intent).not.toBeNull();
+
+      const log = engine.terminalFeed();
+      const whoHeader = log.find((l) => l.text.includes('👥 [Adventurers In Realm]'));
+      expect(whoHeader).toBeDefined();
+      expect(log.some((l) => l.text.includes('• You:'))).toBe(true);
+    });
+
+    it('should handle incoming peer room chat, distant overhearing, and realm broadcasts', () => {
+      const currentRoomId = engine.currentRoom().id;
+
+      // Same-room chat from remote peer
+      transport.injectSimulatedPacket({
+        type: 'CHAT_MESSAGE',
+        senderName: 'Astral_Nomad',
+        roomId: currentRoomId,
+        chat: {
+          id: 'test-chat-1',
+          senderPeerId: 'peer-astral',
+          senderName: 'Astral_Nomad',
+          channel: 'ROOM',
+          text: 'Behold the glyphs on the altar!',
+          roomId: currentRoomId,
+          roomTitle: engine.currentRoom().title,
+          timestampIso: new Date().toISOString(),
+        },
+      });
+
+      const logAfterSameRoom = engine.terminalFeed();
+      const sameRoomLine = logAfterSameRoom[0];
+      expect(sameRoomLine.category).toBe('CHAT');
+      expect(sameRoomLine.text).toContain(
+        '💬 [Say] Astral_Nomad: "Behold the glyphs on the altar!"',
+      );
+
+      // Distant-room chat from remote peer
+      transport.injectSimulatedPacket({
+        type: 'CHAT_MESSAGE',
+        senderName: 'Astral_Nomad',
+        roomId: 'room-distant-99',
+        chat: {
+          id: 'test-chat-2',
+          senderPeerId: 'peer-astral',
+          senderName: 'Astral_Nomad',
+          channel: 'ROOM',
+          text: 'Found a resonance chest over here!',
+          roomId: 'room-distant-99',
+          roomTitle: 'Distant Crypt',
+          timestampIso: new Date().toISOString(),
+        },
+      });
+
+      const logAfterDistant = engine.terminalFeed();
+      const distantLine = logAfterDistant[0];
+      expect(distantLine.category).toBe('CHAT');
+      expect(distantLine.text).toContain('💬 [Overheard] Astral_Nomad speaks from Distant Crypt:');
+
+      // Realm-wide broadcast from remote peer
+      transport.injectSimulatedPacket({
+        type: 'CHAT_MESSAGE',
+        senderName: 'Astral_Nomad',
+        roomId: 'room-distant-99',
+        chat: {
+          id: 'test-chat-3',
+          senderPeerId: 'peer-astral',
+          senderName: 'Astral_Nomad',
+          channel: 'SHOUT',
+          text: 'All adventurers, rally to the Boss Gateway!',
+          roomId: 'room-distant-99',
+          roomTitle: 'Distant Crypt',
+          timestampIso: new Date().toISOString(),
+        },
+      });
+
+      const logAfterBroadcast = engine.terminalFeed();
+      const broadcastLine = logAfterBroadcast[0];
+      expect(broadcastLine.category).toBe('CHAT');
+      expect(broadcastLine.text).toContain('📢 [Broadcast] Astral_Nomad (@Distant Crypt):');
+    });
+  });
+
+  describe('Feature Evolution: Clean, Curated Traveler Herald Greetings ("StreetPass Motto")', () => {
+    it('should format herald greetings from approved templates, adjectives, nouns, and verbs', () => {
+      const g0 = formatHeraldGreeting(0, 'Radiant', 'Beacon', 'triumph');
+      expect(g0.formatted).toBe('May the Radiant Beacon guide your journey.');
+
+      const g1 = formatHeraldGreeting(1, 'Eldritch', 'Shadow', 'prevail');
+      expect(g1.formatted).toBe('Beware: Eldritch Shadow lurks ahead.');
+
+      const g2 = formatHeraldGreeting(2, 'Harmonic', 'Loom', 'triumph');
+      expect(g2.formatted).toBe('Praise the Harmonic Loom! Time to triumph.');
+
+      // Fallback on invalid words
+      const gSafe = formatHeraldGreeting(0, 'InvalidBadWord', 'Inappropriate', 'hax');
+      expect(gSafe.adjective).toBe(HERALD_ADJECTIVES[0]);
+      expect(gSafe.noun).toBe(HERALD_NOUNS[0]);
+      expect(gSafe.formatted).toBe(
+        `May the ${HERALD_ADJECTIVES[0]} ${HERALD_NOUNS[0]} guide your journey.`,
+      );
+    });
+
+    it('should roll a random valid approved herald greeting', () => {
+      const rolled = rollRandomHeraldGreeting();
+      expect(rolled.formatted.length).toBeGreaterThan(10);
+      expect((HERALD_ADJECTIVES as readonly string[]).includes(rolled.adjective)).toBe(true);
+      expect((HERALD_NOUNS as readonly string[]).includes(rolled.noun)).toBe(true);
+      expect((HERALD_VERBS as readonly string[]).includes(rolled.verb)).toBe(true);
+    });
+
+    it('should allow setting and rolling herald greeting via engine and terminal commands', () => {
+      const setGreeting = engine.setHeraldGreeting(2, 'Astral', 'Blade', 'strike');
+      expect(setGreeting.formatted).toBe('Praise the Astral Blade! Time to strike.');
+      expect(engine.character().heraldGreeting.formatted).toBe(
+        'Praise the Astral Blade! Time to strike.',
+      );
+
+      // Inspect via @greeting
+      engine.parseAndDispatchTerminalInput('@greeting');
+      expect(engine.terminalFeed()[0].text).toContain('Praise the Astral Blade! Time to strike.');
+
+      // Roll via terminal @greeting roll
+      engine.parseAndDispatchTerminalInput('@greeting roll');
+      expect(engine.terminalFeed()[0].text).toContain('🎲 [Herald Greeting Rolled]');
+      expect(engine.character().heraldGreeting).toBeDefined();
+
+      // Set via terminal parameters
+      engine.parseAndDispatchTerminalInput('@greeting 0 Crystalline Sanctuary triumph');
+      expect(engine.character().heraldGreeting.formatted).toBe(
+        'May the Crystalline Sanctuary guide your journey.',
+      );
+    });
+
+    it('should include herald greeting in the adventurer roster and Thunderpass encounters', () => {
+      engine.setHeraldGreeting(0, 'Valiant', 'Wanderer', 'triumph');
+
+      // Check adventurer roster lists our motto
+      engine.parseAndDispatchTerminalInput('who');
+      const feed = engine.terminalFeed();
+      const youLine = feed.find((l) => l.text.includes('• You:'));
+      expect(youLine?.text).toContain('May the Valiant Wanderer guide your journey.');
+
+      // Check neighbor peer motto
+      const peerLine = feed.find((l) => l.text.includes('Kite_Zero'));
+      expect(peerLine?.text).toContain('Beware: Eldritch Shadow lurks ahead.');
+
+      // Simulate a Thunderpass encounter and verify motto propagation
+      thunderpass.simulateThunderpassCollision('Motto_Traveler', 'Ω: Scorching Clockwork Crucible');
+      const latestEnc = thunderpass.streetPassLog()[0];
+      expect(latestEnc.echo.heraldGreeting).toBe('Praise the Harmonic Loom! Time to triumph.');
+      expect(latestEnc.heraldGreeting).toBe('Praise the Harmonic Loom! Time to triumph.');
+
+      // Verify motto is logged in network feed
+      const encFeedLine = engine.terminalFeed().find((l) => l.text.includes('Motto_Traveler'));
+      expect(encFeedLine?.text).toContain('Motto: "Praise the Harmonic Loom! Time to triumph."');
     });
   });
 });

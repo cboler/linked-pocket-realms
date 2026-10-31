@@ -1573,6 +1573,14 @@ textarea {
   color: #d8b4fe;
 }
 
+.term-line[data-category='CHAT'] {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.08);
+  border-left: 3px solid #38bdf8;
+  padding: 0.15rem 0.4rem;
+  border-radius: 2px;
+}
+
 .term-time {
   color: var(--text-muted);
   margin-right: 0.35rem;
@@ -1640,6 +1648,17 @@ textarea {
 .quick-chip:hover {
   border-color: var(--color-primary);
   color: var(--text-primary);
+}
+
+.quick-chip.chat-chip {
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.08);
+
+  &:hover {
+    background: rgba(56, 189, 248, 0.18);
+    border-color: #38bdf8;
+  }
 }
 
 .terminal-input-row {
@@ -2357,6 +2376,25 @@ textarea {
   .shards-item {
     color: #38bdf8;
   }
+
+  .presence-item {
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: #67e8f9;
+    font-family: inherit;
+    font-size: inherit;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+
+    &:hover,
+    &:focus-visible {
+      text-decoration: underline;
+      color: #38bdf8;
+    }
+  }
 }
 
 /* Stage Lens Bar */
@@ -2579,6 +2617,17 @@ textarea {
         }
       }
 
+      .enc-herald-quote {
+        font-family: var(--font-mono);
+        font-size: 0.74rem;
+        color: #38bdf8;
+        background: rgba(56, 189, 248, 0.08);
+        border-left: 2px solid #38bdf8;
+        padding: 0.2rem 0.45rem;
+        border-radius: 2px;
+        font-style: italic;
+      }
+
       .enc-actions {
         display: flex;
         align-items: center;
@@ -2589,6 +2638,66 @@ textarea {
       }
     }
   }
+}
+
+/* Herald Greeting Motto Composer & Previews */
+.herald-motto-preview-box {
+  background: rgba(147, 51, 234, 0.15);
+  border: 1px solid rgba(192, 132, 252, 0.4);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: #f5d0fe;
+  font-style: italic;
+  text-align: center;
+}
+
+.herald-selectors-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+
+  .herald-select-col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+
+    .col-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      letter-spacing: 0.04em;
+    }
+
+    select {
+      min-height: var(--touch-target-min);
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      border: 1px solid var(--border-muted);
+      border-radius: var(--radius-sm);
+      padding: 0.25rem 0.45rem;
+      font-size: 0.75rem;
+      font-family: inherit;
+      cursor: pointer;
+
+      &:focus-visible {
+        outline: var(--focus-ring);
+      }
+    }
+  }
+}
+
+.preview-inline {
+  font-size: 0.75rem;
+  color: #c084fc;
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
 }
 
 /* Pocket Battery Saver Dim Overlay */
