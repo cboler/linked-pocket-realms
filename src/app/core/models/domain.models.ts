@@ -1,0 +1,427 @@
+/**
+ * Core Domain Schemas for Linked Pocket Realms (Serverless P2P MUD PWA)
+ */
+
+export type ServerEraLetter = 'Δ' | 'Θ' | 'Λ' | 'Σ' | 'Ω';
+
+export interface ServerEraMetadata {
+  letter: ServerEraLetter;
+  name: 'Delta' | 'Theta' | 'Lambda' | 'Sigma' | 'Omega';
+  levelTier: number;
+  statMultiplier: number;
+}
+
+export type AtmospherePrefix =
+  | 'Scorching'
+  | 'Silent'
+  | 'Crystalline'
+  | 'Abyssal'
+  | 'Tempestuous'
+  | 'Blighted'
+  | 'Aetherial'
+  | 'Gilded';
+
+export type StructuralTheme =
+  | 'Clockwork'
+  | 'Fungal'
+  | 'Monolithic'
+  | 'Labyrinthine'
+  | 'Sunken'
+  | 'Astral'
+  | 'Ossuary'
+  | 'Forge';
+
+export type BiomeNoun =
+  | 'Catacombs'
+  | 'Observatory'
+  | 'Citadel'
+  | 'Sanctuary'
+  | 'Archive'
+  | 'Spire'
+  | 'Bazaar'
+  | 'Crucible';
+
+export type TopologyPattern = 'labyrinth' | 'ring' | 'tower' | 'hub-and-spoke';
+
+export type ElementalAffinity = 'Fire' | 'Frost' | 'Void' | 'Lightning' | 'Bio' | 'Physical';
+
+export type StatusTag = 'Burn' | 'Chill' | 'Sunder' | 'Overcharge' | 'Silenced' | 'Regen';
+
+export interface ChaosGateAddress {
+  era: ServerEraLetter;
+  atmosphere: AtmospherePrefix;
+  theme: StructuralTheme;
+  biome: BiomeNoun;
+  formatted: string; // e.g., "Θ: Scorching Clockwork Catacombs"
+  seed: number; // Deterministic 32-bit integer for Mulberry32
+}
+
+export type CoreLegendType =
+  | 'anchor-portal'
+  | 'safe-campfire'
+  | 'elite-boss'
+  | 'puzzle-mechanism'
+  | 'lore-terminal'
+  | 'treasure-vault'
+  | 'hazard-trap'
+  | 'merchant-shrine'
+  | 'corridor'
+  | 'custom';
+
+export interface LegendEntry {
+  id: string;
+  classification: CoreLegendType;
+  glyph: string;
+  label: string;
+  colorHex: string;
+  tooltipDescription: string;
+  isCustom?: boolean;
+}
+
+export interface LegendRegistry {
+  coreEntries: Record<CoreLegendType, LegendEntry>;
+  customEntries: Record<string, LegendEntry>;
+}
+
+export type ArchetypeClass = 'Vanguard' | 'Chronomancer' | 'Hexblade' | 'Artificer';
+
+export interface CoreAttributes {
+  STR: number;
+  DEX: number;
+  INT: number;
+  PER: number;
+  VIT: number;
+}
+
+export interface DerivedCombatStats {
+  maxHp: number;
+  maxStamina: number;
+  atk: number;
+  mitigationPct: number;
+  critChancePct: number;
+  critMultiplier: number;
+  atbFillRatePerTick: number; // % filled per 100ms tick
+}
+
+export type PaperdollSlotType =
+  'Head' | 'Chest' | 'Legs' | 'Main-Hand' | 'Off-Hand' | 'Relic 1' | 'Relic 2';
+
+export type ItemProvenance = 'Verified Drop' | 'Architect Forged';
+
+export interface EquipmentItem {
+  id: string;
+  name: string;
+  slot: PaperdollSlotType;
+  rarity: 'Common' | 'Rare' | 'Relic' | 'Mythic';
+  weight: number;
+  provenance: ItemProvenance;
+  originGateAddress: string;
+  statBonuses: Partial<CoreAttributes> & {
+    atkBonus?: number;
+    speedPctBonus?: number;
+    mitigationBonus?: number;
+  };
+  totalStatBudget: number;
+  /** Clamped values applied when visiting a realm with a stricter RulesetManifest */
+  clampedStatBudget?: number;
+  clampedScaleFactor?: number;
+  signatureHex?: string; // ECDSA SubtleCrypto signature for Verified Drops
+  signerPublicKeyJwk?: string;
+}
+
+export type PaperdollSlots = Record<PaperdollSlotType, EquipmentItem | null>;
+
+export interface SkillSlot {
+  id: string;
+  name: string;
+  commandKey: string; // e.g., 'sunder', 'chrono-bolt', 'hex-drain', 'arc-turret'
+  archetype: ArchetypeClass;
+  staminaCost: number;
+  cooldownMs: number;
+  currentCooldownMs: number;
+  powerMultiplier: number;
+  element: ElementalAffinity;
+  statusApplied?: StatusTag;
+  comboTriggerStatus?: StatusTag;
+  description: string;
+}
+
+export interface PassiveTrait {
+  id: string;
+  name: string;
+  archetype: ArchetypeClass;
+  description: string;
+  statModifier: Partial<CoreAttributes>;
+}
+
+export interface ActiveStatusEffect {
+  tag: StatusTag;
+  remainingMs: number;
+  stacks: number;
+  sourceId: string;
+}
+
+export interface CharacterState {
+  id: string;
+  name: string;
+  level: number;
+  xp: number;
+  gold: number;
+  archetype: ArchetypeClass;
+  baseAttributes: CoreAttributes;
+  hp: number;
+  stamina: number;
+  atbGauge: number; // 0 to 100
+  autoAttackEnabled: boolean;
+  paperdoll: PaperdollSlots;
+  inventory: EquipmentItem[];
+  maxWeight: number;
+  activeSkills: SkillSlot[]; // up to 4
+  passiveTraits: PassiveTrait[]; // up to 2
+  statuses: ActiveStatusEffect[];
+  currentRoomId: string;
+  visitedRoomIds: string[];
+  bestiaryUnlocked: Record<string, { kills: number; inspectedLevel: number }>;
+}
+
+export type ExitDirection = 'N' | 'S' | 'E' | 'W' | 'U' | 'D';
+
+export interface RoomExit {
+  direction: ExitDirection;
+  targetRoomId: string;
+  isSecret?: boolean;
+  requiredKeyId?: string;
+  isLocked?: boolean;
+}
+
+export interface DeclarativeTrigger {
+  id: string;
+  when: 'ON_ENTER' | 'ON_INSPECT' | 'ON_COMBAT_CLEAR' | 'ON_COMMAND';
+  ifCondition: string; // e.g., "PER >= 12" or "HAS_ITEM:rusty-gear" or "ALWAYS"
+  doAction: 'UNLOCK_EXIT' | 'SPAWN_ITEM' | 'DEAL_HAZARD' | 'EMIT_LORE' | 'HEAL_PARTY';
+  actionPayload: string;
+}
+
+export interface MonsterEntity {
+  id: string;
+  templateId: string;
+  name: string;
+  level: number;
+  isBoss: boolean;
+  hp: number;
+  maxHp: number;
+  atk: number;
+  mitigationPct: number;
+  speed: number;
+  atbGauge: number;
+  element: ElementalAffinity;
+  weakness: ElementalAffinity;
+  statuses: ActiveStatusEffect[];
+  loreSnippet: string;
+  secretWeaknessHint: string;
+  lootTable: EquipmentItem[];
+}
+
+export interface RoomNode {
+  id: string;
+  title: string;
+  description: string;
+  x: number; // SVG topological layout coordinate (0-1000)
+  y: number; // SVG topological layout coordinate (0-600)
+  depthTier: number;
+  legendType: CoreLegendType;
+  customLegendId?: string;
+  atmosphereEffect: string;
+  elementalMutator: ElementalAffinity;
+  exits: RoomExit[];
+  monsters: MonsterEntity[];
+  items: EquipmentItem[];
+  triggers: DeclarativeTrigger[];
+  rumorSignal: string; // Shown in Fog-of-War on adjacent unvisited nodes
+  isCustomDug?: boolean;
+}
+
+export interface RulesetManifest {
+  levelCap: number;
+  maxItemStatBudget: number;
+  allowArchitectForgedItems: boolean;
+  pvpEnabled: boolean;
+}
+
+export interface RoomDeltaOverride {
+  roomId: string;
+  title?: string;
+  description?: string;
+  legendType?: CoreLegendType;
+  customLegendId?: string;
+  exits?: RoomExit[];
+  triggers?: DeclarativeTrigger[];
+  customMonsters?: MonsterEntity[];
+  customItems?: EquipmentItem[];
+  x?: number;
+  y?: number;
+  isCustomDug?: boolean;
+}
+
+export interface RealmDelta {
+  gateAddress: ChaosGateAddress;
+  ownerName: string;
+  ownerPublicKeyJwk?: string;
+  updatedAtIso: string;
+  ruleset: RulesetManifest;
+  customLegendEntries: LegendEntry[];
+  roomOverrides: Record<string, RoomDeltaOverride>;
+  customRoomIds: string[];
+}
+
+export interface CombatTelemetrySample {
+  timestampMs: number;
+  actorId: string;
+  actorName: string;
+  targetName: string;
+  skillId: string;
+  skillName: string;
+  element: ElementalAffinity;
+  rollValue: number; // 1-100 RNG roll
+  outcome: 'HIT' | 'CRIT' | 'MISS' | 'STATUS' | 'HEAL';
+  damageDealt: number;
+  damageMitigated: number;
+  overkill: number;
+  healingDone: number;
+  statusApplied?: StatusTag;
+}
+
+export interface RoomTelemetryMetrics {
+  roomId: string;
+  visitorCount: number;
+  playerDeaths: number;
+  totalTimeSpentMs: number;
+  lootExtractedCount: number;
+}
+
+export interface GuestbookGravestoneEntry {
+  id: string;
+  visitorName: string;
+  archetype: ArchetypeClass;
+  timestampIso: string;
+  outcome: 'BOSS_CLEARED' | 'PARTY_WIPED' | 'VISITED';
+  roomId: string;
+  roomTitle: string;
+  epitaphOrNote: string;
+  replayFrames: ReplayFrame[];
+}
+
+export interface ReplayFrame {
+  tickIndex: number;
+  timestampOffsetMs: number;
+  roomId: string;
+  actorName: string;
+  narrativeLine: string;
+  playerHpPct: number;
+  enemyHpPct: number;
+}
+
+export interface CareerChronicleEntry {
+  id: string;
+  timestampIso: string;
+  gateAddress: string;
+  era: ServerEraLetter;
+  eventTitle: string;
+  conquered: boolean;
+  xpEarned: number;
+  goldEarned: number;
+  cumulativeXp: number;
+  cumulativeGold: number;
+}
+
+export interface TelemetryLog {
+  combatSamples: CombatTelemetrySample[];
+  statusUptimeMs: Record<StatusTag, number>;
+  roomMetrics: Record<string, RoomTelemetryMetrics>;
+  guestbook: GuestbookGravestoneEntry[];
+  careerChronicle: CareerChronicleEntry[];
+}
+
+export type CommandActionType =
+  | 'MOVE'
+  | 'LOOK'
+  | 'INSPECT'
+  | 'ATTACK'
+  | 'CAST_SKILL'
+  | 'TAKE_ITEM'
+  | 'EQUIP_ITEM'
+  | 'REST_CAMPFIRE'
+  | 'ENTER_PORTAL'
+  | 'MOO_DIG'
+  | 'MOO_DESCRIBE'
+  | 'MOO_CRAFT'
+  | 'MOO_TRIGGER'
+  | 'MOO_LEGEND';
+
+export interface CommandIntent {
+  type: CommandActionType;
+  rawInput: string;
+  source: 'TERMINAL' | 'HUD';
+  targetId?: string;
+  skillKey?: string;
+  direction?: ExitDirection;
+  payload?: Record<string, string>;
+}
+
+export interface TerminalFeedLine {
+  id: string;
+  timestamp: string;
+  category: 'NARRATIVE' | 'COMBAT' | 'SYSTEM' | 'LORE' | 'ARCHITECT' | 'NETWORK';
+  text: string;
+  badges?: {
+    label: string;
+    targetId: string;
+    actionType: 'INSPECT' | 'ATTACK' | 'TAKE_ITEM' | 'MOVE' | 'ENTER_PORTAL';
+    colorHex?: string;
+  }[];
+}
+
+export type NetworkPacketType =
+  | 'GATE_BEACON'
+  | 'PORTAL_TRAVERSE_REQUEST'
+  | 'PORTAL_REALM_SYNC'
+  | 'VISITOR_POSITION_UPDATE'
+  | 'COOP_COMBAT_INTENT'
+  | 'GRAVESTONE_RECORD'
+  | 'TRADE_OFFER';
+
+export interface NetworkPeerVisitor {
+  peerId: string;
+  playerName: string;
+  archetype: ArchetypeClass;
+  level: number;
+  gateAddress: string;
+  currentRoomId: string;
+  inCombat: boolean;
+  lastSeenMs: number;
+  transport: 'BroadcastChannel' | 'WebRTC';
+}
+
+export interface NetworkPacket {
+  packetId: string;
+  senderPeerId: string;
+  senderName: string;
+  timestampMs: number;
+  type: NetworkPacketType;
+  gateAddress: string;
+  roomId?: string;
+  realmCartridgeBase64?: string;
+  combatIntent?: CommandIntent;
+  gravestone?: GuestbookGravestoneEntry;
+  tradeItem?: EquipmentItem;
+  visitorState?: {
+    level: number;
+    archetype: ArchetypeClass;
+    inCombat: boolean;
+  };
+}
+
+export type PerspectiveRole = 'EXPLORER' | 'ARCHITECT' | 'SPECTATOR';
+export type DrawerTab =
+  'NONE' | 'PAPERDOLL' | 'COMBAT_TELEMETRY' | 'REALM_ANALYTICS' | 'CHRONICLE' | 'NETWORK';
+export type HeatmapMode = 'TRAFFIC' | 'LETHALITY' | 'TIME_SPENT' | 'LOOT';

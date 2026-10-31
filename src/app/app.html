@@ -1,79 +1,1252 @@
-<a href="#main-content" class="skip-link">Skip to main content</a>
-
-<div class="app-layout">
-  <header class="app-header" role="banner">
-    <div class="header-inner">
-      <div class="brand">
-        <a routerLink="/" class="brand-link" id="nav-brand-link">
-          <span class="brand-logo" aria-hidden="true">🅰</span>
-          <span class="brand-title">{{ title() }}</span>
-        </a>
-      </div>
-
-      <nav class="app-nav" aria-label="Primary Navigation">
-        <a
-          routerLink="/"
-          routerLinkActive="active"
-          [routerLinkActiveOptions]="{ exact: true }"
-          class="nav-link"
-          id="nav-link-home"
-        >
-          Home
-        </a>
-        <a routerLink="/status" routerLinkActive="active" class="nav-link" id="nav-link-status">
-          Status
-        </a>
-      </nav>
-
-      <div class="header-actions">
-        @if (canInstall()) {
-          <button
-            type="button"
-            class="install-btn"
-            id="install-pwa-btn"
-            (click)="installApp()"
-            aria-label="Install Angular PWA"
-          >
-            ⬇ Install App
-          </button>
-        }
-
-        <div
-          class="network-badge"
-          [class.online]="isOnline()"
-          [class.offline]="!isOnline()"
-          role="status"
-          [attr.aria-label]="
-            isOnline() ? 'Application is online' : 'Application is running offline'
-          "
-        >
-          <span class="dot"></span>
-          <span class="network-text">{{ isOnline() ? 'Online' : 'Offline' }}</span>
+<div class="hud-viewport" role="application" aria-label="Linked Pocket Realms Tactical HUD">
+  <!-- TOP TACTICAL HEADER -->
+  <header class="hud-header" role="banner">
+    <div class="brand-cluster">
+      <span class="gate-sigil" aria-hidden="true">◈</span>
+      <div class="brand-titles">
+        <h1 id="starter-title" class="brand-title">Linked Pocket Realms</h1>
+        <div class="gate-address-pill" data-testid="active-gate-address">
+          <span class="era-badge">{{ engine.activeGateAddress().era }}</span>
+          <span class="address-words">{{ engine.activeGateAddress().formatted }}</span>
+          @if (engine.isVisitingExternalRealm()) {
+            <span class="customs-badge" title="Host Customs Gate Active">
+              Customs Cap: {{ engine.activeRealmDelta().ruleset.maxItemStatBudget }}
+            </span>
+          }
         </div>
       </div>
     </div>
+
+    <!-- ROLE-BASED PERSPECTIVE SWITCHER ("Depending on Who's Looking") -->
+    <nav class="perspective-switcher" aria-label="Role Perspective Switcher">
+      <button
+        type="button"
+        class="role-btn"
+        [class.active]="engine.perspective() === 'EXPLORER'"
+        (click)="setPerspective('EXPLORER')"
+        data-testid="role-explorer-btn"
+      >
+        <span aria-hidden="true">🧭</span> Explorer
+      </button>
+      <button
+        type="button"
+        class="role-btn"
+        [class.active]="engine.perspective() === 'ARCHITECT'"
+        (click)="setPerspective('ARCHITECT')"
+        data-testid="role-architect-btn"
+      >
+        <span aria-hidden="true">⚙</span> Architect
+      </button>
+      <button
+        type="button"
+        class="role-btn"
+        [class.active]="engine.perspective() === 'SPECTATOR'"
+        (click)="setPerspective('SPECTATOR')"
+        data-testid="role-spectator-btn"
+      >
+        <span aria-hidden="true">📼</span> Spectator
+      </button>
+    </nav>
+
+    <!-- ON-DEMAND TELEMETRY & DATA DRAWER TOGGLES -->
+    <div class="drawer-toolbar" role="toolbar" aria-label="On-Demand Data & Telemetry Drawers">
+      <button
+        type="button"
+        class="drawer-btn"
+        [class.active]="engine.activeDrawer() === 'PAPERDOLL'"
+        (click)="toggleDrawer('PAPERDOLL')"
+        data-testid="drawer-paperdoll-btn"
+      >
+        🛡 Paperdoll
+      </button>
+      <button
+        type="button"
+        class="drawer-btn"
+        [class.active]="engine.activeDrawer() === 'COMBAT_TELEMETRY'"
+        (click)="toggleDrawer('COMBAT_TELEMETRY')"
+        data-testid="drawer-combat-btn"
+      >
+        📊 Combat DPS
+      </button>
+      <button
+        type="button"
+        class="drawer-btn"
+        [class.active]="engine.activeDrawer() === 'REALM_ANALYTICS'"
+        (click)="toggleDrawer('REALM_ANALYTICS')"
+        data-testid="drawer-analytics-btn"
+      >
+        🔥 Heatmap & Graves
+      </button>
+      <button
+        type="button"
+        class="drawer-btn"
+        [class.active]="engine.activeDrawer() === 'CHRONICLE'"
+        (click)="toggleDrawer('CHRONICLE')"
+        data-testid="drawer-chronicle-btn"
+      >
+        📜 Chronicle
+      </button>
+      <button
+        type="button"
+        class="drawer-btn"
+        [class.active]="engine.activeDrawer() === 'NETWORK'"
+        (click)="toggleDrawer('NETWORK')"
+        data-testid="drawer-network-btn"
+      >
+        🌐 P2P Gate ({{ transport.activeVisitorsList().length }})
+      </button>
+    </div>
   </header>
 
-  <main id="main-content" class="app-content" role="main">
-    <router-outlet />
+  <!-- MAIN WORKSPACE GRID -->
+  <main class="hud-main" role="main">
+    <!-- LEFT / PRIMARY PANEL: CARTOGRAPHY & PERSPECTIVE VIEWPORT -->
+    <section class="cartography-panel" aria-label="Realm Cartography and Perspective Lens">
+      <div class="panel-subbar">
+        <div class="sector-title-group">
+          <span class="sector-label">Sector:</span>
+          <strong class="sector-name" data-testid="current-room-title">{{
+            engine.currentRoom().title
+          }}</strong>
+          <span class="mutator-tag">{{ engine.currentRoom().elementalMutator }} Resonance</span>
+        </div>
+
+        <!-- Chaos Gate Quick Dialer -->
+        <div class="gate-dialer-inline">
+          <select
+            aria-label="Server Era"
+            [ngModel]="dialEra()"
+            (ngModelChange)="dialEra.set($event)"
+            data-testid="select-era"
+          >
+            @for (era of serverEras; track era) {
+              <option [value]="era">{{ era }}</option>
+            }
+          </select>
+          <select
+            aria-label="Atmosphere Word 1"
+            [ngModel]="dialAtmosphere()"
+            (ngModelChange)="dialAtmosphere.set($event)"
+            data-testid="select-atmosphere"
+          >
+            @for (atmo of atmospheres; track atmo) {
+              <option [value]="atmo">{{ atmo }}</option>
+            }
+          </select>
+          <select
+            aria-label="Theme Word 2"
+            [ngModel]="dialTheme()"
+            (ngModelChange)="dialTheme.set($event)"
+            data-testid="select-theme"
+          >
+            @for (th of themes; track th) {
+              <option [value]="th">{{ th }}</option>
+            }
+          </select>
+          <select
+            aria-label="Biome Word 3"
+            [ngModel]="dialBiome()"
+            (ngModelChange)="dialBiome.set($event)"
+            data-testid="select-biome"
+          >
+            @for (bm of biomes; track bm) {
+              <option [value]="bm">{{ bm }}</option>
+            }
+          </select>
+          <button
+            type="button"
+            class="mini-action-btn"
+            (click)="dialSelectedChaosGate(false)"
+            data-testid="dial-gate-btn"
+          >
+            Dial Gate
+          </button>
+          @if (engine.isVisitingExternalRealm()) {
+            <button
+              type="button"
+              class="mini-action-btn accent"
+              (click)="engine.returnToHomeRealm()"
+              data-testid="return-home-btn"
+            >
+              Return Home
+            </button>
+          }
+        </div>
+      </div>
+
+      <!-- SVG TOPOLOGICAL NODE GRAPH (ADAPTS TO EXPLORER FOG-OF-WAR vs. ARCHITECT GOD'S-EYE) -->
+      <div class="svg-map-container">
+        <svg
+          class="topological-svg"
+          viewBox="0 0 940 560"
+          role="img"
+          aria-label="Pocket Realm Topological Map"
+          data-testid="realm-svg-map"
+        >
+          <defs>
+            <radialGradient id="activeNodeGlow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.45" />
+              <stop offset="100%" stop-color="#38bdf8" stop-opacity="0" />
+            </radialGradient>
+          </defs>
+
+          <!-- Topological Edges -->
+          @for (edge of cartographyEdges(); track edge.id) {
+            <line
+              [attr.x1]="edge.x1"
+              [attr.y1]="edge.y1"
+              [attr.x2]="edge.x2"
+              [attr.y2]="edge.y2"
+              class="map-edge"
+              [class.secret-edge]="edge.isSecret"
+              [class.locked-edge]="edge.isLocked"
+            />
+          }
+
+          <!-- Topological Room Nodes -->
+          @for (node of visibleCartographyNodes(); track node.room.id) {
+            <g
+              class="map-node-group"
+              [class.current-node]="node.room.id === engine.character().currentRoomId"
+              [class.architect-selected]="
+                engine.perspective() === 'ARCHITECT' &&
+                node.room.id === engine.selectedArchitectRoomId()
+              "
+              [class.fog-rumor]="node.adjacentRumor && engine.perspective() === 'EXPLORER'"
+              [attr.transform]="'translate(' + node.room.x + ',' + node.room.y + ')'"
+              (click)="onNodeClick(node.room)"
+              [attr.data-testid]="'map-node-' + node.room.id"
+            >
+              @if (node.room.id === engine.character().currentRoomId) {
+                <circle r="38" fill="url(#activeNodeGlow)" />
+              }
+
+              <!-- Node Outer Ring (Heatmap in Architect Mode or Legend Color in Explorer) -->
+              <circle
+                r="24"
+                [attr.fill]="engine.perspective() === 'ARCHITECT' ? node.heatmapColor : '#0f172a'"
+                [attr.stroke]="node.colorHex"
+                stroke-width="2.5"
+              />
+
+              <!-- Semantic Legend Glyph -->
+              <text
+                text-anchor="middle"
+                dominant-baseline="central"
+                class="node-glyph"
+                [attr.fill]="node.colorHex"
+              >
+                {{ node.glyph }}
+              </text>
+
+              <!-- Room Label or Fog-of-War Rumor Signal -->
+              <text y="36" text-anchor="middle" class="node-caption">
+                {{
+                  node.adjacentRumor && engine.perspective() === 'EXPLORER'
+                    ? node.room.rumorSignal.slice(0, 26) + '...'
+                    : node.room.title.slice(0, 22)
+                }}
+              </text>
+
+              <!-- Live P2P Visitor Radar Indicator -->
+              @if (node.visitorNames.length > 0) {
+                <g transform="translate(18, -18)" class="visitor-radar-pip">
+                  <circle r="9" fill="#c084fc" stroke="#090d16" stroke-width="1.5" />
+                  <text
+                    text-anchor="middle"
+                    dominant-baseline="central"
+                    font-size="9"
+                    fill="#090d16"
+                    font-weight="700"
+                  >
+                    {{ node.visitorNames.length }}
+                  </text>
+                </g>
+              }
+            </g>
+          }
+        </svg>
+
+        <!-- SHARED & EXTENSIBLE LEGEND BAR OVERLAY -->
+        <div class="legend-strip" aria-label="Universal Shared & Custom Map Legend">
+          @for (entry of legendRegistry.allLegendEntries(); track entry.id) {
+            <span
+              class="legend-chip"
+              [class.custom-chip]="entry.isCustom"
+              [title]="entry.tooltipDescription"
+            >
+              <strong [style.color]="entry.colorHex">{{ entry.glyph }}</strong>
+              <span>{{ entry.label }}</span>
+            </span>
+          }
+        </div>
+      </div>
+
+      <!-- PERSPECTIVE-SPECIFIC SUB-PANEL (EXPLORER INSPECTOR / ARCHITECT VISUAL EDITOR / SPECTATOR SCRUBBER) -->
+      @if (engine.perspective() === 'EXPLORER') {
+        <div class="perspective-dock explorer-dock" data-testid="explorer-dock">
+          <!-- Mini-Compass & Quick Room Actions -->
+          <div class="compass-cluster" role="group" aria-label="Navigation Compass">
+            @for (dir of directions; track dir) {
+              <button
+                type="button"
+                class="compass-btn"
+                [disabled]="!hasExitInDirection(dir)"
+                (click)="onDirectionClick(dir)"
+                [attr.data-testid]="'compass-' + dir"
+              >
+                {{ dir }}
+              </button>
+            }
+            <button
+              type="button"
+              class="compass-btn action"
+              (click)="engine.inspectTarget()"
+              data-testid="inspect-room-btn"
+            >
+              🔍 Scan (PER {{ engine.effectiveAttributes().PER }})
+            </button>
+            @if (engine.currentRoom().legendType === 'safe-campfire') {
+              <button
+                type="button"
+                class="compass-btn rest"
+                (click)="engine.restAtCampfire()"
+                data-testid="rest-campfire-btn"
+              >
+                ♨ Campfire Rest
+              </button>
+            }
+          </div>
+
+          <!-- Inspector Lens Output -->
+          @if (engine.inspectedEntity(); as lens) {
+            <div class="inspector-lens-card" data-testid="inspector-lens-card">
+              <div class="lens-header">
+                <strong>🔎 Inspector Lens: {{ lens.title }}</strong>
+                <span class="lens-sub">{{ lens.subtitle }}</span>
+              </div>
+              <ul class="lens-details">
+                @for (line of lens.details; track line) {
+                  <li>{{ line }}</li>
+                }
+              </ul>
+            </div>
+          }
+        </div>
+      } @else if (engine.perspective() === 'ARCHITECT') {
+        <div class="perspective-dock architect-dock" data-testid="architect-dock">
+          <div class="architect-grid">
+            <!-- Edit Selected Room Node -->
+            <div class="arch-card">
+              <h3>Edit Node ({{ engine.selectedArchitectRoomId() }})</h3>
+              <div class="arch-row">
+                <input
+                  type="text"
+                  aria-label="Room Title"
+                  [ngModel]="editRoomTitle()"
+                  (ngModelChange)="editRoomTitle.set($event)"
+                  placeholder="Room Title"
+                  data-testid="arch-room-title-input"
+                />
+                <select
+                  aria-label="Legend Classification"
+                  [ngModel]="editRoomLegend()"
+                  (ngModelChange)="editRoomLegend.set($event)"
+                >
+                  <option value="anchor-portal">Anchor Portal</option>
+                  <option value="safe-campfire">Safe Campfire</option>
+                  <option value="elite-boss">Elite/Boss Chamber</option>
+                  <option value="puzzle-mechanism">Puzzle/Mechanism</option>
+                  <option value="lore-terminal">Lore Terminal</option>
+                  <option value="treasure-vault">Treasure Vault</option>
+                  <option value="hazard-trap">Hazard/Trap</option>
+                  <option value="merchant-shrine">Merchant/Shrine</option>
+                  <option value="corridor">Transit Hall</option>
+                </select>
+                <button
+                  type="button"
+                  class="mini-action-btn"
+                  (click)="saveArchitectRoomChanges()"
+                  data-testid="arch-save-room-btn"
+                >
+                  Save Delta
+                </button>
+              </div>
+              <input
+                type="text"
+                aria-label="Room Description"
+                [ngModel]="editRoomDesc()"
+                (ngModelChange)="editRoomDesc.set($event)"
+                placeholder="Room Description"
+                data-testid="arch-room-desc-input"
+              />
+            </div>
+
+            <!-- Excavate (@dig) & Declarative WHEN/IF/DO Trigger Builder -->
+            <div class="arch-card">
+              <h3>Excavate (@dig) & Declarative Triggers</h3>
+              <div class="arch-row">
+                <select
+                  aria-label="Dig Direction"
+                  [ngModel]="digDirection()"
+                  (ngModelChange)="digDirection.set($event)"
+                >
+                  @for (d of directions; track d) {
+                    <option [value]="d">{{ d }}</option>
+                  }
+                </select>
+                <input
+                  type="text"
+                  aria-label="New Chamber Name"
+                  [ngModel]="digTitle()"
+                  (ngModelChange)="digTitle.set($event)"
+                  placeholder="New Chamber Title"
+                  data-testid="arch-dig-title-input"
+                />
+                <button
+                  type="button"
+                  class="mini-action-btn accent"
+                  (click)="architectDigNewRoom()"
+                  data-testid="arch-dig-btn"
+                >
+                  + @dig Room
+                </button>
+              </div>
+              <div class="arch-row">
+                <select
+                  aria-label="Trigger WHEN"
+                  [ngModel]="triggerWhen()"
+                  (ngModelChange)="triggerWhen.set($event)"
+                >
+                  <option value="ON_ENTER">WHEN: ON_ENTER</option>
+                  <option value="ON_INSPECT">WHEN: ON_INSPECT</option>
+                  <option value="ON_COMBAT_CLEAR">WHEN: ON_COMBAT_CLEAR</option>
+                </select>
+                <input
+                  type="text"
+                  aria-label="Trigger IF Condition"
+                  [ngModel]="triggerIf()"
+                  (ngModelChange)="triggerIf.set($event)"
+                  placeholder="IF (e.g. PER >= 12)"
+                />
+                <select
+                  aria-label="Trigger DO Action"
+                  [ngModel]="triggerDo()"
+                  (ngModelChange)="triggerDo.set($event)"
+                >
+                  <option value="EMIT_LORE">DO: EMIT_LORE</option>
+                  <option value="UNLOCK_EXIT">DO: UNLOCK_EXIT</option>
+                  <option value="DEAL_HAZARD">DO: DEAL_HAZARD</option>
+                  <option value="HEAL_PARTY">DO: HEAL_PARTY</option>
+                </select>
+                <button
+                  type="button"
+                  class="mini-action-btn"
+                  (click)="architectAddTrigger()"
+                  data-testid="arch-add-trigger-btn"
+                >
+                  + Wire Trigger
+                </button>
+              </div>
+            </div>
+
+            <!-- Register Extensible Custom Legend Entry -->
+            <div class="arch-card">
+              <h3>Custom Legend Symbol (@legend)</h3>
+              <div class="arch-row">
+                <input
+                  type="text"
+                  aria-label="Custom Glyph"
+                  class="glyph-input"
+                  maxlength="2"
+                  [ngModel]="customLegendGlyph()"
+                  (ngModelChange)="customLegendGlyph.set($event)"
+                  data-testid="arch-legend-glyph-input"
+                />
+                <input
+                  type="text"
+                  aria-label="Custom Legend Label"
+                  [ngModel]="customLegendLabel()"
+                  (ngModelChange)="customLegendLabel.set($event)"
+                  placeholder="Symbol Label"
+                  data-testid="arch-legend-label-input"
+                />
+                <input
+                  type="color"
+                  aria-label="Custom Legend Color"
+                  [ngModel]="customLegendColor()"
+                  (ngModelChange)="customLegendColor.set($event)"
+                />
+                <button
+                  type="button"
+                  class="mini-action-btn"
+                  (click)="architectRegisterCustomLegend()"
+                  data-testid="arch-register-legend-btn"
+                >
+                  + Register Symbol
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      } @else if (engine.perspective() === 'SPECTATOR') {
+        <div class="perspective-dock spectator-dock" data-testid="spectator-dock">
+          <div class="spectator-header">
+            <strong>📼 Chronicle Replay Scrubber</strong>
+            <div class="replay-selector">
+              @for (gb of engine.telemetry().guestbook; track gb.id) {
+                <button
+                  type="button"
+                  class="mini-action-btn"
+                  [class.accent]="engine.activeReplayEntry()?.id === gb.id"
+                  (click)="selectReplayGuestbook(gb)"
+                >
+                  {{ gb.visitorName }} ({{ gb.outcome }})
+                </button>
+              }
+            </div>
+          </div>
+          @if (engine.activeReplayEntry(); as activeRep) {
+            <div class="scrubber-controls">
+              <input
+                type="range"
+                aria-label="Replay Timeline Scrubber"
+                min="0"
+                [max]="(activeRep.replayFrames.length || 1) - 1"
+                [ngModel]="engine.replayCursorIndex()"
+                (ngModelChange)="engine.replayCursorIndex.set(+$event)"
+                data-testid="replay-scrubber-slider"
+              />
+              @if (activeRep.replayFrames[engine.replayCursorIndex()]; as frame) {
+                <div class="replay-frame-readout" data-testid="replay-frame-readout">
+                  <span class="frame-tick">[Tick {{ frame.tickIndex }} • {{ frame.roomId }}]</span>
+                  <span class="frame-text">{{ frame.narrativeLine }}</span>
+                  <span class="frame-vitals"
+                    >Traveler HP: {{ frame.playerHpPct }}% | Foe HP: {{ frame.enemyHpPct }}%</span
+                  >
+                </div>
+              }
+            </div>
+          }
+        </div>
+      }
+    </section>
+
+    <!-- RIGHT PANEL: SENSORY NARRATIVE TERMINAL + ATB TACTICAL COMBAT HUD -->
+    <section class="terminal-combat-panel" aria-label="Sensory Terminal and ATB Combat Controls">
+      <!-- VITALS & ARCHETYPE BAR -->
+      <div class="vitals-strip">
+        <div class="char-identity">
+          <strong data-testid="char-name">{{ engine.character().name }}</strong>
+          <span class="lvl-pill">Lv.{{ engine.character().level }}</span>
+          <select
+            aria-label="Switch Class Core"
+            class="archetype-select"
+            [ngModel]="engine.character().archetype"
+            (ngModelChange)="engine.switchArchetype($event)"
+            data-testid="archetype-select"
+          >
+            @for (arch of archetypes; track arch) {
+              <option [value]="arch">{{ arch }}</option>
+            }
+          </select>
+        </div>
+
+        <div class="vital-gauges">
+          <div class="gauge-box" title="Health Points">
+            <span class="gauge-label"
+              >HP {{ engine.character().hp }}/{{ engine.derivedStats().maxHp }}</span
+            >
+            <div class="gauge-track">
+              <div
+                class="gauge-fill hp"
+                [style.width.%]="(engine.character().hp / engine.derivedStats().maxHp) * 100"
+              ></div>
+            </div>
+          </div>
+
+          <div class="gauge-box" title="Stamina / MP">
+            <span class="gauge-label"
+              >STA {{ engine.character().stamina | number: '1.0-0' }}/{{
+                engine.derivedStats().maxStamina
+              }}</span
+            >
+            <div class="gauge-track">
+              <div
+                class="gauge-fill sta"
+                [style.width.%]="
+                  (engine.character().stamina / engine.derivedStats().maxStamina) * 100
+                "
+              ></div>
+            </div>
+          </div>
+
+          <div class="gauge-box" title="Active Time Battle Readiness Gauge">
+            <span class="gauge-label" data-testid="atb-gauge-label"
+              >ATB {{ engine.character().atbGauge | number: '1.0-0' }}%</span
+            >
+            <div class="gauge-track">
+              <div class="gauge-fill atb" [style.width.%]="engine.character().atbGauge"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ACTIVE ROOM COMBATANTS READOUT -->
+      @if (engine.livingRoomMonsters().length > 0) {
+        <div class="combat-encounter-banner" data-testid="combat-encounter-banner">
+          @for (mob of engine.livingRoomMonsters(); track mob.id) {
+            <button
+              type="button"
+              class="mob-card"
+              [class.targeted]="engine.selectedTargetId() === mob.id"
+              (click)="engine.selectedTargetId.set(mob.id)"
+            >
+              <div class="mob-top">
+                <strong>{{ mob.name }}</strong>
+                <span class="mob-elem">{{ mob.element }}</span>
+              </div>
+              <div class="mob-bars">
+                <div class="mini-bar hp">
+                  <div [style.width.%]="(mob.hp / mob.maxHp) * 100"></div>
+                </div>
+                <div class="mini-bar atb">
+                  <div [style.width.%]="mob.atbGauge"></div>
+                </div>
+              </div>
+              <div class="mob-meta">
+                <span>HP {{ mob.hp }}/{{ mob.maxHp }}</span>
+                @for (st of mob.statuses; track st.tag) {
+                  <span class="status-tag">{{ st.tag }} ({{ st.stacks }})</span>
+                }
+              </div>
+            </button>
+          }
+        </div>
+      }
+
+      <!-- SENSORY TERMINAL LOG WITH CLICKABLE ENTITY BADGES -->
+      <div class="terminal-log" role="log" aria-live="polite" data-testid="terminal-log">
+        @for (line of engine.terminalFeed(); track line.id) {
+          <div class="term-line" [attr.data-category]="line.category">
+            <span class="term-time">[{{ line.timestamp }}]</span>
+            <span class="term-text">{{ line.text }}</span>
+            @if (line.badges && line.badges.length > 0) {
+              <div class="term-badges">
+                @for (b of line.badges; track b.label) {
+                  <button
+                    type="button"
+                    class="inline-entity-badge"
+                    [style.borderColor]="b.colorHex || '#38bdf8'"
+                    (click)="onBadgeClick(b)"
+                  >
+                    {{ b.label }}
+                  </button>
+                }
+              </div>
+            }
+          </div>
+        }
+      </div>
+
+      <!-- 4 ACTIVE SKILL HOTKEYS + AUTO-ATTACK TOGGLE -->
+      <div class="skill-bar" role="group" aria-label="Tactical Skill Queue">
+        <button
+          type="button"
+          class="auto-toggle-btn"
+          [class.active]="engine.character().autoAttackEnabled"
+          (click)="engine.toggleAutoAttack()"
+          data-testid="auto-attack-toggle"
+        >
+          ⚔ Auto: {{ engine.character().autoAttackEnabled ? 'ON' : 'OFF' }}
+        </button>
+
+        @for (skill of engine.character().activeSkills; track skill.id) {
+          <button
+            type="button"
+            class="skill-slot-btn"
+            [disabled]="skill.currentCooldownMs > 0"
+            (click)="onSkillButtonClick(skill)"
+            [title]="skill.description"
+            [attr.data-testid]="'skill-btn-' + skill.commandKey"
+          >
+            <span class="sk-name">[{{ skill.name }}]</span>
+            <span class="sk-meta">
+              {{ skill.element }} • {{ skill.staminaCost }} STA
+              @if (skill.currentCooldownMs > 0) {
+                ({{ (skill.currentCooldownMs / 1000).toFixed(1) }}s)
+              }
+            </span>
+          </button>
+        }
+      </div>
+
+      <!-- DUAL-INPUT COMMAND LINE -->
+      <form class="terminal-input-row" (ngSubmit)="submitTerminalCommand()">
+        <label for="mud-cmd-input" class="sr-only">MUD Command Terminal Input</label>
+        <span class="prompt-caret" aria-hidden="true">&gt;</span>
+        <input
+          id="mud-cmd-input"
+          name="command"
+          type="text"
+          autocomplete="off"
+          [ngModel]="terminalCommandText()"
+          (ngModelChange)="terminalCommandText.set($event)"
+          placeholder="Type command (e.g. cast sunder goblin, inspect, n/s/e/w, @dig E Vault)..."
+          data-testid="terminal-input"
+        />
+        <button type="submit" class="send-cmd-btn" data-testid="terminal-submit-btn">Send</button>
+      </form>
+    </section>
   </main>
 
-  <footer class="app-footer" role="contentinfo">
-    <div class="footer-inner">
-      <p class="footer-text">
-        Angular PWA Starter • Ready for GitHub Pages &amp; PWA Standalone Mode
-      </p>
-      <div class="footer-links">
-        <a
-          href="https://github.com/cboler/angular-pwa-starter"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          GitHub Repository
-        </a>
-        <span class="separator" aria-hidden="true">•</span>
-        <a routerLink="/status">Diagnostics</a>
+  <!-- SLIDE-OVER ON-DEMAND DATA, GRAPHS & TELEMETRY DRAWERS -->
+  @if (engine.activeDrawer() !== 'NONE') {
+    <aside
+      class="telemetry-drawer-backdrop"
+      role="dialog"
+      aria-modal="false"
+      aria-label="On-Demand Telemetry & Character Drawer"
+      data-testid="active-drawer-panel"
+    >
+      <div class="drawer-sheet">
+        <div class="drawer-header">
+          <h2>
+            @switch (engine.activeDrawer()) {
+              @case ('PAPERDOLL') {
+                🛡 Equipment Paperdoll, Attribute Radar & Inventory
+              }
+              @case ('COMBAT_TELEMETRY') {
+                📊 Combat Telemetry, DPS Breakdown & RNG Histogram
+              }
+              @case ('REALM_ANALYTICS') {
+                🔥 Architect Dungeon Heatmap & Visitor Guestbook
+              }
+              @case ('CHRONICLE') {
+                📜 Traveler's Career Chronicle & Compendium
+              }
+              @case ('NETWORK') {
+                🌐 Serverless P2P Chaos Gate Transport & Customs Gate
+              }
+            }
+          </h2>
+          <button
+            type="button"
+            class="close-drawer-btn"
+            (click)="engine.activeDrawer.set('NONE')"
+            data-testid="close-drawer-btn"
+          >
+            ✕ Close
+          </button>
+        </div>
+
+        <div class="drawer-body">
+          <!-- 1. PAPERDOLL & CHARACTER SHEET DRAWER -->
+          @if (engine.activeDrawer() === 'PAPERDOLL') {
+            <div class="drawer-split-grid" data-testid="paperdoll-drawer-content">
+              <!-- Interactive SVG/CSS Paperdoll (7 Slots) -->
+              <div class="paperdoll-card">
+                <h3>
+                  Interactive Paperdoll (Weight: {{ engine.equippedWeight() }}/{{
+                    engine.character().maxWeight
+                  }})
+                </h3>
+                <div class="paperdoll-slots-grid">
+                  @for (slot of paperdollSlots; track slot) {
+                    @let eqItem = engine.character().paperdoll[slot];
+                    <div
+                      class="pd-slot"
+                      [class.filled]="!!eqItem"
+                      [attr.data-testid]="'pd-slot-' + slot"
+                    >
+                      <span class="slot-type-label">{{ slot }}</span>
+                      @if (eqItem) {
+                        <strong class="item-title">{{ eqItem.name }}</strong>
+                        <div class="provenance-row">
+                          <span
+                            class="prov-badge"
+                            [class.verified]="eqItem.provenance === 'Verified Drop'"
+                            [class.forged]="eqItem.provenance === 'Architect Forged'"
+                          >
+                            {{ eqItem.provenance }}
+                          </span>
+                          @if (eqItem.clampedStatBudget) {
+                            <span class="clamp-badge" data-testid="clamped-item-badge">
+                              Clamped {{ eqItem.totalStatBudget }} → {{ eqItem.clampedStatBudget }}
+                            </span>
+                          }
+                        </div>
+                        <button
+                          type="button"
+                          class="mini-action-btn"
+                          (click)="engine.unequipSlot(slot)"
+                        >
+                          Unequip
+                        </button>
+                      } @else {
+                        <span class="empty-slot-hint">Empty Slot</span>
+                      }
+                    </div>
+                  }
+                </div>
+              </div>
+
+              <!-- SVG Attribute Radar/Spider Chart + Derived Curves -->
+              <div class="radar-card">
+                <h3>Core Attribute Radar & Derived Curves</h3>
+                <svg
+                  class="radar-svg"
+                  viewBox="0 0 220 220"
+                  role="img"
+                  aria-label="Core Attributes Radar Chart"
+                  data-testid="attribute-radar-svg"
+                >
+                  <!-- Concentric Web Rings -->
+                  <circle cx="110" cy="110" r="26" class="radar-ring" />
+                  <circle cx="110" cy="110" r="52" class="radar-ring" />
+                  <circle cx="110" cy="110" r="78" class="radar-ring" />
+                  <!-- Attribute Polygon -->
+                  <polygon [attr.points]="radarPolygonPoints()" class="radar-polygon" />
+                  <!-- Axis Labels -->
+                  @for (ax of radarAxisLabels(); track ax.label) {
+                    <text
+                      [attr.x]="ax.x"
+                      [attr.y]="ax.y"
+                      text-anchor="middle"
+                      dominant-baseline="central"
+                      class="radar-label"
+                    >
+                      {{ ax.label }} ({{ ax.value }})
+                    </text>
+                  }
+                </svg>
+
+                <div class="derived-curves-list">
+                  <div>
+                    <span>Attack Rating (ATK)</span>
+                    <strong>{{ engine.derivedStats().atk }}</strong>
+                  </div>
+                  <div>
+                    <span>Damage Mitigation</span>
+                    <strong>{{ engine.derivedStats().mitigationPct }}%</strong>
+                  </div>
+                  <div>
+                    <span>Crit Chance / Mult</span>
+                    <strong
+                      >{{ engine.derivedStats().critChancePct }}% ({{
+                        engine.derivedStats().critMultiplier
+                      }}x)</strong
+                    >
+                  </div>
+                  <div>
+                    <span>ATB Fill Rate / 100ms</span>
+                    <strong>{{ engine.derivedStats().atbFillRatePerTick }}%</strong>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Filterable Inventory Grid with Stat-Comparison Tooltips -->
+              <div class="inventory-card full-span">
+                <div class="inv-header">
+                  <h3>Inventory Vault ({{ filteredInventory().length }} Items)</h3>
+                  <div class="filter-pills">
+                    <button
+                      type="button"
+                      class="mini-action-btn"
+                      [class.accent]="inventoryFilter() === 'ALL'"
+                      (click)="inventoryFilter.set('ALL')"
+                    >
+                      All
+                    </button>
+                    <button
+                      type="button"
+                      class="mini-action-btn"
+                      [class.accent]="inventoryFilter() === 'Verified Drop'"
+                      (click)="inventoryFilter.set('Verified Drop')"
+                    >
+                      Verified Drops
+                    </button>
+                    <button
+                      type="button"
+                      class="mini-action-btn"
+                      [class.accent]="inventoryFilter() === 'Architect Forged'"
+                      (click)="inventoryFilter.set('Architect Forged')"
+                    >
+                      Architect Forged
+                    </button>
+                  </div>
+                </div>
+
+                <div class="inventory-grid">
+                  @for (item of filteredInventory(); track item.id) {
+                    <div
+                      class="inv-item-card"
+                      (mouseenter)="hoveredInventoryItem.set(item)"
+                      [attr.data-testid]="'inv-item-' + item.id"
+                    >
+                      <div class="inv-top">
+                        <strong>{{ item.name }}</strong>
+                        <span class="slot-pill">{{ item.slot }}</span>
+                      </div>
+                      <div class="inv-prov">
+                        <span
+                          class="prov-badge"
+                          [class.verified]="item.provenance === 'Verified Drop'"
+                        >
+                          {{ item.provenance }}
+                        </span>
+                        @if (item.clampedStatBudget) {
+                          <span class="clamp-badge">
+                            Customs Clamped ({{ item.clampedStatBudget }}/{{
+                              item.totalStatBudget
+                            }})
+                          </span>
+                        }
+                      </div>
+                      <div class="stat-diff-tooltip" data-testid="stat-comparison-tooltip">
+                        {{ computeStatComparisonTooltip(item) }}
+                      </div>
+                      <button
+                        type="button"
+                        class="mini-action-btn accent"
+                        (click)="engine.equipInventoryItem(item.id)"
+                        [attr.data-testid]="'equip-btn-' + item.id"
+                      >
+                        Equip Item
+                      </button>
+                    </div>
+                  }
+                </div>
+              </div>
+            </div>
+          }
+
+          <!-- 2. COMBAT TELEMETRY & LOG ANALYTICS DRAWER -->
+          @if (engine.activeDrawer() === 'COMBAT_TELEMETRY') {
+            <div class="drawer-split-grid" data-testid="combat-telemetry-drawer-content">
+              <!-- DPS & Mitigation Horizontal Stacked Bars -->
+              <div class="telemetry-card">
+                <h3>DPS, Mitigation & Overkill Breakdown</h3>
+                <div class="stacked-bars-list">
+                  @for (row of skillTelemetryBreakdown(); track row.skillName) {
+                    <div class="telemetry-bar-row">
+                      <div class="bar-label-line">
+                        <strong>{{ row.skillName }} ({{ row.element }})</strong>
+                        <span
+                          >DMG: {{ row.damageDealt }} | Mitigated: {{ row.damageMitigated }} |
+                          Overkill: {{ row.overkill }} | Heal: {{ row.healingDone }}</span
+                        >
+                      </div>
+                      <div class="stacked-bar-track">
+                        <div
+                          class="seg dmg"
+                          [style.width.%]="row.totalWidthPct * 0.65"
+                          title="Damage Dealt"
+                        ></div>
+                        <div
+                          class="seg mit"
+                          [style.width.%]="row.totalWidthPct * 0.2"
+                          title="Mitigated"
+                        ></div>
+                        <div
+                          class="seg ovk"
+                          [style.width.%]="row.totalWidthPct * 0.15"
+                          title="Overkill"
+                        ></div>
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+
+              <!-- RNG Roll Distribution SVG Histogram -->
+              <div class="telemetry-card">
+                <h3>RNG Roll Distribution Histogram (d100) & Status Uptime</h3>
+                <svg
+                  class="histogram-svg"
+                  viewBox="0 0 320 150"
+                  role="img"
+                  aria-label="RNG Roll Distribution Histogram"
+                  data-testid="roll-histogram-svg"
+                >
+                  @for (b of rollHistogramBuckets(); track b.label; let idx = $index) {
+                    <g [attr.transform]="'translate(' + (18 + idx * 58) + ', 15)'">
+                      <rect
+                        x="0"
+                        [attr.y]="100 - b.heightPct"
+                        width="40"
+                        [attr.height]="b.heightPct"
+                        rx="4"
+                        fill="#38bdf8"
+                      />
+                      <text
+                        x="20"
+                        [attr.y]="94 - b.heightPct"
+                        text-anchor="middle"
+                        class="hist-val"
+                      >
+                        {{ b.count }}
+                      </text>
+                      <text x="20" y="118" text-anchor="middle" class="hist-label">
+                        {{ b.label }}
+                      </text>
+                    </g>
+                  }
+                </svg>
+
+                <div class="status-uptime-chips">
+                  @for (st of trackedStatusTags; track st) {
+                    <span class="uptime-pill">
+                      <strong>{{ st }}:</strong>
+                      {{ ((engine.telemetry().statusUptimeMs[st] || 0) / 1000).toFixed(1) }}s
+                    </span>
+                  }
+                </div>
+              </div>
+            </div>
+          }
+
+          <!-- 3. REALM ANALYTICS & GUESTBOOK GRAVESTONES DRAWER -->
+          @if (engine.activeDrawer() === 'REALM_ANALYTICS') {
+            <div class="drawer-split-grid" data-testid="realm-analytics-drawer-content">
+              <div class="telemetry-card">
+                <h3>Dungeon Heatmap Mode</h3>
+                <div class="filter-pills">
+                  @for (mode of heatmapModes; track mode) {
+                    <button
+                      type="button"
+                      class="mini-action-btn"
+                      [class.accent]="engine.heatmapMode() === mode"
+                      (click)="engine.heatmapMode.set(mode)"
+                      [attr.data-testid]="'heatmap-mode-' + mode"
+                    >
+                      {{ mode }}
+                    </button>
+                  }
+                </div>
+                <table class="metrics-table">
+                  <thead>
+                    <tr>
+                      <th>Room</th>
+                      <th>Visits</th>
+                      <th>Deaths</th>
+                      <th>Avg Time</th>
+                      <th>Loot</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (r of engine.rooms(); track r.id) {
+                      @let m = engine.telemetry().roomMetrics[r.id];
+                      <tr>
+                        <td>{{ r.title }}</td>
+                        <td>{{ m?.visitorCount ?? 0 }}</td>
+                        <td>{{ m?.playerDeaths ?? 0 }}</td>
+                        <td>{{ ((m?.totalTimeSpentMs ?? 0) / 1000).toFixed(0) }}s</td>
+                        <td>{{ m?.lootExtractedCount ?? 0 }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="telemetry-card">
+                <h3>Realm Guestbook & Gravestones</h3>
+                <div class="guestbook-list">
+                  @for (gb of engine.telemetry().guestbook; track gb.id) {
+                    <div class="guestbook-card" [attr.data-outcome]="gb.outcome">
+                      <div class="gb-top">
+                        <strong>{{ gb.visitorName }} ({{ gb.archetype }})</strong>
+                        <span class="outcome-badge">{{ gb.outcome }}</span>
+                      </div>
+                      <p class="gb-note">{{ gb.epitaphOrNote }}</p>
+                      <div class="gb-foot">
+                        <span>{{ gb.roomTitle }}</span>
+                        <button
+                          type="button"
+                          class="mini-action-btn"
+                          (click)="selectReplayGuestbook(gb); engine.activeDrawer.set('NONE')"
+                        >
+                          📼 Watch Replay
+                        </button>
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+            </div>
+          }
+
+          <!-- 4. TRAVELER'S CHRONICLE DRAWER -->
+          @if (engine.activeDrawer() === 'CHRONICLE') {
+            <div class="drawer-split-grid" data-testid="chronicle-drawer-content">
+              <div class="telemetry-card">
+                <h3>Lifetime Wealth & XP Progression Curve</h3>
+                <svg
+                  class="progression-svg"
+                  viewBox="0 0 300 105"
+                  role="img"
+                  aria-label="Lifetime XP and Wealth Line Graph"
+                  data-testid="career-progression-svg"
+                >
+                  <polyline
+                    fill="none"
+                    stroke="#38bdf8"
+                    stroke-width="2.5"
+                    [attr.points]="careerProgressionPolyline().xpPoints"
+                  />
+                  <polyline
+                    fill="none"
+                    stroke="#fbbf24"
+                    stroke-width="2.5"
+                    [attr.points]="careerProgressionPolyline().goldPoints"
+                  />
+                </svg>
+                <div class="legend-inline">
+                  <span style="color: #38bdf8">● Cumulative XP ({{ engine.character().xp }})</span>
+                  <span style="color: #fbbf24"
+                    >● Cumulative Gold ({{ engine.character().gold }})</span
+                  >
+                </div>
+              </div>
+
+              <div class="telemetry-card">
+                <div class="inv-header">
+                  <h3>Chaos Gate Career Timeline & Bestiary</h3>
+                  <input
+                    type="search"
+                    aria-label="Search Career Chronicle"
+                    [ngModel]="chronicleSearch()"
+                    (ngModelChange)="chronicleSearch.set($event)"
+                    placeholder="Filter Chaos Gates..."
+                    data-testid="chronicle-search-input"
+                  />
+                </div>
+                <div class="chronicle-timeline">
+                  @for (entry of filteredChronicleEntries(); track entry.id) {
+                    <div class="chron-item">
+                      <strong>{{ entry.gateAddress }}</strong>
+                      <span>{{ entry.eventTitle }} (+{{ entry.xpEarned }} XP)</span>
+                    </div>
+                  }
+                </div>
+              </div>
+            </div>
+          }
+
+          <!-- 5. SERVERLESS P2P NETWORKING & CUSTOMS GATE DRAWER -->
+          @if (engine.activeDrawer() === 'NETWORK') {
+            <div class="drawer-split-grid" data-testid="network-drawer-content">
+              <!-- BroadcastChannel Active Chaos Gate Portals -->
+              <div class="telemetry-card">
+                <h3>BroadcastChannel & Active Chaos Gate Portals</h3>
+                <p class="card-help">
+                  Opening two browser tabs automatically links Anchor Rooms via
+                  <code>BroadcastChannel</code>. Click any discovered portal to traverse into that
+                  player's realm.
+                </p>
+                <div class="peer-list">
+                  @for (peer of transport.activeVisitorsList(); track peer.peerId) {
+                    <div class="peer-row" [attr.data-testid]="'peer-portal-' + peer.peerId">
+                      <div>
+                        <strong
+                          >{{ peer.playerName }} (Lv.{{ peer.level }} {{ peer.archetype }})</strong
+                        >
+                        <div class="peer-sub">
+                          Gate: {{ peer.gateAddress }} • Sector: {{ peer.currentRoomId }} •
+                          {{ peer.transport }}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        class="mini-action-btn accent"
+                        (click)="
+                          engine.traverseChaosGatePortal(peer.gateAddress);
+                          engine.activeDrawer.set('NONE')
+                        "
+                        [attr.data-testid]="'traverse-portal-' + peer.peerId"
+                      >
+                        ◈ Enter Portal
+                      </button>
+                    </div>
+                  }
+                </div>
+              </div>
+
+              <!-- WebRTC SDP Handshake & Base64 Realm Cartridge Export -->
+              <div class="telemetry-card">
+                <h3>WebRTC SDP Handshake & JSON Delta Cartridge</h3>
+                <div class="arch-row">
+                  <button
+                    type="button"
+                    class="mini-action-btn accent"
+                    (click)="generateWebRtcOffer()"
+                    data-testid="webrtc-offer-btn"
+                  >
+                    Generate WebRTC Room Code
+                  </button>
+                  <span class="rtc-status">Status: {{ transport.rtcConnectionState() }}</span>
+                </div>
+                @if (transport.localSdpPayload()) {
+                  <textarea
+                    readonly
+                    rows="2"
+                    aria-label="Local WebRTC SDP Token"
+                    [value]="transport.localSdpPayload()"
+                    data-testid="webrtc-sdp-output"
+                  ></textarea>
+                }
+                <div class="arch-row">
+                  <input
+                    type="text"
+                    aria-label="Remote SDP Handshake Token"
+                    [ngModel]="remoteHandshakeInput()"
+                    (ngModelChange)="remoteHandshakeInput.set($event)"
+                    placeholder="Paste Peer SDP Offer/Answer..."
+                  />
+                  <button type="button" class="mini-action-btn" (click)="acceptWebRtcHandshake()">
+                    Connect Peer
+                  </button>
+                </div>
+
+                <h4>Base64 Realm Delta Cartridge</h4>
+                <textarea
+                  rows="2"
+                  aria-label="Base64 Realm Cartridge"
+                  [ngModel]="exportedCartridgeText()"
+                  (ngModelChange)="exportedCartridgeText.set($event)"
+                  data-testid="cartridge-textarea"
+                ></textarea>
+                <button
+                  type="button"
+                  class="mini-action-btn"
+                  (click)="importRealmCartridge()"
+                  data-testid="import-cartridge-btn"
+                >
+                  Load Cartridge Into Portal
+                </button>
+              </div>
+            </div>
+          }
+        </div>
       </div>
+    </aside>
+  }
+
+  <!-- COMPACT TACTICAL STATUS FOOTER -->
+  <footer class="hud-footer" role="contentinfo">
+    <div class="footer-left">
+      <span
+        >Local Peer ID: <code>{{ transport.localPeerId }}</code></span
+      >
+      <span>•</span>
+      <span
+        >Seed: <code>0x{{ engine.activeGateAddress().seed.toString(16).toUpperCase() }}</code></span
+      >
+    </div>
+    <div class="footer-right">
+      <span>SubtleCrypto ECDSA Provenance: Active</span>
+      <span>•</span>
+      <span>100ms Deterministic ATB Loop</span>
     </div>
   </footer>
 </div>
