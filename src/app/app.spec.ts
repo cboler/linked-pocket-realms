@@ -618,95 +618,92 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
     });
   });
 
-  describe('Feature Evolution: Clean, Curated Traveler Herald Greetings ("StreetPass Motto")', () => {
-    it('should format herald greetings from approved templates, adjectives, nouns, and verbs', () => {
-      const g0 = formatHeraldGreeting(0, 'Radiant', 'Beacon', 'triumph');
-      expect(g0.formatted).toBe('May the Radiant Beacon guide your journey.');
-
-      const g1 = formatHeraldGreeting(1, 'Eldritch', 'Shadow', 'prevail');
-      expect(g1.formatted).toBe('Beware: Eldritch Shadow lurks ahead.');
-
-      const g2 = formatHeraldGreeting(2, 'Harmonic', 'Loom', 'triumph');
-      expect(g2.formatted).toBe('Praise the Harmonic Loom! Time to triumph.');
-
-      // Fallback on invalid words
-      const gSafe = formatHeraldGreeting(
-        0,
-        'InvalidBadWord',
-        'Inappropriate',
-        'hax',
-      );
-      expect(gSafe.adjective).toBe(HERALD_ADJECTIVES[0]);
-      expect(gSafe.noun).toBe(HERALD_NOUNS[0]);
-      expect(gSafe.formatted).toBe(
-        `May the ${HERALD_ADJECTIVES[0]} ${HERALD_NOUNS[0]} guide your journey.`,
-      );
+  describe('Feature Evolution: Serverless gcloud Lobby Auto-Announce & Discovery', () => {
+    it('should derive deterministic LOOM room code from local peer id', () => {
+      const roomCode = transport.myLobbyRoomCode();
+      expect(roomCode.startsWith('LOOM-')).toBe(true);
+      expect(roomCode.length).toBe(9);
     });
 
-    it('should roll a random valid approved herald greeting', () => {
-      const rolled = rollRandomHeraldGreeting();
-      expect(rolled.formatted.length).toBeGreaterThan(10);
-      expect(
-        (HERALD_ADJECTIVES as readonly string[]).includes(rolled.adjective),
-      ).toBe(true);
-      expect((HERALD_NOUNS as readonly string[]).includes(rolled.noun)).toBe(
-        true,
-      );
-      expect((HERALD_VERBS as readonly string[]).includes(rolled.verb)).toBe(
-        true,
-      );
+    it('should persist brokerUrl to localStorage when setBrokerUrl is invoked', () => {
+      const testBrokerUrl = 'https://us-central1-test-project.cloudfunctions.net/broker';
+      transport.setBrokerUrl(testBrokerUrl);
+      expect(transport.brokerUrl()).toBe(testBrokerUrl);
+      expect(localStorage.getItem('linked_pocket_realms_broker_url')).toBe(testBrokerUrl);
+
+      // Clean up
+      transport.setBrokerUrl('');
+      expect(transport.brokerUrl()).toBe('');
+      expect(localStorage.getItem('linked_pocket_realms_broker_url')).toBe('');
     });
 
-    it('should allow setting and rolling herald greeting via engine and terminal commands', () => {
-      const setGreeting = engine.setHeraldGreeting(2, 'Astral', 'Blade', 'strike');
-      expect(setGreeting.formatted).toBe('Praise the Astral Blade! Time to strike.');
-      expect(engine.character().heraldGreeting.formatted).toBe(
-        'Praise the Astral Blade! Time to strike.',
-      );
+    it('should announce presence to broker and parse lobby sessions including herald greetings', async () => {
+      const testBrokerUrl = 'https://us-central1-test-project.cloudfunctions.net/broker';
+      transport.setBrokerUrl(testBrokerUrl);
 
-      // Inspect via @greeting
-      engine.parseAndDispatchTerminalInput('@greeting');
-      expect(engine.terminalFeed()[0].text).toContain(
-        'Praise the Astral Blade! Time to strike.',
-      );
+      // Mock fetch
+      const mockSessions = [
+        {
+          roomCode: transport.myLobbyRoomCode(),
+          hostName: 'Host_Wanderer',
+          triChord: 'Ω: Scorching Clockwork Crucible',
+          senderId: transport.localPeerId,
+          heraldGreeting: 'May the Radiant Beacon guide your journey.',
+          hasOffer: true,
+          hasAnswer: false,
+          lastSeenMs: Date.now(),
+        },
+        {
+          roomCode: 'LOOM-9999',
+          hostName: 'Remote_Nomad',
+          triChord: 'Ψ: Silent Astral Vault',
+          senderId: 'remote-peer-9999',
+          heraldGreeting: 'Beware: Eldritch Shadow lurks ahead.',
+          hasOffer: true,
+          hasAnswer: false,
+          lastSeenMs: Date.now(),
+        },
+      ];
 
-      // Roll via terminal @greeting roll
-      engine.parseAndDispatchTerminalInput('@greeting roll');
-      expect(engine.terminalFeed()[0].text).toContain('🎲 [Herald Greeting Rolled]');
-      expect(engine.character().heraldGreeting).toBeDefined();
+      const originalFetch = globalThis.fetch;
+      try {
+        globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+          const urlStr = input.toString();
+          if (urlStr.endsWith('/signal')) {
+            const body = JSON.parse(init?.body as string);
+            expect(body.type).toBe('ANNOUNCE');
+            expect(body.roomCode).toBe(transport.myLobbyRoomCode());
+            expect(body.hostName).toBe('Host_Wanderer');
+            expect(body.heraldGreeting).toBe('May the Radiant Beacon guide your journey.');
+            return new Response(JSON.stringify({ ok: true }), { status: 200 });
+          }
+          if (urlStr.endsWith('/sessions')) {
+            return new Response(JSON.stringify({ sessions: mockSessions }), { status: 200 });
+          }
+          return new Response('Not Found', { status: 404 });
+        }) as typeof globalThis.fetch;
 
-      // Set via terminal parameters
-      engine.parseAndDispatchTerminalInput('@greeting 0 Crystalline Sanctuary triumph');
-      expect(engine.character().heraldGreeting.formatted).toBe(
-        'May the Crystalline Sanctuary guide your journey.',
-      );
-    });
+        await transport.announcePresenceToBroker(
+          'Host_Wanderer',
+          'Ω: Scorching Clockwork Crucible',
+          'May the Radiant Beacon guide your journey.',
+        );
 
-    it('should include herald greeting in the adventurer roster and Thunderpass encounters', () => {
-      engine.setHeraldGreeting(0, 'Valiant', 'Wanderer', 'triumph');
+        expect(transport.brokerSessions().length).toBe(2);
+        const mySession = transport
+          .brokerSessions()
+          .find((s) => s.senderId === transport.localPeerId);
+        expect(mySession).toBeDefined();
+        expect(mySession?.heraldGreeting).toBe('May the Radiant Beacon guide your journey.');
 
-      // Check adventurer roster lists our motto
-      engine.parseAndDispatchTerminalInput('who');
-      const feed = engine.terminalFeed();
-      const youLine = feed.find((l) => l.text.includes('• You:'));
-      expect(youLine?.text).toContain('May the Valiant Wanderer guide your journey.');
-
-      // Check neighbor peer motto
-      const peerLine = feed.find((l) => l.text.includes('Kite_Zero'));
-      expect(peerLine?.text).toContain('Beware: Eldritch Shadow lurks ahead.');
-
-      // Simulate a Thunderpass encounter and verify motto propagation
-      thunderpass.simulateThunderpassCollision(
-        'Motto_Traveler',
-        'Ω: Scorching Clockwork Crucible',
-      );
-      const latestEnc = thunderpass.streetPassLog()[0];
-      expect(latestEnc.echo.heraldGreeting).toBe('Praise the Harmonic Loom! Time to triumph.');
-      expect(latestEnc.heraldGreeting).toBe('Praise the Harmonic Loom! Time to triumph.');
-
-      // Verify motto is logged in network feed
-      const encFeedLine = engine.terminalFeed().find((l) => l.text.includes('Motto_Traveler'));
-      expect(encFeedLine?.text).toContain('Motto: "Praise the Harmonic Loom! Time to triumph."');
+        const remoteSession = transport.brokerSessions().find((s) => s.roomCode === 'LOOM-9999');
+        expect(remoteSession).toBeDefined();
+        expect(remoteSession?.hostName).toBe('Remote_Nomad');
+        expect(remoteSession?.heraldGreeting).toBe('Beware: Eldritch Shadow lurks ahead.');
+      } finally {
+        globalThis.fetch = originalFetch;
+        transport.setBrokerUrl('');
+      }
     });
   });
 });

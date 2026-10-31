@@ -2242,11 +2242,43 @@
                         aria-label="Serverless Broker Endpoint"
                         [ngModel]="transport.brokerUrl()"
                         (ngModelChange)="
-                          transport.brokerUrl.set($event); thunderpass.brokerUrl.set($event)
+                          transport.setBrokerUrl($event); thunderpass.brokerUrl.set($event)
                         "
                         data-testid="broker-url-input"
                       />
                     </div>
+
+                    @if (transport.brokerUrl().trim()) {
+                      <div class="broker-status-bar" data-testid="broker-status-bar">
+                        <span class="status-dot online">●</span>
+                        <span
+                          >Auto-Announcing as <code>{{ transport.myLobbyRoomCode() }}</code></span
+                        >
+                        <button
+                          type="button"
+                          class="text-btn"
+                          (click)="
+                            transport.announcePresenceToBroker(
+                              engine.character().name,
+                              engine.activeGateAddress().formatted,
+                              engine.character().heraldGreeting?.formatted
+                            )
+                          "
+                          title="Ping presence now"
+                          data-testid="ping-broker-presence-btn"
+                        >
+                          📡 Ping Now
+                        </button>
+                      </div>
+                    } @else {
+                      <div class="card-help broker-empty-hint">
+                        💡 <strong>Lobby Discovery:</strong> Enter your deployed
+                        <code>cloud-function</code> URL above. Connected browsers automatically
+                        announce themselves and show up live in the lobby list below! (Same-machine
+                        browser tabs connect automatically via <strong>BroadcastChannel</strong>).
+                      </div>
+                    }
+
                     <div class="arch-row">
                       <button
                         type="button"
@@ -2254,12 +2286,13 @@
                         (click)="
                           transport.publishBrokerOffer(
                             engine.character().name,
-                            engine.activeGateAddress().formatted
+                            engine.activeGateAddress().formatted,
+                            engine.character().heraldGreeting?.formatted
                           )
                         "
                         data-testid="create-broker-lobby-btn"
                       >
-                        Create 1-Click Lobby
+                        Publish 1-Click Offer
                       </button>
                       <button
                         type="button"
@@ -2271,26 +2304,58 @@
                       </button>
                     </div>
 
-                    <div class="peer-list">
+                    <div class="peer-list" data-testid="broker-peer-list">
                       @for (sess of transport.brokerSessions(); track sess.roomCode) {
-                        <div class="peer-row">
-                          <div>
-                            <strong>{{ sess.hostName }} ({{ sess.roomCode }})</strong>
-                            <div class="peer-sub">{{ sess.triChord }}</div>
+                        @if (
+                          sess.senderId === transport.localPeerId ||
+                          sess.roomCode === transport.myLobbyRoomCode()
+                        ) {
+                          <div class="peer-row my-lobby-row" data-testid="my-broker-session">
+                            <div>
+                              <strong
+                                >👑 You / Host: {{ sess.hostName }} ({{ sess.roomCode }})</strong
+                              >
+                              <div class="peer-sub">{{ sess.triChord }} • Active & Announcing</div>
+                              @if (sess.heraldGreeting) {
+                                <div class="peer-herald">
+                                  💬 &ldquo;{{ sess.heraldGreeting }}&rdquo;
+                                </div>
+                              }
+                            </div>
+                            <span class="online-pill">● Broadcasting</span>
                           </div>
-                          <button
-                            type="button"
-                            class="mini-action-btn accent"
-                            (click)="transport.joinBrokerSession(sess.roomCode)"
+                        } @else {
+                          <div
+                            class="peer-row"
+                            [attr.data-testid]="'remote-session-' + sess.roomCode"
                           >
-                            Join Lobby
-                          </button>
-                        </div>
+                            <div>
+                              <strong>{{ sess.hostName }} ({{ sess.roomCode }})</strong>
+                              <div class="peer-sub">{{ sess.triChord }}</div>
+                              @if (sess.heraldGreeting) {
+                                <div class="peer-herald">
+                                  💬 &ldquo;{{ sess.heraldGreeting }}&rdquo;
+                                </div>
+                              }
+                            </div>
+                            <button
+                              type="button"
+                              class="mini-action-btn accent"
+                              (click)="
+                                transport.joinBrokerSession(sess.roomCode);
+                                engine.traverseChaosGatePortal(sess.triChord)
+                              "
+                              [attr.data-testid]="'join-lobby-' + sess.roomCode"
+                            >
+                              ◈ Connect & Delve
+                            </button>
+                          </div>
+                        }
                       }
                       @if (transport.brokerSessions().length === 0) {
                         <div class="card-help" style="margin-top: 0.5rem">
-                          No active broker lobbies discovered. Create one above or use
-                          BroadcastChannel!
+                          No active broker lobbies discovered. Connected realms will automatically
+                          appear here!
                         </div>
                       }
                     </div>

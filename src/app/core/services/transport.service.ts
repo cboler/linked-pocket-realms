@@ -2,6 +2,7 @@ import { Injectable, OnDestroy, signal, computed } from '@angular/core';
 import { Subject, Observable } from 'rxjs';
 import {
   ArchetypeClass,
+  BrokerSessionInfo,
   CommandIntent,
   EquipmentItem,
   GuestbookGravestoneEntry,
@@ -11,6 +12,7 @@ import {
 } from '../models/domain.models';
 
 const CHANNEL_NAME = 'linked_pocket_realms_chaos_gate_bus_v1';
+const SAVED_BROKER_URL_KEY = 'linked_pocket_realms_broker_url';
 
 @Injectable({
   providedIn: 'root',
@@ -38,14 +40,31 @@ export class TransportService implements OnDestroy {
 
   // Serverless gcloud Broker Integration
   readonly brokerUrl = signal<string>('');
-  readonly brokerSessions = signal<
-    { roomCode: string; hostName: string; triChord: string; hasOffer: boolean }[]
-  >([]);
+  readonly brokerSessions = signal<BrokerSessionInfo[]>([]);
   readonly isBrokerConnecting = signal<boolean>(false);
+  readonly isAutoAnnouncing = signal<boolean>(true);
+  readonly myLobbyRoomCode = computed<string>(
+    () =>
+      'LOOM-' +
+      this.localPeerId
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .slice(-4)
+        .toUpperCase(),
+  );
   private brokerPollIntervalId: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.initBroadcastChannelAdapter();
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const saved = localStorage.getItem(SAVED_BROKER_URL_KEY);
+        if (saved) {
+          this.brokerUrl.set(saved);
+        }
+      }
+    } catch {
+      // Storage access error
+    }
   }
 
   private initBroadcastChannelAdapter(): void {
@@ -359,6 +378,48 @@ export class TransportService implements OnDestroy {
     };
   }
 
+  setBrokerUrl(url: string): void {
+    const clean = url.trim();
+    this.brokerUrl.set(clean);
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(SAVED_BROKER_URL_KEY, clean);
+      }
+    } catch {
+      // Storage access error
+    }
+    if (clean) {
+      void this.refreshBrokerSessions();
+    }
+  }
+
+  async announcePresenceToBroker(
+    hostName: string,
+    triChord: string,
+    heraldGreeting?: string,
+  ): Promise<void> {
+    const url = this.brokerUrl().trim();
+    if (!url || !this.isAutoAnnouncing()) return;
+
+    try {
+      await fetch(`${url}/signal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode: this.myLobbyRoomCode(),
+          type: 'ANNOUNCE',
+          senderId: this.localPeerId,
+          hostName,
+          triChord,
+          heraldGreeting,
+        }),
+      });
+      await this.refreshBrokerSessions();
+    } catch {
+      // Offline fallback
+    }
+  }
+
   async refreshBrokerSessions(): Promise<void> {
     const url = this.brokerUrl().trim();
     if (!url) return;
@@ -374,10 +435,15 @@ export class TransportService implements OnDestroy {
     }
   }
 
-  async publishBrokerOffer(hostName: string, triChord: string): Promise<string> {
+  async publishBrokerOffer(
+    hostName: string,
+    triChord: string,
+    heraldGreeting?: string,
+  ): Promise<string> {
     this.isBrokerConnecting.set(true);
     const offerToken = await this.createWebRtcOffer();
-    const roomCode = this.activeRoomCode();
+    const roomCode = this.myLobbyRoomCode();
+    this.activeRoomCode.set(roomCode);
     const url = this.brokerUrl().trim();
 
     if (url) {
@@ -392,6 +458,7 @@ export class TransportService implements OnDestroy {
             senderId: this.localPeerId,
             hostName,
             triChord,
+            heraldGreeting,
           }),
         });
 

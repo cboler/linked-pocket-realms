@@ -574,6 +574,15 @@ export class MudEngineService implements OnDestroy {
         cartridge,
         char.heraldGreeting?.formatted,
       );
+
+      // Periodically announce to serverless gcloud broker if connected
+      if (this.transport.brokerUrl().trim() && this.transport.isAutoAnnouncing()) {
+        void this.transport.announcePresenceToBroker(
+          char.name,
+          this.activeGateAddress().formatted,
+          char.heraldGreeting?.formatted,
+        );
+      }
     }, 4000);
   }
 

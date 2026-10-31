@@ -168,6 +168,8 @@ functions.http('broker', (req, res) => {
       roomCode: s.roomCode,
       hostName: s.hostName,
       triChord: s.triChord,
+      senderId: s.senderId || null,
+      heraldGreeting: s.heraldGreeting || null,
       hasOffer: Boolean(s.sdpOffer),
       hasAnswer: Boolean(s.sdpAnswer),
       lastSeenMs: s.lastSeenMs,
@@ -180,7 +182,7 @@ functions.http('broker', (req, res) => {
   if (pathname === '/signal' && req.method === 'POST') {
     setSecurityHeaders(res, 'no-store');
     const body = req.body || {};
-    const { roomCode, type, payload, senderId, hostName, triChord } = body;
+    const { roomCode, type, payload, senderId, hostName, triChord, heraldGreeting } = body;
 
     if (!roomCode) {
       res.status(400).json({ error: 'Missing required field: roomCode' });
@@ -194,6 +196,8 @@ functions.http('broker', (req, res) => {
         roomCode,
         hostName: hostName || 'Unknown Realm',
         triChord: triChord || 'Θ: Scorching Clockwork Catacombs',
+        senderId: senderId || null,
+        heraldGreeting: heraldGreeting || null,
         sdpOffer: null,
         sdpAnswer: null,
         signals: [],
@@ -205,6 +209,8 @@ functions.http('broker', (req, res) => {
     session.lastSeenMs = now;
     if (hostName) session.hostName = hostName;
     if (triChord) session.triChord = triChord;
+    if (senderId) session.senderId = senderId;
+    if (heraldGreeting) session.heraldGreeting = heraldGreeting;
 
     if (type === 'OFFER') {
       session.sdpOffer = payload;
@@ -251,6 +257,10 @@ functions.http('broker', (req, res) => {
     const newSignals = session.signals.filter((s) => s.timestampMs > sinceMs);
     res.status(200).json({
       roomCode,
+      hostName: session.hostName,
+      triChord: session.triChord,
+      senderId: session.senderId,
+      heraldGreeting: session.heraldGreeting,
       signals: newSignals,
       sdpOffer: session.sdpOffer,
       sdpAnswer: session.sdpAnswer,

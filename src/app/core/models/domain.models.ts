@@ -314,163 +314,6 @@ export function rollRandomHeraldGreeting(): HeraldGreeting {
   return formatHeraldGreeting(tmplId, adj, noun, verb);
 }
 
-export interface HeraldGreeting {
-  templateId: number;
-  adjective: string;
-  noun: string;
-  verb: string;
-  formatted: string;
-}
-
-export interface HeraldTemplate {
-  id: number;
-  pattern: string;
-  usesVerb: boolean;
-  format: (adj: string, noun: string, verb: string) => string;
-}
-
-export const HERALD_TEMPLATES: HeraldTemplate[] = [
-  {
-    id: 0,
-    pattern: 'May the {adj} {noun} guide your journey.',
-    usesVerb: false,
-    format: (adj, noun) => `May the ${adj} ${noun} guide your journey.`,
-  },
-  {
-    id: 1,
-    pattern: 'Beware: {adj} {noun} lurks ahead.',
-    usesVerb: false,
-    format: (adj, noun) => `Beware: ${adj} ${noun} lurks ahead.`,
-  },
-  {
-    id: 2,
-    pattern: 'Praise the {adj} {noun}! Time to {verb}.',
-    usesVerb: true,
-    format: (adj, noun, verb) => `Praise the ${adj} ${noun}! Time to ${verb}.`,
-  },
-  {
-    id: 3,
-    pattern: 'Greetings, traveler. Seek the {adj} {noun}.',
-    usesVerb: false,
-    format: (adj, noun) => `Greetings, traveler. Seek the ${adj} ${noun}.`,
-  },
-  {
-    id: 4,
-    pattern: 'Only a {adj} {noun} shall {verb} the Gate.',
-    usesVerb: true,
-    format: (adj, noun, verb) => `Only a ${adj} ${noun} shall ${verb} the Gate.`,
-  },
-  {
-    id: 5,
-    pattern: 'By the {adj} {noun}, we shall {verb}!',
-    usesVerb: true,
-    format: (adj, noun, verb) => `By the ${adj} ${noun}, we shall ${verb}!`,
-  },
-  {
-    id: 6,
-    pattern: '{adj} {noun} ahead, therefore {verb}.',
-    usesVerb: true,
-    format: (adj, noun, verb) => `${adj} ${noun} ahead, therefore ${verb}.`,
-  },
-  {
-    id: 7,
-    pattern: 'Behold, {adj} {noun}! Let us {verb}.',
-    usesVerb: true,
-    format: (adj, noun, verb) => `Behold, ${adj} ${noun}! Let us ${verb}.`,
-  },
-];
-
-export const HERALD_ADJECTIVES = [
-  'Radiant',
-  'Clockwork',
-  'Astral',
-  'Fungal',
-  'Eldritch',
-  'Silent',
-  'Scorching',
-  'Valiant',
-  'Harmonic',
-  'Prismatic',
-  'Ancient',
-  'Crystalline',
-  'Resonant',
-  'Storm-forged',
-  'Gilded',
-  'Aetherial',
-] as const;
-
-export const HERALD_NOUNS = [
-  'Beacon',
-  'Loom',
-  'Wanderer',
-  'Shadow',
-  'Blade',
-  'Relic',
-  'Sanctuary',
-  'Chamber',
-  'Overgrowth',
-  'Gate',
-  'Spore',
-  'Echo',
-  'Crucible',
-  'Nexus',
-  'Campfire',
-  'Sentinel',
-] as const;
-
-export const HERALD_VERBS = [
-  'triumph',
-  'prevail',
-  'strike',
-  'explore',
-  'rest',
-  'awaken',
-  'persevere',
-  'listen',
-  'advance',
-  'attune',
-  'rejoice',
-  'endure',
-] as const;
-
-export type HeraldAdjective = (typeof HERALD_ADJECTIVES)[number];
-export type HeraldNoun = (typeof HERALD_NOUNS)[number];
-export type HeraldVerb = (typeof HERALD_VERBS)[number];
-
-export function formatHeraldGreeting(
-  templateId: number,
-  adjective: string,
-  noun: string,
-  verb: string,
-): HeraldGreeting {
-  const safeId = Math.max(0, Math.min(HERALD_TEMPLATES.length - 1, templateId || 0));
-  const tmpl = HERALD_TEMPLATES[safeId];
-  const safeAdj = (HERALD_ADJECTIVES as readonly string[]).includes(adjective)
-    ? adjective
-    : HERALD_ADJECTIVES[0];
-  const safeNoun = (HERALD_NOUNS as readonly string[]).includes(noun)
-    ? noun
-    : HERALD_NOUNS[0];
-  const safeVerb = (HERALD_VERBS as readonly string[]).includes(verb)
-    ? verb
-    : HERALD_VERBS[0];
-  return {
-    templateId: tmpl.id,
-    adjective: safeAdj,
-    noun: safeNoun,
-    verb: safeVerb,
-    formatted: tmpl.format(safeAdj, safeNoun, safeVerb),
-  };
-}
-
-export function rollRandomHeraldGreeting(): HeraldGreeting {
-  const tmplId = Math.floor(Math.random() * HERALD_TEMPLATES.length);
-  const adj = HERALD_ADJECTIVES[Math.floor(Math.random() * HERALD_ADJECTIVES.length)];
-  const noun = HERALD_NOUNS[Math.floor(Math.random() * HERALD_NOUNS.length)];
-  const verb = HERALD_VERBS[Math.floor(Math.random() * HERALD_VERBS.length)];
-  return formatHeraldGreeting(tmplId, adj, noun, verb);
-}
-
 export interface CharacterState {
   id: string;
   name: string;
@@ -802,6 +645,17 @@ export interface NetworkPacket {
     archetype: ArchetypeClass;
     inCombat: boolean;
   };
+}
+
+export interface BrokerSessionInfo {
+  roomCode: string;
+  hostName: string;
+  triChord: string;
+  senderId?: string | null;
+  heraldGreeting?: string | null;
+  hasOffer: boolean;
+  hasAnswer: boolean;
+  lastSeenMs: number;
 }
 
 export type PerspectiveRole = 'EXPLORER' | 'ARCHITECT' | 'SPECTATOR';
