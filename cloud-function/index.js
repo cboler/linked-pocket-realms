@@ -16,10 +16,10 @@ const functions = require('@google-cloud/functions-framework');
 // ============================================================================
 const SESSION_TTL_MS = 5 * 60 * 1000; // 5-minute TTL for WebRTC rendezvous
 const SPORE_TTL_MS = 6 * 60 * 60 * 1000; // 6-hour TTL for Thunderpass proximity spores
-const MAX_SESSIONS = 200; // Cap active sessions in RAM
-const MAX_ZONE_BUCKETS = 400; // Cap proximity geohash buckets in RAM
+const MAX_SESSIONS = 500; // Cap active sessions in RAM (FIFO / LRU bound)
+const MAX_ZONE_BUCKETS = 500; // Cap proximity geohash buckets in RAM (FIFO bound)
 const MAX_SPORES_PER_ZONE = 8; // Cap density per geohash cell
-const MAX_SIGNALS_PER_SESSION = 20; // Cap pending SDP/ICE signals
+const MAX_SIGNALS_PER_SESSION = 30; // Cap pending SDP/ICE signals
 const MAX_PAYLOAD_BYTES = 32 * 1024; // 32 KB payload limit
 
 // In-memory data stores
@@ -172,6 +172,7 @@ functions.http('broker', (req, res) => {
       heraldGreeting: s.heraldGreeting || null,
       hasOffer: Boolean(s.sdpOffer),
       hasAnswer: Boolean(s.sdpAnswer),
+      hasIceCandidates: Boolean(s.iceCandidates && s.iceCandidates.length > 0),
       lastSeenMs: s.lastSeenMs,
     }));
     res.status(200).json({ sessions: activeList });
@@ -200,6 +201,7 @@ functions.http('broker', (req, res) => {
         heraldGreeting: heraldGreeting || null,
         sdpOffer: null,
         sdpAnswer: null,
+        iceCandidates: [],
         signals: [],
         lastSeenMs: now,
       };
@@ -211,6 +213,7 @@ functions.http('broker', (req, res) => {
     if (triChord) session.triChord = triChord;
     if (senderId) session.senderId = senderId;
     if (heraldGreeting) session.heraldGreeting = heraldGreeting;
+    if (!session.iceCandidates) session.iceCandidates = [];
 
     if (type === 'OFFER') {
       session.sdpOffer = payload;
@@ -219,6 +222,7 @@ functions.http('broker', (req, res) => {
       session.sdpAnswer = payload;
       session.signals.push({ type: 'ANSWER', payload, senderId, timestampMs: now });
     } else if (type === 'ICE') {
+      session.iceCandidates.push(payload);
       session.signals.push({ type: 'ICE', payload, senderId, timestampMs: now });
     }
 
@@ -264,6 +268,7 @@ functions.http('broker', (req, res) => {
       signals: newSignals,
       sdpOffer: session.sdpOffer,
       sdpAnswer: session.sdpAnswer,
+      iceCandidates: session.iceCandidates || [],
     });
     return;
   }

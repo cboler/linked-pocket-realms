@@ -59,16 +59,51 @@ export class FirstPersonStageComponent {
     return this.currentRoom()?.exits.find((e) => e.direction === this.dirBehind());
   });
 
-  // Thematic keywords from active address and room
+  // Thematic keywords from active address and room (Word 1 Atmosphere visual shader + Seam Synthesis)
   readonly roomTheme = computed<string>(() => {
-    const title = this.currentRoom()?.title ?? '';
+    const room = this.currentRoom();
+    if (!room) return 'default';
+    if (room.isSynthesisSeam) return 'seam-synthesis';
+    if (room.isOvergrowth) return 'overgrowth';
+
+    const title = room.title ?? '';
+    const atmo = room.atmosphereEffect ?? '';
     const addr = this.engine.activeGateAddress();
-    if (this.currentRoom()?.isOvergrowth) return 'overgrowth';
+
+    if (
+      atmo.includes('Scorching') ||
+      title.includes('Scorching') ||
+      addr.atmosphere === 'Scorching'
+    )
+      return 'scorching';
+    if (
+      atmo.includes('Crystalline') ||
+      title.includes('Crystalline') ||
+      addr.atmosphere === 'Crystalline'
+    )
+      return 'crystalline';
+    if (
+      atmo.includes('Tempestuous') ||
+      title.includes('Tempestuous') ||
+      addr.atmosphere === 'Tempestuous'
+    )
+      return 'tempestuous';
+    if (
+      atmo.includes('Aetherial') ||
+      title.includes('Aetherial') ||
+      addr.atmosphere === 'Aetherial'
+    )
+      return 'aetherial';
+    if (atmo.includes('Abyssal') || title.includes('Abyssal') || addr.atmosphere === 'Abyssal')
+      return 'abyssal';
+    if (atmo.includes('Silent') || title.includes('Silent') || addr.atmosphere === 'Silent')
+      return 'silent';
+    if (atmo.includes('Blighted') || title.includes('Blighted') || addr.atmosphere === 'Blighted')
+      return 'blighted';
+    if (atmo.includes('Gilded') || title.includes('Gilded') || addr.atmosphere === 'Gilded')
+      return 'gilded';
     if (title.includes('Clockwork') || addr.theme === 'Clockwork') return 'clockwork';
     if (title.includes('Fungal') || addr.theme === 'Fungal') return 'fungal';
-    if (title.includes('Scorching') || addr.atmosphere === 'Scorching') return 'scorching';
-    if (title.includes('Crystalline') || addr.atmosphere === 'Crystalline') return 'crystalline';
-    if (title.includes('Abyssal') || addr.atmosphere === 'Abyssal') return 'abyssal';
     if (title.includes('Monolithic') || addr.theme === 'Monolithic') return 'monolithic';
     return 'default';
   });

@@ -1,5 +1,6 @@
 import { Injectable, OnDestroy, signal, computed } from '@angular/core';
 import { Subject, Observable } from 'rxjs';
+import { RUNTIME_CONFIG } from '../config/runtime.config';
 import {
   ArchetypeClass,
   BrokerSessionInfo,
@@ -43,6 +44,14 @@ export class TransportService implements OnDestroy {
   readonly brokerSessions = signal<BrokerSessionInfo[]>([]);
   readonly isBrokerConnecting = signal<boolean>(false);
   readonly isAutoAnnouncing = signal<boolean>(true);
+  readonly brokerMeshStatus = signal<'IDLE' | 'WAKING' | 'CONNECTED' | 'OFFLINE'>('IDLE');
+
+  readonly nearbyRealmsCount = computed<number>(() => {
+    return this.brokerSessions().filter(
+      (s) => s.senderId !== this.localPeerId && s.roomCode !== this.myLobbyRoomCode(),
+    ).length;
+  });
+
   readonly myLobbyRoomCode = computed<string>(
     () =>
       'LOOM-' +
@@ -55,15 +64,20 @@ export class TransportService implements OnDestroy {
 
   constructor() {
     this.initBroadcastChannelAdapter();
+    let initialUrl = RUNTIME_CONFIG.autoConnectBroker ? RUNTIME_CONFIG.defaultBrokerUrl : '';
     try {
       if (typeof localStorage !== 'undefined') {
         const saved = localStorage.getItem(SAVED_BROKER_URL_KEY);
-        if (saved) {
-          this.brokerUrl.set(saved);
+        if (saved !== null && saved.trim() !== '') {
+          initialUrl = saved.trim();
         }
       }
     } catch {
       // Storage access error
+    }
+    if (initialUrl) {
+      this.brokerUrl.set(initialUrl);
+      void this.refreshBrokerSessions();
     }
   }
 
@@ -422,17 +436,58 @@ export class TransportService implements OnDestroy {
 
   async refreshBrokerSessions(): Promise<void> {
     const url = this.brokerUrl().trim();
-    if (!url) return;
+    if (!url) {
+      this.brokerMeshStatus.set('IDLE');
+      return;
+    }
+
+    if (this.brokerMeshStatus() !== 'CONNECTED') {
+      this.brokerMeshStatus.set('WAKING');
+    }
 
     try {
       const res = await fetch(`${url}/sessions`);
       if (res.ok) {
         const data = await res.json();
         this.brokerSessions.set(data.sessions || []);
+        this.brokerMeshStatus.set('CONNECTED');
+      } else {
+        this.brokerMeshStatus.set('OFFLINE');
       }
     } catch {
       // Offline fallback: keep existing list
+      this.brokerMeshStatus.set('OFFLINE');
     }
+  }
+
+  /**
+   * One-tap collision with nearest available realm or instantaneous lobby host
+   */
+  async collideWithNearbyRealm(
+    hostName: string,
+    triChord: string,
+    heraldGreeting?: string,
+  ): Promise<{ action: 'JOINED' | 'HOSTED'; roomCode: string; triChord?: string }> {
+    await this.refreshBrokerSessions();
+    const remote = this.brokerSessions().find(
+      (s) => s.senderId !== this.localPeerId && s.roomCode !== this.myLobbyRoomCode(),
+    );
+
+    if (remote) {
+      await this.joinBrokerSession(remote.roomCode);
+      return {
+        action: 'JOINED',
+        roomCode: remote.roomCode,
+        triChord: remote.triChord,
+      };
+    }
+
+    await this.publishBrokerOffer(hostName, triChord, heraldGreeting);
+    return {
+      action: 'HOSTED',
+      roomCode: this.myLobbyRoomCode(),
+      triChord,
+    };
   }
 
   async publishBrokerOffer(

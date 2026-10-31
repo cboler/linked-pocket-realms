@@ -303,7 +303,7 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
       expect(engine.playerFacing()).toBe('N');
     });
 
-    it('should render the First-Person Stage component and switch 3-lens layout modes', async () => {
+    it('should render the First-Person Stage component and switch between 1st-Person and Card Stage modes', async () => {
       const fixture = TestBed.createComponent(App);
       await fixture.whenStable();
       fixture.detectChanges();
@@ -319,7 +319,7 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
       expect(app.stageLensMode()).toBe('CARD_STAGE');
       expect(compiled.querySelector('[data-testid="first-person-stage"]')).toBeFalsy();
 
-      app.setStageLensMode('SPLIT');
+      app.setStageLensMode('FIRST_PERSON');
       fixture.detectChanges();
       expect(compiled.querySelector('[data-testid="first-person-stage"]')).toBeTruthy();
       expect(compiled.querySelector('[data-testid="persistent-room-stage"]')).toBeTruthy();
@@ -788,6 +788,484 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
         app.onNodeClick(targetRoom);
         expect(engine.character().currentRoomId).toBe(targetRoom.id);
       }
+    });
+  });
+
+  describe('Feature Evolution: Meaningful Tri-Chord Topologies & Distinct Graph Structures', () => {
+    it('should generate distinct structural graph topologies driven by Word 2 Architecture', () => {
+      // 1. Grid-Loop (Clockwork)
+      const clockworkAddr = chaosGate.createAddress('Δ', 'Scorching', 'Clockwork', 'Crucible');
+      const gridRooms = chaosGate.generateRealm(clockworkAddr);
+      expect(gridRooms.length).toBeGreaterThanOrEqual(8);
+      // Room 0 has N and E exits forming grid loops
+      const room0 = gridRooms[0];
+      expect(room0.exits.some((e: { direction: string }) => e.direction === 'N')).toBe(true);
+      expect(room0.exits.some((e: { direction: string }) => e.direction === 'E')).toBe(true);
+
+      // 2. Deep Descent (Sunken) - contains vertical stairwells D / U
+      const sunkenAddr = chaosGate.createAddress('Θ', 'Crystalline', 'Sunken', 'Catacombs');
+      const descentRooms = chaosGate.generateRealm(sunkenAddr);
+      const hasDownExit = descentRooms.some((r: { exits: { direction: string }[] }) =>
+        r.exits.some((e: { direction: string }) => e.direction === 'D'),
+      );
+      const hasUpExit = descentRooms.some((r: { exits: { direction: string }[] }) =>
+        r.exits.some((e: { direction: string }) => e.direction === 'U'),
+      );
+      expect(hasDownExit).toBe(true);
+      expect(hasUpExit).toBe(true);
+      // Depth tiers increase down the strata
+      const maxDepth = Math.max(...descentRooms.map((r: { depthTier: number }) => r.depthTier));
+      expect(maxDepth).toBeGreaterThanOrEqual(4);
+
+      // 3. Cluster-Spore (Fungal) - radiating satellite spore pods from central hub
+      const fungalAddr = chaosGate.createAddress('Λ', 'Blighted', 'Fungal', 'Sanctuary');
+      const clusterRooms = chaosGate.generateRealm(fungalAddr);
+      const hubRoom = clusterRooms[0];
+      // Central hub connects outward to multiple satellite pods
+      expect(hubRoom.exits.length).toBeGreaterThanOrEqual(3);
+
+      // 4. Symmetrical Wing (Astral) - central nave flanking left and right wings
+      const sanctAddr = chaosGate.createAddress('Σ', 'Aetherial', 'Astral', 'Observatory');
+      const wingRooms = chaosGate.generateRealm(sanctAddr);
+      const nave = wingRooms[1]; // room 1 is the Central Nave linked to Grand Gate Anchor (0)
+      // Nave has west (left wing) and east (right wing) doorways
+      expect(nave.exits.some((e: { direction: string }) => e.direction === 'W')).toBe(true);
+      expect(nave.exits.some((e: { direction: string }) => e.direction === 'E')).toBe(true);
+    });
+
+    it('should configure Word 1 Atmosphere mutators and Word 3 Biome interactable props', () => {
+      const addr = chaosGate.createAddress('Δ', 'Scorching', 'Clockwork', 'Crucible');
+      const rooms = chaosGate.generateRealm(addr);
+      // Scorching Atmosphere -> Fire element
+      expect(rooms[0].elementalMutator).toBe('Fire');
+      expect(rooms[0].atmosphereEffect.toLowerCase()).toContain('fire potency');
+      // Crucible Biome -> interactable prop defined
+      const roomWithProp = rooms.find(
+        (r: { propInteractable?: { name: string } }) => r.propInteractable,
+      );
+      expect(roomWithProp).toBeDefined();
+      expect(roomWithProp?.propInteractable?.name).toBe('Titan Ingot Smelting Forge');
+    });
+  });
+
+  describe('Feature Evolution: Organic Living Dungeon Growth Tree & Compact DNA Serialization', () => {
+    it('should deterministically grow realm room count through growth stages 1..10', () => {
+      const addr = chaosGate.createAddress('Δ', 'Tempestuous', 'Labyrinthine', 'Archive');
+      const stage1 = chaosGate.growRealmToStage(addr, 1);
+      const stage3 = chaosGate.growRealmToStage(addr, 3);
+      const stage6 = chaosGate.growRealmToStage(addr, 6);
+      const stage10 = chaosGate.growRealmToStage(addr, 10);
+
+      expect(stage1.length).toBe(8);
+      expect(stage3.length).toBeGreaterThan(stage1.length);
+      expect(stage6.length).toBeGreaterThan(stage3.length);
+      expect(stage10.length).toBeGreaterThanOrEqual(28);
+
+      // Sprouted rooms carry growthStage tags
+      const sproutedRoom = stage10.find((r) => r.growthStage && r.growthStage > 1);
+      expect(sproutedRoom).toBeDefined();
+      expect(sproutedRoom?.growthStage).toBeGreaterThan(1);
+    });
+
+    it('should award Vitality XP and trigger organic growth upon crossing threshold', () => {
+      const initialRoomsCount = engine.rooms().length;
+      const initialStage = engine.activeRealmDelta().growthStage || 1;
+
+      // Award enough Vitality to cross first threshold (40 XP)
+      engine.addVitalityXP(45, 'Testing Guardian Defeat');
+
+      const updatedStage = engine.activeRealmDelta().growthStage;
+      expect(updatedStage).toBeGreaterThan(initialStage);
+      expect(engine.rooms().length).toBeGreaterThan(initialRoomsCount);
+
+      // Feed should log the growth announcement
+      const growthLog = engine
+        .terminalFeed()
+        .find((l) => l.text.includes('resonates with gathered vitality'));
+      expect(growthLog).toBeDefined();
+    });
+
+    it('should serialize and deserialize compact Realm DNA cartridges under 1KB', () => {
+      const addr = chaosGate.createAddress('Δ', 'Aetherial', 'Forge', 'Citadel');
+      const packet = {
+        triChord: addr.formatted,
+        growthStage: 3,
+        playerEcho: {
+          id: 'traveler-99',
+          playerName: 'Nomad_Test',
+          level: 4,
+          archetype: 'Hexblade' as const,
+          triChord: addr.formatted,
+          forgedItems: [],
+          encounterTimestampIso: new Date().toISOString(),
+          heraldGreeting: 'Praise the Sunken Gate!',
+        },
+        timestampMs: 1700000000000,
+      };
+
+      const serialized = chaosGate.serializeRealmDna(packet);
+      expect(serialized).toBeTruthy();
+      // Must be URL-safe (no +, /, or = padding)
+      expect(serialized).not.toContain('+');
+      expect(serialized).not.toContain('/');
+      expect(serialized).not.toContain('=');
+      // Substantially under 1KB (1024 bytes)
+      expect(serialized.length).toBeLessThan(500);
+
+      const deserialized = chaosGate.deserializeRealmDna(serialized);
+      expect(deserialized).not.toBeNull();
+      expect(deserialized?.triChord).toBe(addr.formatted);
+      expect(deserialized?.growthStage).toBe(3);
+      expect(deserialized?.playerEcho?.playerName).toBe('Nomad_Test');
+    });
+  });
+
+  describe('Feature Evolution: Zero-Config Cloud Broker Auto-Connect & Mesh Status', () => {
+    it('should expose transparent broker mesh status and nearby realms count', async () => {
+      const testBrokerUrl = 'https://us-central1-test-project.cloudfunctions.net/broker';
+      transport.setBrokerUrl(testBrokerUrl);
+
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          sessions: [
+            {
+              roomCode: 'LOOM-0001',
+              hostName: 'Wanderer_One',
+              senderId: 'peer-remote-1',
+              triChord: 'Δ · Scorching · Clockwork · Foundry',
+            },
+            {
+              roomCode: 'LOOM-0002',
+              hostName: 'Wanderer_Two',
+              senderId: 'peer-remote-2',
+              triChord: 'Θ · Crystalline · Sunken · Catacombs',
+            },
+          ],
+        }),
+      } as Response);
+
+      await transport.refreshBrokerSessions();
+
+      expect(transport.brokerMeshStatus()).toBe('CONNECTED');
+      expect(transport.nearbyRealmsCount()).toBe(2);
+
+      globalThis.fetch = originalFetch;
+      transport.setBrokerUrl('');
+    });
+
+    it('should collide with nearby realm by joining remote lobby or hosting offer', async () => {
+      const testBrokerUrl = 'https://us-central1-test-project.cloudfunctions.net/broker';
+      transport.setBrokerUrl(testBrokerUrl);
+
+      const originalFetch = globalThis.fetch;
+      // 1. When a remote session is present, collideWithNearbyRealm joins it
+      globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+        if (url.includes('/sessions')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              sessions: [
+                {
+                  roomCode: 'LOOM-7777',
+                  hostName: 'Remote_Sojourner',
+                  senderId: 'peer-different',
+                  triChord: 'Λ · Blighted · Fungal · Grove',
+                },
+              ],
+            }),
+          });
+        }
+        return Promise.resolve({ ok: true, json: async () => ({ status: 'joined' }) });
+      });
+
+      const joinResult = await transport.collideWithNearbyRealm(
+        'Tester',
+        'Δ · Scorching · Clockwork · Foundry',
+      );
+      expect(joinResult.action).toBe('JOINED');
+      expect(joinResult.roomCode).toBe('LOOM-7777');
+      expect(joinResult.triChord).toBe('Λ · Blighted · Fungal · Grove');
+
+      // 2. When no remote sessions are present, collideWithNearbyRealm creates a host lobby
+      globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+        if (url.includes('/sessions')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ sessions: [] }),
+          });
+        }
+        return Promise.resolve({ ok: true, json: async () => ({ status: 'created' }) });
+      });
+
+      const hostResult = await transport.collideWithNearbyRealm(
+        'Tester',
+        'Δ · Scorching · Clockwork · Foundry',
+      );
+      expect(hostResult.action).toBe('HOSTED');
+      expect(hostResult.roomCode).toBe(transport.myLobbyRoomCode());
+
+      globalThis.fetch = originalFetch;
+      transport.setBrokerUrl('');
+    });
+  });
+
+  describe('Feature Evolution: Seam Synthesis & Overgrowth Incursion Grafts', () => {
+    it('should mark incursion boundary doorways with isSynthesisSeam and combine atmospheres', () => {
+      const foreignAddress = chaosGate.createAddress('Θ', 'Crystalline', 'Sunken', 'Catacombs');
+
+      const initialCount = engine.rooms().length;
+      const newIncursionRooms = engine.graftOvergrowthIncursion(foreignAddress, 'Alien_Traveler');
+
+      expect(newIncursionRooms.length).toBeGreaterThan(0);
+      expect(engine.rooms().length).toBeGreaterThan(initialCount);
+      const overgrowthRooms = engine.rooms().filter((r) => r.isOvergrowth);
+      expect(overgrowthRooms.length).toBeGreaterThan(0);
+
+      // Check boundary exits for isSynthesisSeam
+      const allExits = engine.rooms().flatMap((r) => r.exits);
+      const seamExit = allExits.find((e) => e.isSynthesisSeam);
+      expect(seamExit).toBeDefined();
+      expect(seamExit?.isSynthesisSeam).toBe(true);
+      expect(seamExit?.synthesisAtmosphere).toContain('Crystalline');
+    });
+  });
+
+  describe('Feature Evolution: Conjunction of the Spheres & Wayfinder Expeditions', () => {
+    it('should generate the 6-room Primordial Sanctum baseline and compute dynamic TraitProfile', () => {
+      const sanctum = chaosGate.generatePrimordialSanctum('Δ', 'Aegis_Architect');
+      expect(sanctum.length).toBe(6);
+
+      const anchor = sanctum.find((r) => r.id === 'room-0');
+      expect(anchor).toBeDefined();
+      expect(anchor?.legendType).toBe('anchor-portal');
+      expect(anchor?.exits.some((e) => e.direction === 'N' && e.targetRoomId === 'room-1')).toBe(
+        true,
+      );
+      expect(anchor?.exits.some((e) => e.direction === 'E' && e.targetRoomId === 'room-2')).toBe(
+        true,
+      );
+      expect(anchor?.exits.some((e) => e.direction === 'W' && e.targetRoomId === 'room-3')).toBe(
+        true,
+      );
+
+      // TraitProfile calculation
+      const profile = chaosGate.computeTraitProfile(sanctum);
+      expect(profile.totalRooms).toBe(6);
+      expect(profile.primaryAtmosphere).toBeDefined();
+      expect(profile.primaryArchitecture).toBeDefined();
+      expect(profile.primaryBiome).toBeDefined();
+      expect(profile.atmospheres['Aetherial']).toBeGreaterThan(0);
+    });
+
+    it('should execute 3-way Conjunction of the Spheres with Host A, Host B, and Wild Anomaly traits', () => {
+      const localAddr = chaosGate.createAddress('Θ', 'Scorching', 'Clockwork', 'Catacombs');
+      const remoteAddr = chaosGate.createAddress('Λ', 'Crystalline', 'Fungal', 'Observatory');
+      const baseRooms = chaosGate.generatePrimordialSanctum('Θ', 'Host_A');
+
+      const result = chaosGate.generateConjunctionIncursion(
+        localAddr,
+        remoteAddr,
+        'Remote_Explorer',
+        baseRooms,
+        1,
+      );
+
+      expect(result.newRooms.length).toBeGreaterThanOrEqual(2);
+      expect(result.anomaly).toBeDefined();
+      expect(result.anomaly.prefix).toBeDefined();
+      expect(result.anomaly.hazard).toBeDefined();
+      expect(result.anomaly.mobModifier).toBeDefined();
+      expect(result.anomaly.colorHex).toMatch(/^#/);
+
+      // Verify rooms are marked isConjunction
+      for (const nr of result.newRooms) {
+        expect(nr.isConjunction).toBe(true);
+        expect(nr.isOvergrowth).toBe(true);
+        expect(nr.originPlayerName).toBe('Remote_Explorer');
+        expect(nr.originTriChord).toBe(remoteAddr.formatted);
+        expect(nr.conjunctionAnomaly).toBeDefined();
+      }
+
+      // Check guardian in final room carries anomaly traits
+      const guardianRoom = result.newRooms[result.newRooms.length - 1];
+      expect(guardianRoom.monsters.length).toBeGreaterThan(0);
+      expect(guardianRoom.monsters[0].name).toContain(result.anomaly.prefix);
+    });
+
+    it('should enforce the 30-room maximum capacity limit during conjunction incursions', () => {
+      const localAddr = chaosGate.createAddress('Δ', 'Aetherial', 'Astral', 'Sanctuary');
+      const remoteAddr = chaosGate.createAddress('Ω', 'Blighted', 'Ossuary', 'Crucible');
+
+      // Create a mocked 30-room array
+      const fullRooms = chaosGate.generatePrimordialSanctum('Δ');
+      while (fullRooms.length < 30) {
+        fullRooms.push({
+          id: `room-filler-${fullRooms.length}`,
+          title: `Filler Chamber ${fullRooms.length}`,
+          description: 'A filler room.',
+          x: 100,
+          y: 100,
+          depthTier: 1,
+          legendType: 'corridor',
+          atmosphereEffect: 'None',
+          elementalMutator: 'Void',
+          exits: [],
+          monsters: [],
+          items: [],
+          triggers: [],
+          rumorSignal: 'None',
+        });
+      }
+
+      expect(fullRooms.length).toBe(30);
+
+      const cappedResult = chaosGate.generateConjunctionIncursion(
+        localAddr,
+        remoteAddr,
+        'Void_Dweller',
+        fullRooms,
+        5,
+      );
+
+      // Should return 0 new rooms when at or above 30 capacity
+      expect(cappedResult.newRooms.length).toBe(0);
+    });
+
+    it('should open, enter, and cleanly collapse a 3-Word Wayfinder Expedition Rift', () => {
+      engine.moveToRoom('room-0');
+      expect(engine.currentRoom().id).toBe('room-0');
+
+      const opened = engine.openExpeditionRift('Σ', 'Tempestuous', 'Monolithic', 'Citadel');
+      expect(opened).toBe(true);
+      expect(engine.activeExpeditionRift()).toBeDefined();
+      expect(engine.activeExpeditionRift()?.formatted).toContain('Tempestuous');
+
+      // Check room-0 has the purple rift portal exit
+      const room0 = engine.rooms().find((r) => r.id === 'room-0')!;
+      const riftExit = room0.exits.find((e) => e.targetRoomId === 'exp-0');
+      expect(riftExit).toBeDefined();
+      expect(riftExit?.isRiftPortal).toBe(true);
+
+      // Enter expedition rift
+      const entered = engine.enterExpeditionRift();
+      expect(entered).toBe(true);
+      expect(engine.currentRoom().id).toBe('exp-0');
+      expect(engine.currentRoom().isExpedition).toBe(true);
+
+      // Check apex sanctum exp-5 has boss dropping Sphere Core
+      const bossRoom = engine.rooms().find((r) => r.id === 'exp-5')!;
+      expect(bossRoom).toBeDefined();
+      expect(bossRoom.monsters[0].isBoss).toBe(true);
+      const droppedCore = bossRoom.monsters[0].lootTable.find((it) => it.isSphereCore);
+      expect(droppedCore).toBeDefined();
+      expect(droppedCore?.sphereCoreAddress?.formatted).toContain('Tempestuous');
+
+      // Collapse expedition rift returns player to room-0 and clears temporary rooms
+      engine.collapseExpeditionRift();
+      expect(engine.currentRoom().id).toBe('room-0');
+      expect(engine.activeExpeditionRift()).toBeNull();
+      expect(engine.rooms().some((r) => r.isExpedition)).toBe(false);
+      expect(
+        engine
+          .rooms()
+          .find((r) => r.id === 'room-0')
+          ?.exits.some((e) => e.targetRoomId === 'exp-0'),
+      ).toBe(false);
+    });
+
+    it('should harvest, crack, and graft Sphere Cores onto the Home Dungeon', () => {
+      engine.moveToRoom('room-0');
+
+      // Synthesize a Sphere Core in inventory
+      const coreAddr = chaosGate.createAddress('Λ', 'Crystalline', 'Forge', 'Spire');
+      const coreItem: EquipmentItem = {
+        id: 'item-sphere-core-test',
+        name: `Sphere Core: ${coreAddr.formatted}`,
+        slot: 'Relic 1',
+        rarity: 'Mythic',
+        weight: 2,
+        provenance: 'Verified Drop',
+        originGateAddress: coreAddr.formatted,
+        statBonuses: { STR: 5, DEX: 5, atkBonus: 10 },
+        totalStatBudget: 20,
+        isSphereCore: true,
+        sphereCoreAddress: coreAddr,
+        description: 'A glowing test sphere core.',
+      };
+
+      engine.character.update((c) => ({
+        ...c,
+        inventory: [...c.inventory, coreItem],
+      }));
+
+      // Test 1: Cracking core for shards and XP
+      const initialShards = engine.character().resonanceShards;
+      const initialXp = engine.character().xp;
+      const cracked = engine.crackSphereCore(coreItem.id);
+      expect(cracked).toBe(true);
+      expect(engine.character().resonanceShards).toBe(initialShards + 100);
+      expect(engine.character().xp).toBe(initialXp + 150);
+      expect(engine.character().inventory.some((it) => it.id === coreItem.id)).toBe(false);
+
+      // Test 2: Grafting core onto Home Dungeon
+      const graftCoreItem: EquipmentItem = {
+        ...coreItem,
+        id: 'item-sphere-core-graft',
+      };
+      engine.character.update((c) => ({
+        ...c,
+        inventory: [...c.inventory, graftCoreItem],
+      }));
+
+      const initialHomeRooms = engine.rooms().length;
+      const grafted = engine.graftSphereCore(graftCoreItem.id);
+      expect(grafted).toBe(true);
+      expect(engine.rooms().length).toBeGreaterThan(initialHomeRooms);
+      expect(engine.character().inventory.some((it) => it.id === graftCoreItem.id)).toBe(false);
+
+      const graftedRoom = engine.rooms().find((r) => r.id.startsWith('core-'));
+      expect(graftedRoom).toBeDefined();
+      expect(graftedRoom?.isConjunction).toBe(true);
+      expect(graftedRoom?.isPrunable).toBe(true);
+
+      // Pruning grafted room awards shards
+      const shardsBeforePrune = engine.character().resonanceShards;
+      const pruned = engine.pruneRoom(graftedRoom!.id);
+      expect(pruned).toBe(true);
+      expect(engine.character().resonanceShards).toBeGreaterThan(shardsBeforePrune);
+      expect(engine.rooms().some((r) => r.id === graftedRoom!.id)).toBe(false);
+    });
+
+    it('should parse and dispatch terminal commands @rift, @enter rift, @close rift, @crack, @graft', () => {
+      engine.moveToRoom('room-0');
+
+      // @rift open
+      const openIntent = engine.parseAndDispatchTerminalInput(
+        '@rift open Θ Scorching Clockwork Catacombs',
+      );
+      expect(openIntent).toBeDefined();
+      expect(engine.activeExpeditionRift()).toBeDefined();
+
+      // @enter rift
+      const enterIntent = engine.parseAndDispatchTerminalInput('@enter rift');
+      expect(enterIntent).toBeDefined();
+      expect(engine.currentRoom().id).toBe('exp-0');
+
+      // @close rift
+      const closeIntent = engine.parseAndDispatchTerminalInput('@close rift');
+      expect(closeIntent).toBeDefined();
+      expect(engine.currentRoom().id).toBe('room-0');
+      expect(engine.activeExpeditionRift()).toBeNull();
+
+      // @crack command without inventory core prints message
+      const crackIntent = engine.parseAndDispatchTerminalInput('@crack');
+      expect(crackIntent).toBeDefined();
+
+      // @graft command without inventory core prints message
+      const graftIntent = engine.parseAndDispatchTerminalInput('@graft');
+      expect(graftIntent).toBeDefined();
     });
   });
 });

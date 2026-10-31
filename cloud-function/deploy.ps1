@@ -80,8 +80,37 @@ try {
 
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host " Free-Tier Deployment Complete!" -ForegroundColor Green
-$BROKER_URL = gcloud functions describe $FUNCTION_NAME --gen2 --region=$REGION --format="value(serviceConfig.uri)"
+$BROKER_URL = (gcloud functions describe $FUNCTION_NAME --gen2 --region=$REGION --format="value(serviceConfig.uri)").Trim()
 Write-Host " Broker Endpoint: $BROKER_URL" -ForegroundColor Yellow
 Write-Host " Health Check:    $BROKER_URL/health" -ForegroundColor Yellow
+
+# 6. Automatic URL Stamping into client runtime config
+if ($BROKER_URL) {
+    $CONFIG_PATH = Join-Path $PSScriptRoot "..\src\app\core\config\runtime.config.ts"
+    if (Test-Path $CONFIG_PATH) {
+        Write-Host "--> Step 6: Stamping live broker endpoint into $CONFIG_PATH..." -ForegroundColor Yellow
+        $CONFIG_CONTENT = @"
+/**
+ * Production Runtime Configuration for Linked Pocket Realms
+ *
+ * Automatically stamped on deployment via cloud-function/deploy.sh or deploy.ps1.
+ */
+export interface RuntimeConfig {
+  defaultBrokerUrl: string;
+  autoConnectBroker: boolean;
+  heartbeatIntervalMs: number;
+}
+
+export const RUNTIME_CONFIG: RuntimeConfig = {
+  defaultBrokerUrl: '$BROKER_URL',
+  autoConnectBroker: true,
+  heartbeatIntervalMs: 15000,
+};
+"@
+        Set-Content -Path $CONFIG_PATH -Value $CONFIG_CONTENT -Encoding utf8
+        Write-Host "    Stamped live URL: $BROKER_URL" -ForegroundColor Green
+    }
+}
+
 Write-Host " All Free-Tier Guardrails Active: Scale-to-Zero, 1 Instance Cap, Auto-Pruned Registry" -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green

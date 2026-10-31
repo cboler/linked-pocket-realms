@@ -1,0 +1,252 @@
+<div class="svg-map-container" [class.minimap-mode]="isMiniMap()">
+  <svg
+    [class.topological-svg]="!isMiniMap()"
+    [class.minimap-svg]="isMiniMap()"
+    viewBox="0 0 940 560"
+    role="img"
+    aria-label="Pocket Realm Topological Map"
+    [attr.data-testid]="isMiniMap() ? 'minimap-svg-map' : 'realm-svg-map'"
+  >
+    <defs>
+      <radialGradient id="activeNodeGlow" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.45" />
+        <stop offset="100%" stop-color="#38bdf8" stop-opacity="0" />
+      </radialGradient>
+      <linearGradient id="seamGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#38bdf8" />
+        <stop offset="50%" stop-color="#d946ef" />
+        <stop offset="100%" stop-color="#f59e0b" />
+      </linearGradient>
+    </defs>
+
+    <!-- Topological Edges -->
+    @for (edge of cartographyEdges(); track edge.id) {
+      <line
+        [attr.x1]="edge.x1"
+        [attr.y1]="edge.y1"
+        [attr.x2]="edge.x2"
+        [attr.y2]="edge.y2"
+        class="map-edge"
+        [class.secret-edge]="edge.isSecret"
+        [class.locked-edge]="edge.isLocked"
+        [class.synthesis-seam-edge]="edge.isSynthesisSeam"
+        [class.rift-portal-edge]="edge.isRiftPortal"
+      />
+    }
+
+    <!-- Topological Room Nodes (Click-to-Move) -->
+    @for (node of visibleCartographyNodes(); track node.room.id) {
+      <g
+        class="map-node-group"
+        [class.current-node]="node.room.id === engine.character().currentRoomId"
+        [class.architect-selected]="
+          engine.perspective() === 'ARCHITECT' && node.room.id === engine.selectedArchitectRoomId()
+        "
+        [class.fog-rumor]="node.adjacentRumor && engine.perspective() === 'EXPLORER'"
+        [attr.transform]="'translate(' + node.room.x + ',' + node.room.y + ')'"
+        (click)="onNodeClick(node.room)"
+        (mouseenter)="hoveredMapNode.set(node)"
+        (mouseleave)="hoveredMapNode.set(null)"
+        [attr.data-testid]="'map-node-' + node.room.id"
+      >
+        <title>{{ node.sensoryPreview }}</title>
+
+        @if (node.room.id === engine.character().currentRoomId) {
+          <circle r="38" fill="url(#activeNodeGlow)" />
+          <!-- Directional Arrow Indicating playerFacing inside current node -->
+          <path
+            d="M 0,-34 L 5,-23 L -5,-23 Z"
+            fill="#38bdf8"
+            [attr.transform]="'rotate(' + getFacingRotationAngle(engine.playerFacing()) + ')'"
+            data-testid="map-facing-arrow"
+          />
+        }
+
+        <!-- Conjunction Anomaly Ring -->
+        @if (node.room.isConjunction) {
+          <circle
+            r="31"
+            fill="none"
+            [attr.stroke]="node.room.conjunctionAnomaly?.colorHex || '#fbbf24'"
+            stroke-width="2"
+            stroke-dasharray="3,3"
+          />
+        }
+
+        <!-- Rift Portal Indicator -->
+        @if (node.room.isRiftPortal) {
+          <circle r="34" fill="none" stroke="#a855f7" stroke-width="2.5" stroke-dasharray="5,3" />
+          <text
+            x="-18"
+            y="-14"
+            font-size="11"
+            fill="#a855f7"
+            title="Unstable Expedition Rift Portal"
+          >
+            🌀
+          </text>
+        }
+
+        <!-- Conjunction Anomaly Ring -->
+        @if (node.room.isConjunction) {
+          <circle
+            r="31"
+            fill="none"
+            [attr.stroke]="node.room.conjunctionAnomaly?.colorHex || '#fbbf24'"
+            stroke-width="2"
+            stroke-dasharray="3,3"
+          />
+        }
+
+        <!-- Rift Portal Indicator -->
+        @if (node.room.isRiftPortal) {
+          <circle r="34" fill="none" stroke="#a855f7" stroke-width="2.5" stroke-dasharray="5,3" />
+          <text
+            x="-18"
+            y="-14"
+            font-size="11"
+            fill="#a855f7"
+            title="Unstable Expedition Rift Portal"
+          >
+            🌀
+          </text>
+        }
+
+        <!-- Distinct Foreign Overgrowth Ring & Incursion Sigil -->
+        @if (node.room.isOvergrowth) {
+          <circle r="29" fill="none" stroke="#d946ef" stroke-width="2.5" stroke-dasharray="4,2" />
+          <text x="14" y="-14" font-size="11" fill="#f43f5e" title="Grafted Overgrowth Incursion">
+            🌿
+          </text>
+        }
+
+        <!-- Seam Synthesis Gateway Ring -->
+        @if (node.room.isSynthesisSeam) {
+          <circle
+            r="32"
+            fill="none"
+            stroke="url(#seamGradient)"
+            stroke-width="2"
+            stroke-dasharray="3,3"
+          />
+        }
+
+        <!-- Node Outer Ring (Dashed [?] if unexplored in Explorer View) -->
+        <circle
+          r="24"
+          [attr.fill]="engine.perspective() === 'ARCHITECT' ? node.heatmapColor : '#0f172a'"
+          [attr.stroke]="node.colorHex"
+          stroke-width="2.5"
+          [attr.stroke-dasharray]="
+            node.adjacentRumor && engine.perspective() === 'EXPLORER' ? '5 4' : null
+          "
+        />
+
+        <!-- Semantic Legend Glyph -->
+        <text
+          text-anchor="middle"
+          dominant-baseline="central"
+          class="node-glyph"
+          [attr.fill]="node.colorHex"
+        >
+          {{ node.glyph }}
+        </text>
+
+        <!-- Room Label or Fog-of-War [?] Rumor (hidden in mini-map mode) -->
+        @if (!isMiniMap()) {
+          <text y="36" text-anchor="middle" class="node-caption">
+            {{
+              node.adjacentRumor && engine.perspective() === 'EXPLORER'
+                ? '[?] ' + node.room.rumorSignal.slice(0, 20) + '...'
+                : node.room.title.slice(0, 22)
+            }}
+          </text>
+        }
+
+        <!-- Live P2P Visitor Radar Indicator -->
+        @if (node.visitorNames.length > 0) {
+          <g
+            transform="translate(18, -18)"
+            class="visitor-radar-pip"
+            [attr.title]="'Active P2P Traveler: ' + node.visitorNames.join(', ')"
+          >
+            <circle r="9" fill="#c084fc" stroke="#090d16" stroke-width="1.5" />
+            <text
+              text-anchor="middle"
+              dominant-baseline="central"
+              font-size="9"
+              fill="#090d16"
+              font-weight="700"
+            >
+              {{ node.visitorNames.length }}
+            </text>
+          </g>
+        }
+      </g>
+    }
+
+    <!-- Zero-Syntax Architect Ghost `[+ Dig Room]` Nodes on Map -->
+    @for (ghost of architectGhostDigDirections(); track ghost.direction) {
+      <g
+        class="map-node-group ghost-dig-node"
+        [attr.transform]="'translate(' + ghost.x + ',' + ghost.y + ')'"
+        (click)="openDigPopover(ghost.direction)"
+        [attr.data-testid]="'map-ghost-dig-' + ghost.direction"
+      >
+        <line
+          [attr.x1]="engine.currentRoom().x - ghost.x"
+          [attr.y1]="engine.currentRoom().y - ghost.y"
+          x2="0"
+          y2="0"
+          stroke="#38bdf8"
+          stroke-width="1.5"
+          stroke-dasharray="4 4"
+        />
+        <circle
+          r="20"
+          fill="rgba(56, 189, 248, 0.1)"
+          stroke="#38bdf8"
+          stroke-width="2"
+          stroke-dasharray="4 3"
+        />
+        <text
+          text-anchor="middle"
+          dominant-baseline="central"
+          fill="#38bdf8"
+          font-size="11"
+          font-weight="700"
+        >
+          +{{ ghost.direction }}
+        </text>
+        <text y="31" text-anchor="middle" class="node-caption" fill="#38bdf8">
+          [+ Dig {{ ghost.direction }}]
+        </text>
+      </g>
+    }
+  </svg>
+
+  <!-- SENSORY HOVER PREVIEW BANNER OVER MAP -->
+  @if (!isMiniMap() && hoveredMapNode(); as hov) {
+    <div class="map-sensory-tooltip" data-testid="map-sensory-tooltip">
+      <strong>{{ hov.visited ? hov.room.title : 'Unexplored Sector [?]' }}</strong>
+      <span>{{ hov.sensoryPreview }}</span>
+      <em class="click-hint">Click node to travel</em>
+    </div>
+  }
+
+  <!-- SHARED & EXTENSIBLE LEGEND BAR OVERLAY -->
+  @if (!isMiniMap()) {
+    <div class="legend-strip" aria-label="Universal Shared & Custom Map Legend">
+      @for (entry of legendRegistry.allLegendEntries(); track entry.id) {
+        <span
+          class="legend-chip"
+          [class.custom-chip]="entry.isCustom"
+          [title]="entry.label + ': ' + entry.tooltipDescription"
+        >
+          <strong [style.color]="entry.colorHex">{{ entry.glyph }}</strong>
+          <span>{{ entry.label }}</span>
+        </span>
+      }
+    </div>
+  }
+</div>

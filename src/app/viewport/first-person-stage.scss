@@ -14,7 +14,7 @@
   overflow: hidden;
   user-select: none;
 
-  // Thematic CSS custom property shifts
+  // Thematic CSS custom property shifts (Word 1 Atmosphere visual shaders & Seam Synthesis)
   &[data-theme='clockwork'] {
     --fp-glow-color: rgba(245, 158, 11, 0.2);
     --fp-grid-line: #b45309;
@@ -29,6 +29,14 @@
     --fp-wall-outer: #1e1b4b;
     --fp-wall-inner: #3b0764;
     --fp-door-stroke: #d946ef;
+  }
+
+  &[data-theme='seam-synthesis'] {
+    --fp-glow-color: rgba(168, 85, 247, 0.38);
+    --fp-grid-line: #9333ea;
+    --fp-wall-outer: #2e1065;
+    --fp-wall-inner: #3b0764;
+    --fp-door-stroke: #f59e0b;
   }
 
   &[data-theme='fungal'] {
@@ -53,6 +61,54 @@
     --fp-wall-outer: #082f49;
     --fp-wall-inner: #075985;
     --fp-door-stroke: #38bdf8;
+  }
+
+  &[data-theme='tempestuous'] {
+    --fp-glow-color: rgba(250, 204, 21, 0.3);
+    --fp-grid-line: #eab308;
+    --fp-wall-outer: #1e1b4b;
+    --fp-wall-inner: #312e81;
+    --fp-door-stroke: #facc15;
+  }
+
+  &[data-theme='aetherial'] {
+    --fp-glow-color: rgba(192, 132, 252, 0.28);
+    --fp-grid-line: #818cf8;
+    --fp-wall-outer: #1e1b4b;
+    --fp-wall-inner: #2e1065;
+    --fp-door-stroke: #c084fc;
+  }
+
+  &[data-theme='abyssal'] {
+    --fp-glow-color: rgba(99, 102, 241, 0.2);
+    --fp-grid-line: #312e81;
+    --fp-wall-outer: #09090b;
+    --fp-wall-inner: #18181b;
+    --fp-door-stroke: #6366f1;
+  }
+
+  &[data-theme='silent'] {
+    --fp-glow-color: rgba(100, 116, 139, 0.2);
+    --fp-grid-line: #475569;
+    --fp-wall-outer: #0f172a;
+    --fp-wall-inner: #1e293b;
+    --fp-door-stroke: #94a3b8;
+  }
+
+  &[data-theme='blighted'] {
+    --fp-glow-color: rgba(132, 204, 22, 0.25);
+    --fp-grid-line: #65a30d;
+    --fp-wall-outer: #14532d;
+    --fp-wall-inner: #166534;
+    --fp-door-stroke: #84cc16;
+  }
+
+  &[data-theme='gilded'] {
+    --fp-glow-color: rgba(234, 179, 8, 0.3);
+    --fp-grid-line: #ca8a04;
+    --fp-wall-outer: #422006;
+    --fp-wall-inner: #713f12;
+    --fp-door-stroke: #fbbf24;
   }
 
   &[data-theme='monolithic'] {

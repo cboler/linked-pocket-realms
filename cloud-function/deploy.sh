@@ -77,8 +77,37 @@ gcloud storage buckets update "gs://${SOURCE_BUCKET}" --lifecycle-file=gcs-lifec
 
 echo "=========================================================="
 echo " Free-Tier Deployment Complete!"
-BROKER_URL=$(gcloud functions describe "$FUNCTION_NAME" --gen2 --region="$REGION" --format="value(serviceConfig.uri)")
+BROKER_URL=$(gcloud functions describe "$FUNCTION_NAME" --gen2 --region="$REGION" --format="value(serviceConfig.uri)" 2>/dev/null || echo "")
 echo " Broker Endpoint: $BROKER_URL"
 echo " Health Check:    $BROKER_URL/health"
+
+# 6. Automatic URL Stamping into client runtime config
+if [ -n "$BROKER_URL" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  CONFIG_PATH="$SCRIPT_DIR/../src/app/core/config/runtime.config.ts"
+  if [ -f "$CONFIG_PATH" ]; then
+    echo "--> Step 6: Stamping live broker endpoint into $CONFIG_PATH..."
+    cat <<EOF > "$CONFIG_PATH"
+/**
+ * Production Runtime Configuration for Linked Pocket Realms
+ *
+ * Automatically stamped on deployment via cloud-function/deploy.sh or deploy.ps1.
+ */
+export interface RuntimeConfig {
+  defaultBrokerUrl: string;
+  autoConnectBroker: boolean;
+  heartbeatIntervalMs: number;
+}
+
+export const RUNTIME_CONFIG: RuntimeConfig = {
+  defaultBrokerUrl: '$BROKER_URL',
+  autoConnectBroker: true,
+  heartbeatIntervalMs: 15000,
+};
+EOF
+    echo "    Stamped live URL: $BROKER_URL"
+  fi
+fi
+
 echo " All Free-Tier Guardrails Active: Scale-to-Zero, 1 Instance Cap, Auto-Pruned Registry"
 echo "=========================================================="

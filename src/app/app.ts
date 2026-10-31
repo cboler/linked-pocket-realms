@@ -40,11 +40,19 @@ import { StorageService } from './core/services/storage.service';
 import { TransportService } from './core/services/transport.service';
 import { ThunderpassService } from './core/services/thunderpass.service';
 import { FirstPersonStageComponent } from './viewport/first-person-stage';
+import { NodeMapGraphComponent } from './hud/node-map-graph/node-map-graph';
+import { ResonanceLoomModalComponent } from './hud/resonance-loom-modal/resonance-loom-modal';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule, FirstPersonStageComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    FirstPersonStageComponent,
+    NodeMapGraphComponent,
+    ResonanceLoomModalComponent,
+  ],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
@@ -118,7 +126,7 @@ export class App {
 
   // Mobile-First Viewport & Ergonomic State (Default: Delve Focus with 1st-Person & Mini-Map)
   readonly mobileLayoutMode = signal<'SPLIT' | 'STAGE' | 'MAP'>('STAGE');
-  readonly stageLensMode = signal<'FIRST_PERSON' | 'CARD_STAGE' | 'SPLIT'>('FIRST_PERSON');
+  readonly stageLensMode = signal<'FIRST_PERSON' | 'CARD_STAGE'>('FIRST_PERSON');
   readonly loomActiveTab = signal<'WEAVER' | 'WEBRTC' | 'THUNDERPASS' | 'OVERGROWTH'>('WEAVER');
   readonly gateDialerExpanded = signal<boolean>(false);
   readonly isMinimapCollapsed = signal<boolean>(false);
@@ -552,7 +560,8 @@ export class App {
   }
 
   setStageLensMode(mode: 'FIRST_PERSON' | 'CARD_STAGE' | 'SPLIT'): void {
-    this.stageLensMode.set(mode);
+    const targetMode = mode === 'SPLIT' ? 'FIRST_PERSON' : mode;
+    this.stageLensMode.set(targetMode);
   }
 
   setLoomActiveTab(tab: 'WEAVER' | 'WEBRTC' | 'THUNDERPASS' | 'OVERGROWTH'): void {

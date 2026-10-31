@@ -32,6 +32,7 @@ import {
   StructuralTheme,
   TelemetryLog,
   TerminalFeedLine,
+  TraitProfile,
   TravelerEcho,
   HeraldGreeting,
   HERALD_ADJECTIVES,
@@ -405,6 +406,12 @@ export class MudEngineService implements OnDestroy {
   readonly telemetry = signal<TelemetryLog>(this.createInitialTelemetry());
 
   // Derived Signals
+  readonly traitProfile = computed<TraitProfile>(() => {
+    return this.chaosGate.computeTraitProfile(this.rooms());
+  });
+
+  readonly activeExpeditionRift = signal<ChaosGateAddress | null>(null);
+
   readonly overgrowthCount = computed<number>(() => {
     return this.rooms().filter((r) => r.isOvergrowth).length;
   });
@@ -494,7 +501,19 @@ export class MudEngineService implements OnDestroy {
   private initializeEngine(): void {
     const delta = this.activeRealmDelta();
     this.legendRegistry.mergeHostCustomLegends(delta.customLegendEntries);
-    const generated = this.chaosGate.generateRealm(this.activeGateAddress(), delta);
+    let generated: RoomNode[];
+    if (delta.customRoomIds.length > 0 || Object.keys(delta.roomOverrides).length > 0) {
+      generated = this.chaosGate.growRealmToStage(
+        this.activeGateAddress(),
+        delta.growthStage ?? 1,
+        delta,
+      );
+    } else {
+      generated = this.chaosGate.generatePrimordialSanctum(
+        delta.gateAddress?.era || 'Δ',
+        delta.ownerName || 'Aegis_Architect',
+      );
+    }
     this.rooms.set(generated);
     this.emitCurrentRoomNarrative();
 
@@ -535,7 +554,19 @@ export class MudEngineService implements OnDestroy {
       this.activeGateAddress.set(savedDelta.gateAddress);
       this.activeRealmDelta.set(savedDelta);
       this.legendRegistry.mergeHostCustomLegends(savedDelta.customLegendEntries);
-      this.rooms.set(this.chaosGate.generateRealm(savedDelta.gateAddress, savedDelta));
+      const stage = savedDelta.growthStage ?? 1;
+      this.rooms.set(this.chaosGate.growRealmToStage(savedDelta.gateAddress, stage, savedDelta));
+
+      // Passive cultivation check
+      if (savedDelta.lastCultivationTimestampMs) {
+        const elapsedHours = Math.floor(
+          (Date.now() - savedDelta.lastCultivationTimestampMs) / (3600 * 1000),
+        );
+        const cappedHours = Math.min(10, Math.max(0, elapsedHours));
+        if (cappedHours > 0) {
+          this.addVitalityXP(cappedHours * 5, `${cappedHours}h passive cultivation tick`);
+        }
+      }
     }
     const savedChar = await this.storage.loadCharacterState();
     if (savedChar && savedChar.name) {
@@ -550,6 +581,39 @@ export class MudEngineService implements OnDestroy {
     const savedTel = await this.storage.loadTelemetryLog();
     if (savedTel && savedTel.combatSamples) {
       this.telemetry.set(savedTel);
+    }
+
+    // Zero-Server URL Incursions (?spore=...)
+    if (typeof window !== 'undefined' && window.location && window.location.search) {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const sporeParam = params.get('spore');
+        if (sporeParam) {
+          const dna = this.chaosGate.deserializeRealmDna(sporeParam);
+          if (dna && dna.triChord) {
+            const remoteAddr = this.chaosGate.parseAddressString(dna.triChord);
+            if (remoteAddr) {
+              this.graftOvergrowthIncursion(
+                remoteAddr,
+                dna.playerEcho?.playerName || 'Remote Traveler',
+                dna.playerEcho,
+              );
+              this.appendFeed(
+                'NETWORK',
+                `🌿 [URL Incursion] Materialized foreign realm incursion from share link (?spore=...)!`,
+              );
+              try {
+                const cleanUrl = window.location.origin + window.location.pathname;
+                window.history.replaceState({}, '', cleanUrl);
+              } catch {
+                // Ignore restricted context
+              }
+            }
+          }
+        }
+      } catch {
+        // Query parse failure fallback
+      }
     }
   }
 
@@ -617,7 +681,25 @@ export class MudEngineService implements OnDestroy {
     });
 
     // Stamina gentle regeneration
-    const nextStamina = Math.min(stats.maxStamina, char.stamina + 0.35);
+    let nextStamina = Math.min(stats.maxStamina, char.stamina + 0.35);
+
+    // Word 1: Atmosphere mutator tick effects
+    const room = this.currentRoom();
+    const atmo = room?.atmosphereEffect || this.activeGateAddress().atmosphere;
+
+    let fillRate = stats.atbFillRatePerTick;
+    if (atmo.includes('Crystalline')) {
+      // Frozen/Crystalline slows fill rate by 10%
+      fillRate *= 0.9;
+    } else if (atmo.includes('Tempestuous') || atmo.includes('Aetherial')) {
+      // Volt-charged/Aetherial surges fill rate by 10%
+      fillRate *= 1.1;
+    }
+
+    if (atmo.includes('Scorching') && monsters.length > 0) {
+      // Scorching atmosphere drains stamina during combat
+      nextStamina = Math.max(0, nextStamina - 0.15);
+    }
 
     if (monsters.length === 0) {
       if (cooldownChanged || Math.floor(nextStamina) !== Math.floor(char.stamina)) {
@@ -650,7 +732,7 @@ export class MudEngineService implements OnDestroy {
     }
 
     // Advance Player ATB
-    const nextPlayerAtb = Math.min(100, char.atbGauge + stats.atbFillRatePerTick);
+    const nextPlayerAtb = Math.min(100, char.atbGauge + fillRate);
     this.character.update((c) => ({
       ...c,
       atbGauge: nextPlayerAtb,
@@ -1027,6 +1109,87 @@ export class MudEngineService implements OnDestroy {
       return intent;
     }
 
+    if (
+      lower === 'enter rift' ||
+      lower === '@enter rift' ||
+      lower === 'close rift' ||
+      lower === '@close rift' ||
+      lower === 'collapse rift' ||
+      lower === '@collapse rift'
+    ) {
+      if (lower.includes('enter')) {
+        this.enterExpeditionRift();
+        return { type: 'MOVE', rawInput: trimmed, source: 'TERMINAL' };
+      }
+      this.collapseExpeditionRift();
+      return { type: 'LOOK', rawInput: trimmed, source: 'TERMINAL' };
+    }
+
+    if (verb === '@rift' || verb === 'rift') {
+      const sub = parts[1]?.toLowerCase();
+      if (sub === 'enter') {
+        this.enterExpeditionRift();
+        return { type: 'MOVE', rawInput: trimmed, source: 'TERMINAL' };
+      }
+      if (sub === 'close' || sub === 'collapse') {
+        this.collapseExpeditionRift();
+        return { type: 'LOOK', rawInput: trimmed, source: 'TERMINAL' };
+      }
+      if (sub === 'open' || parts.length >= 4) {
+        const era = (parts[2] as ServerEraLetter) || 'Θ';
+        const atmo = (parts[3] as AtmospherePrefix) || 'Scorching';
+        const theme = (parts[4] as StructuralTheme) || 'Clockwork';
+        const biome = (parts[5] as BiomeNoun) || 'Catacombs';
+        this.openExpeditionRift(era, atmo, theme, biome);
+        return { type: 'LOOK', rawInput: trimmed, source: 'TERMINAL' };
+      }
+      const active = this.activeExpeditionRift();
+      if (active) {
+        this.appendFeed(
+          'SYSTEM',
+          `🌀 Active Expedition Rift: ${active.formatted}. Commands: @rift enter, @rift close, or step into purple portal.`,
+        );
+      } else {
+        this.appendFeed(
+          'SYSTEM',
+          `🌀 Wayfinder Loom Idle. Commands: @rift open [era] [atmosphere] [theme] [biome] to launch an Unstable Expedition.`,
+        );
+      }
+      return { type: 'LOOK', rawInput: trimmed, source: 'TERMINAL' };
+    }
+
+    if (verb === '@crack' || verb === 'crack') {
+      const coreId = parts[1];
+      if (!coreId) {
+        const char = this.character();
+        const core = char.inventory.find((it) => it.isSphereCore);
+        if (core) {
+          this.crackSphereCore(core.id);
+        } else {
+          this.appendFeed('SYSTEM', `⚠️ No Sphere Core found in inventory to crack.`);
+        }
+      } else {
+        this.crackSphereCore(coreId);
+      }
+      return { type: 'LOOK', rawInput: trimmed, source: 'TERMINAL' };
+    }
+
+    if (verb === '@graft' || verb === 'graft') {
+      const coreId = parts[1];
+      if (!coreId) {
+        const char = this.character();
+        const core = char.inventory.find((it) => it.isSphereCore);
+        if (core) {
+          this.graftSphereCore(core.id);
+        } else {
+          this.appendFeed('SYSTEM', `⚠️ No Sphere Core found in inventory to graft.`);
+        }
+      } else {
+        this.graftSphereCore(coreId);
+      }
+      return { type: 'LOOK', rawInput: trimmed, source: 'TERMINAL' };
+    }
+
     // P2P Broadcast Chat: say / ' (room) and shout / chat / broadcast (realm-wide)
     if (verb === 'say' || verb === '@say' || lower.startsWith("'")) {
       const msg = lower.startsWith("'")
@@ -1218,6 +1381,18 @@ export class MudEngineService implements OnDestroy {
       comboMult *= 1.15;
       comboText += ` [Atmosphere Resonance: ${element} +15%]`;
     }
+    if (room.isSynthesisSeam) {
+      comboMult *= 1.2;
+      comboText += ` [Synthesis Seam Overdrive +20%]`;
+    }
+    if (room.atmosphereEffect.includes('Scorching') && (isCrit || element === 'Fire')) {
+      comboMult *= 1.15;
+      comboText += ` [Scorching Heat Amplification +15%]`;
+    }
+    if (room.atmosphereEffect.includes('Tempestuous') && element === 'Lightning') {
+      comboMult *= 1.2;
+      comboText += ` [Volt-Charge Surge +20%]`;
+    }
     if (element === target.weakness) {
       comboMult *= 1.25;
       comboText += ` [Weakness Exploited: ${element} +25%]`;
@@ -1399,6 +1574,9 @@ export class MudEngineService implements OnDestroy {
       'COMBAT',
       `★ ${mob.name} defeated! Earned +${xpGain} XP and +${goldGain} Gold.`,
     );
+
+    // Defeating room hostiles/guardians awards Realm Vitality XP
+    this.addVitalityXP(15, `Defeated ${mob.name}`);
 
     // If Boss defeated, sign Verified Drop with SubtleCrypto ECDSA and log Chronicle + Guestbook
     if (mob.isBoss && mob.lootTable.length > 0) {
@@ -1628,6 +1806,12 @@ export class MudEngineService implements OnDestroy {
       );
       return;
     }
+    if (exit.isSynthesisSeam) {
+      this.appendFeed(
+        'LORE',
+        `✨ [Synthesis Seam] You cross a harmonic boundary (${exit.synthesisAtmosphere || 'Elemental Convergence'}) between native and foreign overgrowth!`,
+      );
+    }
     this.moveToRoom(exit.targetRoomId);
   }
 
@@ -1723,9 +1907,10 @@ export class MudEngineService implements OnDestroy {
               : r,
           ),
         );
+        this.addVitalityXP(10, 'Solved room mechanism');
         this.appendFeed(
           'LORE',
-          `⚙ [Trigger Activated] ${trig.ifCondition} verified! Hidden locks disengage toward ${trig.actionPayload}.`,
+          `⚙ [Trigger Activated] ${trig.ifCondition} verified! Hidden locks disengage toward ${trig.actionPayload}. (+10 Vitality)`,
         );
       } else if (trig.doAction === 'HEAL_PARTY') {
         this.character.update((c) => ({ ...c, hp: stats.maxHp, stamina: stats.maxStamina }));
@@ -1746,6 +1931,23 @@ export class MudEngineService implements OnDestroy {
     const char = this.character();
 
     this.evaluateDeclarativeTriggers('ON_INSPECT');
+
+    // Check interactable setpiece prop (shrine, forge, or terminal)
+    if (
+      room.propInteractable &&
+      !room.propInteractable.solved &&
+      (!targetId ||
+        targetId === 'prop' ||
+        targetId.toLowerCase().includes(room.propInteractable.type) ||
+        targetId.toLowerCase().includes(room.propInteractable.name.toLowerCase()))
+    ) {
+      room.propInteractable.solved = true;
+      this.addVitalityXP(10, `Activated ${room.propInteractable.name}`);
+      this.appendFeed(
+        'LORE',
+        `◈ [Setpiece Resonates] You examine the ${room.propInteractable.name}! The ancient apparatus hums to life, channeling +10 Realm Vitality!`,
+      );
+    }
 
     const mob = room.monsters.find((m) => m.id === targetId) ?? room.monsters[0];
     if (mob && (!targetId || targetId === mob.id)) {
@@ -1882,6 +2084,23 @@ export class MudEngineService implements OnDestroy {
     this.pendingSyntaxEcho = `[cmd: use ${room.title.toLowerCase()}]`;
     if (room.triggers.length > 0) {
       this.evaluateDeclarativeTriggers('ON_INSPECT');
+
+      // Check interactable setpiece prop (shrine, forge, or terminal)
+      if (room.propInteractable && !room.propInteractable.solved) {
+        room.propInteractable.solved = true;
+        this.addVitalityXP(10, `Activated ${room.propInteractable.name}`);
+        this.appendFeed(
+          'LORE',
+          `◈ [Setpiece Resonates] You examine the ${room.propInteractable.name}! The ancient apparatus hums to life, channeling +10 Realm Vitality!`,
+        );
+      }
+    } else if (room.propInteractable && !room.propInteractable.solved) {
+      room.propInteractable.solved = true;
+      this.addVitalityXP(10, `Activated ${room.propInteractable.name}`);
+      this.appendFeed(
+        'LORE',
+        `◈ [Setpiece Resonates] You activate the ${room.propInteractable.name}! The ancient apparatus hums to life, channeling +10 Realm Vitality!`,
+      );
     } else if (room.legendType === 'safe-campfire') {
       this.restAtCampfire();
     } else {
@@ -2022,6 +2241,9 @@ export class MudEngineService implements OnDestroy {
       customLegendEntries: [],
       roomOverrides: {},
       customRoomIds: [],
+      growthStage: 1,
+      vitalityXP: 0,
+      lastCultivationTimestampMs: Date.now(),
     };
 
     if (!asVisitingGuest) {
@@ -2032,7 +2254,8 @@ export class MudEngineService implements OnDestroy {
     this.legendRegistry.clearCustomEntries();
     this.legendRegistry.mergeHostCustomLegends(delta.customLegendEntries);
 
-    const generatedRooms = this.chaosGate.generateRealm(newAddr, delta);
+    const targetStage = delta.growthStage ?? 1;
+    const generatedRooms = this.chaosGate.growRealmToStage(newAddr, targetStage, delta);
     this.rooms.set(generatedRooms);
 
     // Apply Customs Gate ruleset enforcement across equipped Paperdoll & inventory items
@@ -2442,21 +2665,41 @@ export class MudEngineService implements OnDestroy {
     void this.storage.saveRealmDelta(this.activeRealmDelta());
   }
 
-  graftOvergrowthIncursion(
+  /**
+   * Triggers a 3-Way "Conjunction of the Spheres" collision incursion:
+   * 40% Host A, 40% Host B, 20% Wild Conjunction Anomaly.
+   * Sprouts 2-4 permanent rooms onto the Home Dungeon, respecting the 30-room capacity limit.
+   */
+  triggerConjunctionIncursion(
     remoteAddress: ChaosGateAddress,
     remoteOwner: string,
     remoteEcho?: TravelerEcho,
+    remoteProfile?: TraitProfile,
   ): RoomNode[] {
     const localAddr = this.activeGateAddress();
-    const incursion = this.chaosGate.generateOvergrowthIncursion(
+    const delta = this.activeRealmDelta();
+    const conjCount = (delta.conjunctionCount ?? 0) + 1;
+
+    const incursion = this.chaosGate.generateConjunctionIncursion(
       localAddr,
       remoteAddress,
       remoteOwner,
       this.rooms(),
+      conjCount,
       remoteEcho,
+      remoteProfile,
     );
 
-    // Link anchor room to incursion
+    if (incursion.newRooms.length === 0) {
+      this.appendFeed(
+        'NETWORK',
+        `⚠️ [Conjunction Threshold] Home Realm has reached its maximum harmonic capacity of 30 rooms! Prune existing overgrowth (@prune) to make space for new planar arrivals.`,
+      );
+      return [];
+    }
+
+    // Link anchor room to incursion via Synthesis Seam
+    const synthesisAtmosphere = `${localAddr.atmosphere}-${remoteAddress.atmosphere} Conjunction`;
     const updatedRooms = this.rooms().map((r) => {
       if (r.id === incursion.anchorRoomId) {
         const exits = [...r.exits];
@@ -2464,6 +2707,8 @@ export class MudEngineService implements OnDestroy {
           exits.push({
             direction: incursion.anchorExitDir,
             targetRoomId: incursion.newRooms[0].id,
+            isSynthesisSeam: true,
+            synthesisAtmosphere,
           });
         }
         return { ...r, exits };
@@ -2475,7 +2720,6 @@ export class MudEngineService implements OnDestroy {
     this.rooms.set(allRooms);
 
     // Persist in activeRealmDelta overrides so it survives reloads and disconnects
-    const delta = this.activeRealmDelta();
     const updatedOverrides = { ...delta.roomOverrides };
 
     // Update anchor room override
@@ -2502,20 +2746,26 @@ export class MudEngineService implements OnDestroy {
         x: nr.x,
         y: nr.y,
         isOvergrowth: true,
+        isConjunction: true,
+        conjunctionAnomaly: nr.conjunctionAnomaly,
         originTriChord: nr.originTriChord,
         originPlayerName: nr.originPlayerName,
         isPrunable: false,
         shardsHarvestable: nr.shardsHarvestable,
         travelerEcho: nr.travelerEcho,
+        isSynthesisSeam: nr.isSynthesisSeam,
+        synthesisAtmosphere: nr.synthesisAtmosphere,
       };
     }
 
     const newDelta: RealmDelta = {
       ...delta,
+      conjunctionCount: conjCount,
       roomOverrides: updatedOverrides,
       customRoomIds: Array.from(
         new Set([...delta.customRoomIds, ...incursion.newRooms.map((r) => r.id)]),
       ),
+      traitProfile: this.chaosGate.computeTraitProfile(allRooms),
       updatedAtIso: new Date().toISOString(),
     };
 
@@ -2524,10 +2774,299 @@ export class MudEngineService implements OnDestroy {
 
     this.appendFeed(
       'NETWORK',
-      `⚡ [Overgrowth Incursion] Spliced Tri-Chords with ${remoteOwner} (${remoteAddress.formatted})! ${incursion.newRooms.length} hybrid chambers sprouted at ${anchor.title}.`,
+      `🌌 [Conjunction of the Spheres] Planar collision with ${remoteOwner} (${remoteAddress.formatted})! ${incursion.newRooms.length} hybrid chambers crystallized onto ${anchor.title}.`,
     );
 
+    if (incursion.anomaly) {
+      this.appendFeed(
+        'COMBAT',
+        `✨ [Wild Anomaly Detected] The conjunction birthed a ${incursion.anomaly.prefix} mutation! Hazard: ${incursion.anomaly.hazard}. Hostiles carry: ${incursion.anomaly.mobModifier}.`,
+      );
+    }
+
+    this.addVitalityXP(40, 'Conjunction of the Spheres');
+
     return incursion.newRooms;
+  }
+
+  graftOvergrowthIncursion(
+    remoteAddress: ChaosGateAddress,
+    remoteOwner: string,
+    remoteEcho?: TravelerEcho,
+  ): RoomNode[] {
+    return this.triggerConjunctionIncursion(remoteAddress, remoteOwner, remoteEcho);
+  }
+
+  /**
+   * Opens an Unstable 3-Word Wayfinder Expedition Rift at the Anchor Portal.
+   * Costs 10 Resonance Shards (or free if character has < 10).
+   */
+  openExpeditionRift(
+    era: ServerEraLetter = 'Θ',
+    atmosphere: AtmospherePrefix = 'Scorching',
+    theme: StructuralTheme = 'Clockwork',
+    biome: BiomeNoun = 'Catacombs',
+  ): boolean {
+    const cur = this.currentRoom();
+    if (cur.legendType !== 'anchor-portal') {
+      this.appendFeed(
+        'SYSTEM',
+        `⚠️ The Wayfinder Loom can only be dialed from within the Primordial Anchor Portal.`,
+      );
+      return false;
+    }
+
+    if (this.activeExpeditionRift()) {
+      this.collapseExpeditionRift();
+    }
+
+    const char = this.character();
+    const cost = 10;
+    if (char.resonanceShards >= cost) {
+      this.character.update((c) => ({
+        ...c,
+        resonanceShards: c.resonanceShards - cost,
+      }));
+      this.appendFeed('SYSTEM', `🌀 Paid ${cost} Resonance Shards to attune the Wayfinder Loom.`);
+    } else {
+      this.appendFeed('SYSTEM', `🌀 Dialed Wayfinder Loom using Primordial Astral charge.`);
+    }
+
+    const address = this.chaosGate.createAddress(era, atmosphere, theme, biome);
+    const expRooms = this.chaosGate.generateExpeditionRooms(address);
+
+    // Add Rift Portal exit to room-0 leading to exp-0
+    const updatedRooms = this.rooms().map((r) => {
+      if (r.id === 'room-0') {
+        const exits = r.exits.filter((e) => e.targetRoomId !== 'exp-0');
+        exits.push({
+          direction: 'U',
+          targetRoomId: 'exp-0',
+          isRiftPortal: true,
+        });
+        return { ...r, exits };
+      }
+      return r;
+    });
+
+    this.rooms.set([...updatedRooms, ...expRooms]);
+    this.activeExpeditionRift.set(address);
+
+    this.appendFeed(
+      'SYSTEM',
+      `🌀 [Wayfinder Rift Opened] Unstable delve aligned to ${address.formatted}! Step into the purple Rift Portal [Up] or type '@enter rift'.`,
+    );
+
+    return true;
+  }
+
+  /**
+   * Moves the player through the purple Rift Portal into exp-0.
+   */
+  enterExpeditionRift(): boolean {
+    const exp0 = this.rooms().find((r) => r.id === 'exp-0');
+    if (!exp0) {
+      this.appendFeed('SYSTEM', `⚠️ No active Wayfinder Expedition Rift is currently open.`);
+      return false;
+    }
+    this.character.update((c) => ({ ...c, currentRoomId: 'exp-0' }));
+    this.emitCurrentRoomNarrative();
+    return true;
+  }
+
+  /**
+   * Collapses the temporary Wayfinder Expedition Rift, safely returning the player
+   * to room-0 and cleaning up expedition rooms from active state.
+   */
+  collapseExpeditionRift(): void {
+    const current = this.currentRoom();
+    if (current.isExpedition) {
+      this.character.update((c) => ({ ...c, currentRoomId: 'room-0' }));
+    }
+
+    // Filter out all expedition rooms
+    const persistentRooms = this.rooms()
+      .filter((r) => !r.isExpedition)
+      .map((r) => {
+        if (r.id === 'room-0') {
+          return {
+            ...r,
+            exits: r.exits.filter((e) => e.targetRoomId !== 'exp-0' && !e.isRiftPortal),
+          };
+        }
+        return r;
+      });
+
+    this.rooms.set(persistentRooms);
+    this.activeExpeditionRift.set(null);
+    this.emitCurrentRoomNarrative();
+
+    this.appendFeed(
+      'SYSTEM',
+      `🌀 [Expedition Rift Collapsed] The planar fissure closed. Memory traces dissipated safely.`,
+    );
+  }
+
+  /**
+   * Cracks a harvested Sphere Core for +100 Resonance Shards, +150 XP, and high-tier loot.
+   */
+  crackSphereCore(coreId: string): boolean {
+    const char = this.character();
+    const itemIdx = char.inventory.findIndex((it) => it.id === coreId && it.isSphereCore);
+    if (itemIdx === -1) {
+      this.appendFeed('SYSTEM', `⚠️ Sphere Core not found in your inventory.`);
+      return false;
+    }
+
+    const item = char.inventory[itemIdx];
+    const updatedInventory = [...char.inventory];
+    updatedInventory.splice(itemIdx, 1);
+
+    this.character.update((c) => {
+      const totalXp = c.xp + 150;
+      const newLevel = Math.max(c.level, 1 + Math.floor(totalXp / 100));
+      return {
+        ...c,
+        xp: totalXp,
+        level: newLevel,
+        resonanceShards: c.resonanceShards + 100,
+        inventory: updatedInventory,
+      };
+    });
+
+    this.appendFeed(
+      'SYSTEM',
+      `💥 [Sphere Core Shattered] Cracked ${item.name}! Harvested +100 Resonance Shards and +150 XP!`,
+    );
+    void this.storage.saveCharacterState(this.character());
+    return true;
+  }
+
+  /**
+   * Grafts a harvested Sphere Core at the Wayfinder Loom, permanently adding
+   * 1-2 rooms to the player's Home Dungeon.
+   */
+  graftSphereCore(coreId: string): boolean {
+    const cur = this.currentRoom();
+    if (cur.legendType !== 'anchor-portal') {
+      this.appendFeed(
+        'SYSTEM',
+        `⚠️ Sphere Cores can only be grafted onto the Home Dungeon at the Primordial Anchor Loom.`,
+      );
+      return false;
+    }
+
+    const char = this.character();
+    const itemIdx = char.inventory.findIndex((it) => it.id === coreId && it.isSphereCore);
+    if (itemIdx === -1) {
+      this.appendFeed('SYSTEM', `⚠️ Sphere Core not found in your inventory.`);
+      return false;
+    }
+
+    const item = char.inventory[itemIdx];
+    if (!item.sphereCoreAddress) {
+      this.appendFeed('SYSTEM', `⚠️ Corrupted Sphere Core: Missing planar address.`);
+      return false;
+    }
+
+    const grafted = this.chaosGate.graftSphereCoreRooms(
+      this.rooms(),
+      item.sphereCoreAddress,
+      item.name,
+    );
+
+    if (grafted.length === 0) {
+      this.appendFeed(
+        'SYSTEM',
+        `⚠️ Home Dungeon has reached the maximum 30-room limit! Prune existing rooms (@prune) before grafting new spheres.`,
+      );
+      return false;
+    }
+
+    // Wire first grafted room to anchor
+    const anchorExit = grafted[0].exits.find(
+      (e) => e.targetRoomId && !e.targetRoomId.startsWith('core-'),
+    );
+    const oppositeDirMap: Record<ExitDirection, ExitDirection> = {
+      N: 'S',
+      S: 'N',
+      E: 'W',
+      W: 'E',
+      U: 'D',
+      D: 'U',
+    };
+    const anchorDir = anchorExit ? oppositeDirMap[anchorExit.direction] : 'E';
+    const anchorId = anchorExit?.targetRoomId || 'room-0';
+
+    const updatedRooms = this.rooms().map((r) => {
+      if (r.id === anchorId) {
+        const exits = [...r.exits];
+        if (!exits.some((e) => e.direction === anchorDir)) {
+          exits.push({
+            direction: anchorDir,
+            targetRoomId: grafted[0].id,
+            isSynthesisSeam: true,
+            synthesisAtmosphere: `${item.sphereCoreAddress!.atmosphere} Core Seam`,
+          });
+        }
+        return { ...r, exits };
+      }
+      return r;
+    });
+
+    const allRooms = [...updatedRooms, ...grafted];
+    this.rooms.set(allRooms);
+
+    // Remove from inventory
+    const updatedInventory = [...char.inventory];
+    updatedInventory.splice(itemIdx, 1);
+    this.character.update((c) => ({
+      ...c,
+      inventory: updatedInventory,
+    }));
+
+    // Persist in delta overrides
+    const delta = this.activeRealmDelta();
+    const updatedOverrides = { ...delta.roomOverrides };
+    for (const gr of grafted) {
+      updatedOverrides[gr.id] = {
+        roomId: gr.id,
+        title: gr.title,
+        description: gr.description,
+        legendType: gr.legendType,
+        exits: gr.exits,
+        customMonsters: gr.monsters,
+        customItems: gr.items,
+        x: gr.x,
+        y: gr.y,
+        isOvergrowth: true,
+        isConjunction: true,
+        originTriChord: gr.originTriChord,
+        originPlayerName: gr.originPlayerName,
+        isPrunable: true,
+        shardsHarvestable: gr.shardsHarvestable,
+      };
+    }
+
+    const newDelta: RealmDelta = {
+      ...delta,
+      roomOverrides: updatedOverrides,
+      customRoomIds: Array.from(new Set([...delta.customRoomIds, ...grafted.map((r) => r.id)])),
+      traitProfile: this.chaosGate.computeTraitProfile(allRooms),
+      updatedAtIso: new Date().toISOString(),
+    };
+
+    this.activeRealmDelta.set(newDelta);
+    void this.storage.saveRealmDelta(newDelta);
+    void this.storage.saveCharacterState(this.character());
+
+    this.addVitalityXP(50, 'Sphere Core Grafted');
+    this.appendFeed(
+      'SYSTEM',
+      `🌱 [Sphere Core Grafted] Spliced ${grafted.length} permanent rooms from ${item.name} onto your Home Dungeon!`,
+    );
+
+    return true;
   }
 
   pruneRoom(roomId?: string): boolean {
@@ -2605,6 +3144,8 @@ export class MudEngineService implements OnDestroy {
       'NARRATIVE',
       `✂️ [Pruned] Severed foreign overgrowth chamber '${targetRoom.title}'. Harvested +${shardsEarned} Resonance Shards (Balance: ${this.character().resonanceShards}).`,
     );
+
+    this.addVitalityXP(30, 'Pruned foreign overgrowth');
 
     return true;
   }
@@ -2888,8 +3429,55 @@ export class MudEngineService implements OnDestroy {
     this.terminalFeed.update((prev) => [line, ...prev.slice(0, 80)]);
   }
 
+  readonly vitalityThresholds = [0, 40, 100, 180, 280, 400, 540, 700, 880, 1100];
+
+  addVitalityXP(amount: number, reason: string): void {
+    if (amount <= 0) return;
+    const delta = this.activeRealmDelta();
+    const currentXp = (delta.vitalityXP ?? 0) + amount;
+    let currentStage = Math.max(1, Math.min(10, delta.growthStage ?? 1));
+    let stagedUp = false;
+
+    while (currentStage < 10 && currentXp >= (this.vitalityThresholds[currentStage] ?? Infinity)) {
+      currentStage++;
+      stagedUp = true;
+    }
+
+    const updatedDelta: RealmDelta = {
+      ...delta,
+      vitalityXP: currentXp,
+      growthStage: currentStage,
+      lastCultivationTimestampMs: Date.now(),
+    };
+
+    this.activeRealmDelta.set(updatedDelta);
+    void this.storage.saveRealmDelta(updatedDelta);
+
+    if (stagedUp) {
+      const grownRooms = this.chaosGate.growRealmToStage(
+        this.activeGateAddress(),
+        currentStage,
+        updatedDelta,
+      );
+      const newRooms = grownRooms.filter((gr) => !this.rooms().some((r) => r.id === gr.id));
+      this.rooms.set(grownRooms);
+
+      const newTitles = newRooms.map((r) => r.title).join(', ');
+      this.appendFeed(
+        'SYSTEM',
+        `🌱 [Pocket Realm Growth] Your Pocket Realm resonates with gathered vitality (+${amount} from ${reason})! Advanced to Growth Stage ${currentStage}! A new wing (${newTitles || 'Outer Stratum'}) has crystallized!`,
+      );
+    } else {
+      this.appendFeed(
+        'SYSTEM',
+        `✨ +${amount} Realm Vitality (${reason}). [Vitality: ${currentXp}/${this.vitalityThresholds[currentStage] ?? 'MAX'} - Stage ${currentStage}]`,
+      );
+    }
+  }
+
   private createInitialRealmDelta(): RealmDelta {
     const addr = this.chaosGate.createAddress('Θ', 'Scorching', 'Clockwork', 'Catacombs');
+    const sanctum = this.chaosGate.generatePrimordialSanctum('Θ', 'Aegis_Architect');
     return {
       gateAddress: addr,
       ownerName: 'Aegis_Architect',
@@ -2903,6 +3491,11 @@ export class MudEngineService implements OnDestroy {
       customLegendEntries: [],
       roomOverrides: {},
       customRoomIds: [],
+      growthStage: 1,
+      vitalityXP: 0,
+      lastCultivationTimestampMs: Date.now(),
+      conjunctionCount: 0,
+      traitProfile: this.chaosGate.computeTraitProfile(sanctum),
     };
   }
 

@@ -715,6 +715,20 @@ textarea {
   stroke-dasharray: 3 3;
 }
 
+.map-edge.synthesis-seam-edge {
+  stroke: #d946ef;
+  stroke-width: 3.5;
+  stroke-dasharray: 5 3;
+  filter: drop-shadow(0 0 4px rgba(217, 70, 239, 0.6));
+}
+
+.map-edge.rift-portal-edge {
+  stroke: #a855f7;
+  stroke-width: 3.5;
+  stroke-dasharray: 6 3;
+  filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.7));
+}
+
 .map-node-group {
   cursor: pointer;
   transition: opacity 0.15s ease;

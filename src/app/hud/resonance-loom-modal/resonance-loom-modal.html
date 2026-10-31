@@ -1,0 +1,759 @@
+<div class="resonance-loom-sheet" data-testid="network-drawer-content">
+  <!-- LOOM SUB-NAVIGATION TABS -->
+  <nav class="loom-subtabs" role="tablist" aria-label="Resonance Loom Controls">
+    <button
+      type="button"
+      class="loom-tab-btn"
+      [class.active]="loomActiveTab() === 'WEAVER'"
+      (click)="setLoomActiveTab('WEAVER')"
+      data-testid="loom-tab-weaver"
+    >
+      🧬 Tri-Chord Weaver
+    </button>
+    <button
+      type="button"
+      class="loom-tab-btn"
+      [class.active]="loomActiveTab() === 'WEBRTC'"
+      (click)="setLoomActiveTab('WEBRTC')"
+      data-testid="loom-tab-webrtc"
+    >
+      🌐 WebRTC Collider
+    </button>
+    <button
+      type="button"
+      class="loom-tab-btn"
+      [class.active]="loomActiveTab() === 'THUNDERPASS'"
+      (click)="setLoomActiveTab('THUNDERPASS')"
+      data-testid="loom-tab-thunderpass"
+    >
+      📡 Thunderpass Radar
+    </button>
+    <button
+      type="button"
+      class="loom-tab-btn"
+      [class.active]="loomActiveTab() === 'OVERGROWTH'"
+      (click)="setLoomActiveTab('OVERGROWTH')"
+      data-testid="loom-tab-overgrowth"
+    >
+      🌿 Overgrowth ({{ engine.overgrowthCount() }})
+    </button>
+  </nav>
+
+  <!-- TAB 1: TRI-CHORD WEAVER / WAYFINDER LOOM -->
+  @if (loomActiveTab() === 'WEAVER') {
+    <div class="loom-tab-content">
+      <!-- 1. HOME DUNGEON TRAIT PROFILE -->
+      <div class="telemetry-card">
+        <h3>🏛️ Primordial Home Dungeon Trait Profile</h3>
+        <p class="card-help">
+          Dynamic genetic profile synthesized across all {{ engine.rooms().length }} active rooms in
+          your persistent pocket realm (Cap: 30 rooms).
+        </p>
+
+        <div class="trait-profile-card">
+          <div class="trait-grid">
+            <div class="trait-badge">
+              <span class="trait-k">Primary Atmosphere</span>
+              <span class="trait-v">{{ engine.traitProfile().primaryAtmosphere }}</span>
+            </div>
+            <div class="trait-badge">
+              <span class="trait-k">Primary Architecture</span>
+              <span class="trait-v">{{ engine.traitProfile().primaryArchitecture }}</span>
+            </div>
+            <div class="trait-badge">
+              <span class="trait-k">Primary Biome</span>
+              <span class="trait-v">{{ engine.traitProfile().primaryBiome }}</span>
+            </div>
+            <div class="trait-badge">
+              <span class="trait-k">Home Capacity</span>
+              <span class="trait-v">{{ engine.rooms().length }} / 30 Rooms</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. WAYFINDER EXPEDITION RIFT LOOM -->
+      <div class="telemetry-card">
+        <h3>🌀 Wayfinder Loom: Unstable Expedition Delves</h3>
+        <p class="card-help">
+          Dial any 3-Word combination to project a temporary 6-room delve into the void. Defeat the
+          Apex Sovereign in exp-5 to harvest a <strong>Sphere Core</strong>!
+        </p>
+
+        <div class="wayfinder-dialer-grid">
+          <div class="dialer-field">
+            <label for="rift-era">Server Era</label>
+            <select id="rift-era" [ngModel]="riftEra()" (ngModelChange)="riftEra.set($event)">
+              @for (e of serverEras; track e.letter) {
+                <option [value]="e.letter">{{ e.letter }}: {{ e.name }}</option>
+              }
+            </select>
+          </div>
+          <div class="dialer-field">
+            <label for="rift-atmo">Atmosphere</label>
+            <select
+              id="rift-atmo"
+              [ngModel]="riftAtmosphere()"
+              (ngModelChange)="riftAtmosphere.set($event)"
+            >
+              @for (a of atmospherePrefixes; track a) {
+                <option [value]="a">{{ a }}</option>
+              }
+            </select>
+          </div>
+          <div class="dialer-field">
+            <label for="rift-theme">Architecture</label>
+            <select id="rift-theme" [ngModel]="riftTheme()" (ngModelChange)="riftTheme.set($event)">
+              @for (t of structuralThemes; track t) {
+                <option [value]="t">{{ t }}</option>
+              }
+            </select>
+          </div>
+          <div class="dialer-field">
+            <label for="rift-biome">Biome</label>
+            <select id="rift-biome" [ngModel]="riftBiome()" (ngModelChange)="riftBiome.set($event)">
+              @for (b of biomeNouns; track b) {
+                <option [value]="b">{{ b }}</option>
+              }
+            </select>
+          </div>
+        </div>
+
+        <div class="arch-row" style="margin-bottom: 0.75rem">
+          <button
+            type="button"
+            class="mini-action-btn"
+            (click)="rollRandomRift()"
+            data-testid="roll-random-rift-btn"
+          >
+            🎲 Roll Random Rift
+          </button>
+          @if (!engine.activeExpeditionRift()) {
+            <button
+              type="button"
+              class="mini-action-btn accent"
+              (click)="onOpenExpeditionRift()"
+              data-testid="open-rift-btn"
+            >
+              🌀 Open Expedition Rift (-10 Shards)
+            </button>
+          } @else {
+            <button
+              type="button"
+              class="mini-action-btn accent"
+              (click)="onEnterExpeditionRift()"
+              data-testid="enter-rift-btn"
+            >
+              🚪 Enter Rift Portal [Up]
+            </button>
+            <button
+              type="button"
+              class="mini-action-btn danger"
+              (click)="onCollapseExpeditionRift()"
+              data-testid="collapse-rift-btn"
+            >
+              ❌ Collapse Active Rift
+            </button>
+          }
+        </div>
+
+        @if (engine.activeExpeditionRift()) {
+          <div
+            class="dialer-readout"
+            style="border-color: #8b5cf6; background: rgba(139, 92, 246, 0.1)"
+          >
+            <strong>🌀 Active Rift: {{ engine.activeExpeditionRift()?.formatted }}</strong>
+          </div>
+        }
+      </div>
+
+      <!-- 3. HARVESTED SPHERE CORES -->
+      <div class="telemetry-card">
+        <h3>🔮 Harvested Sphere Cores ({{ sphereCores().length }})</h3>
+        <p class="card-help">
+          Sphere Cores harvested from conquered Expedition Bosses. Crack them for immediate shards
+          and XP, or graft them onto the Home Dungeon to permanently sprout new chambers.
+        </p>
+
+        @if (sphereCores().length === 0) {
+          <p class="card-help" style="font-style: italic; color: var(--text-muted)">
+            No Sphere Cores in inventory. Conquer the Apex Sovereign at the end of an Expedition
+            Rift to claim one!
+          </p>
+        } @else {
+          @for (core of sphereCores(); track core.id) {
+            <div class="sphere-core-card">
+              <div class="core-title">🔮 {{ core.name }}</div>
+              <div class="core-address">Planar Resonance: {{ core.originGateAddress }}</div>
+              <div class="arch-row">
+                <button
+                  type="button"
+                  class="mini-action-btn accent"
+                  (click)="onCrackSphereCore(core.id)"
+                  data-testid="crack-core-btn"
+                >
+                  💥 Crack Core (+100 Shards / +150 XP)
+                </button>
+                <button
+                  type="button"
+                  class="mini-action-btn"
+                  (click)="onGraftSphereCore(core.id)"
+                  data-testid="graft-core-btn"
+                >
+                  🌱 Graft to Home (+1-2 Rooms)
+                </button>
+              </div>
+            </div>
+          }
+        }
+      </div>
+
+      <!-- 4. ZERO-SERVER URL SPORE SHARING & BASE64 CARTRIDGE -->
+      <div class="telemetry-card">
+        <h3>Tri-Chord Lexicon & Realm Cartridges</h3>
+        <p class="card-help">
+          Weave your realm's 3-word DNA seed:
+          <code>[Atmosphere] · [Architecture/Theme] · [Biome]</code>.
+        </p>
+        <div class="dialer-readout">
+          <strong>{{ engine.activeGateAddress().formatted }}</strong>
+        </div>
+
+        <!-- Zero-Server URL Spore Sharing -->
+        <div class="share-spore-section">
+          <h4>🔗 Zero-Config Shareable Realm Link (?spore=...)</h4>
+          <p class="card-help">
+            Generates a compact Base64url DNA cartridge link (&le; 1KB). Anyone opening this link
+            will immediately graft a 2-to-4 room Overgrowth incursion of your realm!
+          </p>
+          <div class="arch-row">
+            <button
+              type="button"
+              class="mini-action-btn accent share-link-btn"
+              (click)="shareRealmLink()"
+              data-testid="share-realm-link-btn"
+            >
+              🔗 Share Realm Link
+            </button>
+            @if (shareConfirmationMessage()) {
+              <span class="share-confirm-badge">{{ shareConfirmationMessage() }}</span>
+            }
+          </div>
+        </div>
+
+        <h4 style="margin-top: 1.25rem">Full Base64 Delta Cartridge</h4>
+        <textarea
+          rows="2"
+          readonly
+          aria-label="Base64 Realm Cartridge"
+          [ngModel]="exportedCartridgeText()"
+          data-testid="cartridge-textarea"
+        ></textarea>
+        <div class="arch-row">
+          <button
+            type="button"
+            class="mini-action-btn"
+            (click)="importRealmCartridge()"
+            data-testid="import-cartridge-btn"
+          >
+            Load Cartridge Into Loom
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- TAB 2: WEBRTC COLLIDER -->
+  @if (loomActiveTab() === 'WEBRTC') {
+    <div class="loom-tab-content drawer-split-grid">
+      <!-- MESH COLLIDER & ZERO-CONFIG STATUS -->
+      <div class="telemetry-card mesh-hero-card">
+        <div class="mesh-status-indicator" data-testid="realm-mesh-status-indicator">
+          @if (transport.brokerMeshStatus() === 'CONNECTED') {
+            <span class="mesh-badge connected">
+              🟢 Realm Mesh: Connected — {{ transport.nearbyRealmsCount() }} Active Realm(s) Nearby
+            </span>
+          } @else if (transport.brokerMeshStatus() === 'WAKING') {
+            <span class="mesh-badge waking">
+              🟡 Waking Resonance Relay... (1-3s Cloud Function Cold Start)
+            </span>
+          } @else {
+            <span class="mesh-badge offline">⚪ Offline / Local Mesh Mode</span>
+          }
+        </div>
+
+        <div class="one-tap-collide-cluster">
+          <button
+            type="button"
+            class="collide-main-btn"
+            [disabled]="isColliding() || transport.brokerMeshStatus() === 'WAKING'"
+            (click)="onCollideWithNearbyRealm()"
+            data-testid="collide-nearby-realm-btn"
+          >
+            ⚡ Collide with Nearby Realm
+          </button>
+          <p class="collide-subtext">
+            Automatically joins the nearest active adventurer's lobby or broadcasts your gate offer
+            with zero configuration.
+          </p>
+        </div>
+      </div>
+
+      <!-- ACTIVE DISCOVERED LOBBIES -->
+      <div class="telemetry-card">
+        <div class="card-header-flex">
+          <h3>Serverless gcloud Lobby Sessions</h3>
+          <div class="arch-row">
+            <button
+              type="button"
+              class="mini-action-btn accent"
+              (click)="
+                transport.publishBrokerOffer(
+                  engine.character().name,
+                  engine.activeGateAddress().formatted,
+                  engine.character().heraldGreeting?.formatted
+                )
+              "
+              data-testid="create-broker-lobby-btn"
+            >
+              Publish 1-Click Offer
+            </button>
+            <button
+              type="button"
+              class="mini-action-btn"
+              (click)="transport.refreshBrokerSessions()"
+              data-testid="refresh-broker-lobbies-btn"
+            >
+              Refresh Lobbies
+            </button>
+          </div>
+        </div>
+
+        <div class="peer-list" data-testid="broker-peer-list">
+          @for (sess of transport.brokerSessions(); track sess.roomCode) {
+            @if (
+              sess.senderId === transport.localPeerId ||
+              sess.roomCode === transport.myLobbyRoomCode()
+            ) {
+              <div class="peer-row my-lobby-row" data-testid="my-broker-session">
+                <div>
+                  <strong>👑 You / Host: {{ sess.hostName }} ({{ sess.roomCode }})</strong>
+                  <div class="peer-sub">{{ sess.triChord }} • Active & Announcing</div>
+                  @if (sess.heraldGreeting) {
+                    <div class="peer-herald">💬 &ldquo;{{ sess.heraldGreeting }}&rdquo;</div>
+                  }
+                </div>
+                <span class="online-pill">● Broadcasting</span>
+              </div>
+            } @else {
+              <div class="peer-row" [attr.data-testid]="'remote-session-' + sess.roomCode">
+                <div>
+                  <strong>{{ sess.hostName }} ({{ sess.roomCode }})</strong>
+                  <div class="peer-sub">{{ sess.triChord }}</div>
+                  @if (sess.heraldGreeting) {
+                    <div class="peer-herald">💬 &ldquo;{{ sess.heraldGreeting }}&rdquo;</div>
+                  }
+                </div>
+                <button
+                  type="button"
+                  class="mini-action-btn accent"
+                  (click)="
+                    transport.joinBrokerSession(sess.roomCode);
+                    engine.traverseChaosGatePortal(sess.triChord)
+                  "
+                  [attr.data-testid]="'join-lobby-' + sess.roomCode"
+                >
+                  ◈ Connect & Delve
+                </button>
+              </div>
+            }
+          }
+          @if (transport.brokerSessions().length === 0) {
+            <div class="card-help" style="margin-top: 0.5rem">
+              No active broker lobbies discovered. Connected realms will automatically appear here!
+            </div>
+          }
+        </div>
+
+        <h4 style="margin-top: 1rem">BroadcastChannel Local Anchor Portals</h4>
+        <div class="peer-list">
+          @for (peer of transport.activeVisitorsList(); track peer.peerId) {
+            <div class="peer-row" [attr.data-testid]="'peer-portal-' + peer.peerId">
+              <div>
+                <strong>{{ peer.playerName }} (Lv.{{ peer.level }} {{ peer.archetype }})</strong>
+                <div class="peer-sub">
+                  Gate: {{ peer.gateAddress }} • Sector: {{ peer.currentRoomId }} •
+                  {{ peer.transport }}
+                </div>
+              </div>
+              <button
+                type="button"
+                class="mini-action-btn accent"
+                (click)="
+                  engine.traverseChaosGatePortal(peer.gateAddress); engine.activeDrawer.set('NONE')
+                "
+                [attr.data-testid]="'traverse-portal-' + peer.peerId"
+              >
+                ◈ Enter Portal
+              </button>
+            </div>
+          }
+        </div>
+
+        <!-- DEVELOPER DIAGNOSTICS & CUSTOM RELAY OVERRIDE ACCORDION -->
+        <details class="diagnostics-accordion" style="margin-top: 1rem">
+          <summary>🛠️ Developer Diagnostics & Relay Override</summary>
+          <div class="diagnostics-body">
+            <label class="diag-label">
+              <span>Cloud Function Relay Endpoint</span>
+              <input
+                type="url"
+                placeholder="Cloud Function Broker URL (optional)"
+                aria-label="Serverless Broker Endpoint"
+                [ngModel]="transport.brokerUrl()"
+                (ngModelChange)="transport.setBrokerUrl($event); thunderpass.brokerUrl.set($event)"
+                data-testid="broker-url-input"
+              />
+            </label>
+
+            @if (transport.brokerUrl().trim()) {
+              <div class="broker-status-bar" data-testid="broker-status-bar">
+                <span class="status-dot online">●</span>
+                <span
+                  >Auto-Announcing as <code>{{ transport.myLobbyRoomCode() }}</code></span
+                >
+                <button
+                  type="button"
+                  class="text-btn"
+                  (click)="
+                    transport.announcePresenceToBroker(
+                      engine.character().name,
+                      engine.activeGateAddress().formatted,
+                      engine.character().heraldGreeting?.formatted
+                    )
+                  "
+                  title="Ping presence now"
+                  data-testid="ping-broker-presence-btn"
+                >
+                  📡 Ping Now
+                </button>
+              </div>
+            }
+
+            <div class="diag-sdp-box" style="margin-top: 0.75rem">
+              <h5>Air-Gapped WebRTC SDP Handshake</h5>
+              <div class="arch-row">
+                <button
+                  type="button"
+                  class="mini-action-btn accent"
+                  (click)="generateWebRtcOffer()"
+                  data-testid="webrtc-offer-btn"
+                >
+                  Generate Manual SDP
+                </button>
+                <span class="rtc-status">Status: {{ transport.rtcConnectionState() }}</span>
+              </div>
+              @if (transport.localSdpPayload()) {
+                <textarea
+                  readonly
+                  rows="2"
+                  aria-label="Local WebRTC SDP Token"
+                  [value]="transport.localSdpPayload()"
+                  data-testid="webrtc-sdp-output"
+                ></textarea>
+              }
+              <div class="arch-row">
+                <input
+                  type="text"
+                  aria-label="Remote SDP Handshake Token"
+                  [ngModel]="remoteHandshakeInput()"
+                  (ngModelChange)="remoteHandshakeInput.set($event)"
+                  placeholder="Paste Peer SDP Offer/Answer..."
+                />
+                <button type="button" class="mini-action-btn" (click)="acceptWebRtcHandshake()">
+                  Connect Peer
+                </button>
+              </div>
+            </div>
+          </div>
+        </details>
+      </div>
+    </div>
+  }
+
+  <!-- TAB 3: THUNDERPASS PROXIMITY RADAR (3DS STREETPASS WALK MODE) -->
+  @if (loomActiveTab() === 'THUNDERPASS') {
+    <div class="loom-tab-content drawer-split-grid">
+      <div class="telemetry-card">
+        <h3>Thunderpass Walk Mode (Proximity Incursions)</h3>
+        <p class="card-help">
+          Slip your phone in your pocket during real-world walks. When you pass near another player,
+          both realms collide and sprout hybrid Overgrowth chambers!
+        </p>
+
+        <div class="thunderpass-controls-cluster">
+          <button
+            type="button"
+            class="mini-action-btn"
+            [class.accent]="thunderpass.isWalkModeActive()"
+            (click)="thunderpass.toggleWalkMode()"
+            data-testid="toggle-walk-mode-btn"
+          >
+            {{
+              thunderpass.isWalkModeActive()
+                ? '📡 Disable Walk Mode'
+                : '📡 Enable Thunderpass Walk Mode'
+            }}
+          </button>
+          <button
+            type="button"
+            class="mini-action-btn"
+            (click)="thunderpass.toggleBatterySaverOverlay()"
+            title="Dim screen to black to save OLED battery in pocket"
+            data-testid="toggle-battery-saver-btn"
+          >
+            🔋 Pocket Battery Saver
+          </button>
+        </div>
+
+        <div class="radar-readout-card">
+          <div class="radar-status-line">
+            <span>Radar Status:</span>
+            <strong [style.color]="thunderpass.isWalkModeActive() ? '#22c55e' : '#94a3b8'">
+              {{ thunderpass.isWalkModeActive() ? 'Scanning Proximity Grid' : 'Standby' }}
+            </strong>
+          </div>
+          <div class="radar-status-line">
+            <span>Blinded Grid Cell:</span>
+            <code>{{ thunderpass.currentGeohashDisplay() }}</code>
+          </div>
+          <div class="radar-privacy-note">
+            🔒 <strong>Zero-Knowledge Privacy:</strong> Coarse ~600m Geohashes are SHA-256 salted on
+            device before relaying. Raw coordinates never leave your browser.
+          </div>
+        </div>
+
+        <div class="arch-row" style="margin-top: 0.75rem">
+          <button
+            type="button"
+            class="mini-action-btn"
+            (click)="scanBleRelic()"
+            [disabled]="thunderpass.isScanningBle()"
+            data-testid="scan-ble-relic-btn"
+          >
+            {{ thunderpass.isScanningBle() ? 'Scanning BLE...' : '📡 Scan Nearby BLE Relic' }}
+          </button>
+          <button
+            type="button"
+            class="mini-action-btn accent"
+            (click)="simulateThunderpassIncursion()"
+            data-testid="sim-incursion-btn"
+          >
+            ⚡ Simulate Walk Incursion
+          </button>
+        </div>
+      </div>
+
+      <!-- HERALD GREETING TUNING CARD -->
+      <div class="telemetry-card" data-testid="herald-tuning-card">
+        <div class="card-header-flex">
+          <h3>Traveler's Herald Greeting (StreetPass Motto)</h3>
+          <button
+            type="button"
+            class="mini-action-btn accent"
+            (click)="rollHeraldGreeting()"
+            data-testid="loom-roll-herald-btn"
+          >
+            🎲 Roll Random
+          </button>
+        </div>
+        <p class="card-help">
+          Clean and curated. Broadcast to peers who connect to your MUD or cross paths on
+          Thunderpass walks.
+        </p>
+
+        <div class="herald-motto-preview-box">
+          Active:
+          <strong>&ldquo;{{ engine.character().heraldGreeting.formatted }}&rdquo;</strong>
+        </div>
+
+        <div class="herald-selectors-grid">
+          <label class="herald-select-col">
+            <span class="col-label">Template</span>
+            <select
+              aria-label="Herald Greeting Template"
+              [ngModel]="heraldTemplateId()"
+              (ngModelChange)="heraldTemplateId.set(+$event)"
+            >
+              @for (t of heraldTemplates; track t.id) {
+                <option [value]="t.id">{{ t.pattern }}</option>
+              }
+            </select>
+          </label>
+
+          <label class="herald-select-col">
+            <span class="col-label">Adjective</span>
+            <select
+              aria-label="Herald Adjective"
+              [ngModel]="heraldAdjective()"
+              (ngModelChange)="heraldAdjective.set($event)"
+            >
+              @for (adj of heraldAdjectives; track adj) {
+                <option [value]="adj">{{ adj }}</option>
+              }
+            </select>
+          </label>
+
+          <label class="herald-select-col">
+            <span class="col-label">Noun</span>
+            <select
+              aria-label="Herald Noun"
+              [ngModel]="heraldNoun()"
+              (ngModelChange)="heraldNoun.set($event)"
+            >
+              @for (noun of heraldNouns; track noun) {
+                <option [value]="noun">{{ noun }}</option>
+              }
+            </select>
+          </label>
+
+          @if (heraldTemplates[heraldTemplateId()].usesVerb) {
+            <label class="herald-select-col">
+              <span class="col-label">Verb</span>
+              <select
+                aria-label="Herald Verb"
+                [ngModel]="heraldVerb()"
+                (ngModelChange)="heraldVerb.set($event)"
+              >
+                @for (verb of heraldVerbs; track verb) {
+                  <option [value]="verb">{{ verb }}</option>
+                }
+              </select>
+            </label>
+          }
+        </div>
+
+        <div class="arch-row" style="margin-top: 0.5rem">
+          <span class="preview-inline"
+            >Draft: <em>&ldquo;{{ heraldPreview() }}&rdquo;</em></span
+          >
+          <button
+            type="button"
+            class="mini-action-btn accent"
+            (click)="applyHeraldGreeting()"
+            data-testid="apply-herald-motto-btn"
+          >
+            💾 Save Herald Motto
+          </button>
+        </div>
+      </div>
+
+      <div class="telemetry-card">
+        <h3>Thunderpass Street-Log</h3>
+        <p class="card-help">
+          Log of travelers encountered on proximity walks and their harvested Traveler's Echoes.
+        </p>
+        <div class="encounter-list" data-testid="thunderpass-street-log">
+          @for (enc of thunderpass.streetPassLog(); track enc.id) {
+            <div class="encounter-row" data-testid="encounter-row">
+              <div class="enc-header">
+                <strong>{{ enc.playerName }} (Echo Lv.{{ enc.echo.level }})</strong>
+                <span class="enc-time">{{ enc.timestampIso | date: 'shortTime' }}</span>
+              </div>
+              <div class="enc-sub">
+                Tri-Chord: <code>{{ enc.triChord }}</code>
+              </div>
+              @if (enc.echo.heraldGreeting || enc.heraldGreeting) {
+                <div class="enc-herald-quote" data-testid="encounter-herald-quote">
+                  💬 &ldquo;{{ enc.echo.heraldGreeting || enc.heraldGreeting }}&rdquo;
+                </div>
+              }
+              <div class="enc-actions">
+                <span>Grafted Chambers: {{ enc.roomsGrafted.length }}</span>
+                @if (enc.echo.forgedItems.length > 0) {
+                  <button
+                    type="button"
+                    class="mini-action-btn accent"
+                    (click)="engine.barterEcho(enc.echo.id, enc.echo.forgedItems[0].id)"
+                  >
+                    💎 Barter ({{ enc.echo.forgedItems[0].name }})
+                  </button>
+                }
+              </div>
+            </div>
+          }
+          @if (thunderpass.streetPassLog().length === 0) {
+            <div class="card-help">
+              No streetpass encounters logged yet. Enable Walk Mode and take a walk!
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- TAB 4: OVERGROWTH & PRUNING -->
+  @if (loomActiveTab() === 'OVERGROWTH') {
+    <div class="loom-tab-content">
+      <div class="telemetry-card">
+        <h3>Overgrowth Incursions & Resonance Shards</h3>
+        <p class="card-help">
+          Foreign realms collide with yours, sprouting hybrid Overgrowth chambers. Defeat the
+          guardian in each chamber to prune it and harvest Resonance Shards.
+        </p>
+
+        <div class="overgrowth-stats-grid">
+          <div class="overgrowth-stat-card">
+            <span class="stat-num">{{ engine.overgrowthCount() }}</span>
+            <span class="stat-lbl">Grafted Foreign Chambers</span>
+          </div>
+          <div class="overgrowth-stat-card">
+            <span class="stat-num">💎 {{ engine.character().resonanceShards || 0 }}</span>
+            <span class="stat-lbl">Resonance Shards Balance</span>
+          </div>
+        </div>
+
+        <h4>Currently Grafted Overgrowth Chambers</h4>
+        <div class="peer-list">
+          @for (r of engine.rooms(); track r.id) {
+            @if (r.isOvergrowth) {
+              <div class="peer-row overgrowth-row" [attr.data-testid]="'overgrowth-room-' + r.id">
+                <div>
+                  <strong>{{ r.title }}</strong>
+                  <div class="peer-sub">
+                    Origin: {{ r.originTriChord }} (Seeded by {{ r.originPlayerName || 'Unknown' }})
+                    • Status:
+                    {{
+                      r.monsters.length === 0 ? 'Guardian Cleared' : r.monsters[0].name + ' Alive'
+                    }}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="mini-action-btn"
+                  [class.accent]="r.monsters.length === 0"
+                  [disabled]="r.monsters.length > 0"
+                  (click)="engine.pruneRoom(r.id)"
+                  [title]="
+                    r.monsters.length > 0
+                      ? 'Defeat foreign guardian first'
+                      : 'Prune chamber and harvest shards'
+                  "
+                  [attr.data-testid]="'prune-room-' + r.id"
+                >
+                  ✂️ Prune (+{{ r.shardsHarvestable || 20 }} Shards)
+                </button>
+              </div>
+            }
+          }
+          @if (engine.overgrowthCount() === 0) {
+            <div class="card-help" style="margin-top: 0.5rem">
+              No Overgrowth chambers currently encroaching on your realm. Collide with a peer or
+              simulate a walk to seed one!
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  }
+</div>

@@ -1,4 +1,5 @@
 import { Injectable, inject, signal } from '@angular/core';
+import { RUNTIME_CONFIG } from '../config/runtime.config';
 import {
   ThunderpassEncounter,
   ThunderpassSporePayload,
@@ -50,6 +51,7 @@ export class ThunderpassService {
   private lastQueriedZoneHash = '';
 
   constructor() {
+    this.brokerUrl.set(this.transport.brokerUrl() || RUNTIME_CONFIG.defaultBrokerUrl);
     void this.loadStreetLog();
   }
 

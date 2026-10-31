@@ -41,7 +41,15 @@ export type BiomeNoun =
   | 'Bazaar'
   | 'Crucible';
 
-export type TopologyPattern = 'labyrinth' | 'ring' | 'tower' | 'hub-and-spoke';
+export type TopologyPattern =
+  | 'labyrinth'
+  | 'ring'
+  | 'tower'
+  | 'hub-and-spoke'
+  | 'grid-loop'
+  | 'deep-descent'
+  | 'cluster-spore'
+  | 'symmetrical-wing';
 
 export type ElementalAffinity = 'Fire' | 'Frost' | 'Void' | 'Lightning' | 'Bio' | 'Physical';
 
@@ -122,9 +130,13 @@ export interface EquipmentItem {
     mitigationBonus?: number;
   };
   totalStatBudget: number;
+  description?: string;
   /** Clamped values applied when visiting a realm with a stricter RulesetManifest */
   clampedStatBudget?: number;
   clampedScaleFactor?: number;
+  isSphereCore?: boolean;
+  sphereCoreAddress?: ChaosGateAddress;
+  sphereCoreRarity?: string;
   signatureHex?: string; // ECDSA SubtleCrypto signature for Verified Drops
   signerPublicKeyJwk?: string;
 }
@@ -384,6 +396,26 @@ export interface RoomExit {
   isSecret?: boolean;
   requiredKeyId?: string;
   isLocked?: boolean;
+  isSynthesisSeam?: boolean;
+  synthesisAtmosphere?: string;
+  isRiftPortal?: boolean;
+}
+
+export interface ConjunctionAnomaly {
+  prefix: string; // e.g. "Anomalous", "Void-Warped", "Prismatic-Surge", "Eldritch-Resonance", "Chrono-Fractured", "Cataclysmic"
+  hazard: string; // e.g. "Void-Burn Hazard", "Aetherial Overcharge Zone", "Gravity Shear", "Corrosive Spore Mist"
+  mobModifier: string; // e.g. "Blink-Step", "Reflective Carapace", "Vampiric Leech", "Volatile Death-Burst", "Titan-Forged"
+  colorHex: string;
+}
+
+export interface TraitProfile {
+  atmospheres: Record<AtmospherePrefix, number>;
+  architectures: Record<StructuralTheme, number>;
+  biomes: Record<BiomeNoun, number>;
+  primaryAtmosphere: AtmospherePrefix;
+  primaryArchitecture: StructuralTheme;
+  primaryBiome: BiomeNoun;
+  totalRooms: number;
 }
 
 export interface DeclarativeTrigger {
@@ -430,6 +462,8 @@ export interface RoomNode {
   items: EquipmentItem[];
   triggers: DeclarativeTrigger[];
   rumorSignal: string; // Shown in Fog-of-War on adjacent unvisited nodes
+  growthStage?: number;
+  propInteractable?: { name: string; type: string; action: string; solved?: boolean };
   isCustomDug?: boolean;
   isOvergrowth?: boolean;
   originTriChord?: string;
@@ -437,6 +471,15 @@ export interface RoomNode {
   isPrunable?: boolean;
   shardsHarvestable?: number;
   travelerEcho?: TravelerEcho;
+  isSynthesisSeam?: boolean;
+  synthesisAtmosphere?: string;
+  atmospherePrefix?: AtmospherePrefix;
+  structuralTheme?: StructuralTheme;
+  biomeNoun?: BiomeNoun;
+  isConjunction?: boolean;
+  conjunctionAnomaly?: ConjunctionAnomaly;
+  isExpedition?: boolean;
+  isRiftPortal?: boolean;
 }
 
 export interface RulesetManifest {
@@ -458,6 +501,8 @@ export interface RoomDeltaOverride {
   customItems?: EquipmentItem[];
   x?: number;
   y?: number;
+  growthStage?: number;
+  propInteractable?: { name: string; type: string; action: string; solved?: boolean };
   isCustomDug?: boolean;
   isOvergrowth?: boolean;
   originTriChord?: string;
@@ -465,9 +510,18 @@ export interface RoomDeltaOverride {
   isPrunable?: boolean;
   shardsHarvestable?: number;
   travelerEcho?: TravelerEcho;
+  isSynthesisSeam?: boolean;
+  synthesisAtmosphere?: string;
+  atmospherePrefix?: AtmospherePrefix;
+  structuralTheme?: StructuralTheme;
+  biomeNoun?: BiomeNoun;
+  isConjunction?: boolean;
+  conjunctionAnomaly?: ConjunctionAnomaly;
+  isExpedition?: boolean;
+  isRiftPortal?: boolean;
 }
 
-export interface RealmDelta {
+export interface RealmData {
   gateAddress: ChaosGateAddress;
   ownerName: string;
   ownerPublicKeyJwk?: string;
@@ -476,6 +530,22 @@ export interface RealmDelta {
   customLegendEntries: LegendEntry[];
   roomOverrides: Record<string, RoomDeltaOverride>;
   customRoomIds: string[];
+  growthStage?: number; // 1..10
+  vitalityXP?: number;
+  lastCultivationTimestampMs?: number;
+  conjunctionCount?: number;
+  traitProfile?: TraitProfile;
+}
+
+export type RealmDelta = RealmData;
+
+export interface RealmDnaPacket {
+  triChord: string;
+  growthStage: number;
+  customRoomDeltas?: RoomDeltaOverride[];
+  playerEcho?: TravelerEcho;
+  timestampMs?: number;
+  traitProfile?: TraitProfile;
 }
 
 export interface CombatTelemetrySample {
