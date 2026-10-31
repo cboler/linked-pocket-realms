@@ -617,4 +617,96 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
       expect(encFeedLine?.text).toContain('Motto: "Praise the Harmonic Loom! Time to triumph."');
     });
   });
+
+  describe('Feature Evolution: Clean, Curated Traveler Herald Greetings ("StreetPass Motto")', () => {
+    it('should format herald greetings from approved templates, adjectives, nouns, and verbs', () => {
+      const g0 = formatHeraldGreeting(0, 'Radiant', 'Beacon', 'triumph');
+      expect(g0.formatted).toBe('May the Radiant Beacon guide your journey.');
+
+      const g1 = formatHeraldGreeting(1, 'Eldritch', 'Shadow', 'prevail');
+      expect(g1.formatted).toBe('Beware: Eldritch Shadow lurks ahead.');
+
+      const g2 = formatHeraldGreeting(2, 'Harmonic', 'Loom', 'triumph');
+      expect(g2.formatted).toBe('Praise the Harmonic Loom! Time to triumph.');
+
+      // Fallback on invalid words
+      const gSafe = formatHeraldGreeting(
+        0,
+        'InvalidBadWord',
+        'Inappropriate',
+        'hax',
+      );
+      expect(gSafe.adjective).toBe(HERALD_ADJECTIVES[0]);
+      expect(gSafe.noun).toBe(HERALD_NOUNS[0]);
+      expect(gSafe.formatted).toBe(
+        `May the ${HERALD_ADJECTIVES[0]} ${HERALD_NOUNS[0]} guide your journey.`,
+      );
+    });
+
+    it('should roll a random valid approved herald greeting', () => {
+      const rolled = rollRandomHeraldGreeting();
+      expect(rolled.formatted.length).toBeGreaterThan(10);
+      expect(
+        (HERALD_ADJECTIVES as readonly string[]).includes(rolled.adjective),
+      ).toBe(true);
+      expect((HERALD_NOUNS as readonly string[]).includes(rolled.noun)).toBe(
+        true,
+      );
+      expect((HERALD_VERBS as readonly string[]).includes(rolled.verb)).toBe(
+        true,
+      );
+    });
+
+    it('should allow setting and rolling herald greeting via engine and terminal commands', () => {
+      const setGreeting = engine.setHeraldGreeting(2, 'Astral', 'Blade', 'strike');
+      expect(setGreeting.formatted).toBe('Praise the Astral Blade! Time to strike.');
+      expect(engine.character().heraldGreeting.formatted).toBe(
+        'Praise the Astral Blade! Time to strike.',
+      );
+
+      // Inspect via @greeting
+      engine.parseAndDispatchTerminalInput('@greeting');
+      expect(engine.terminalFeed()[0].text).toContain(
+        'Praise the Astral Blade! Time to strike.',
+      );
+
+      // Roll via terminal @greeting roll
+      engine.parseAndDispatchTerminalInput('@greeting roll');
+      expect(engine.terminalFeed()[0].text).toContain('🎲 [Herald Greeting Rolled]');
+      expect(engine.character().heraldGreeting).toBeDefined();
+
+      // Set via terminal parameters
+      engine.parseAndDispatchTerminalInput('@greeting 0 Crystalline Sanctuary triumph');
+      expect(engine.character().heraldGreeting.formatted).toBe(
+        'May the Crystalline Sanctuary guide your journey.',
+      );
+    });
+
+    it('should include herald greeting in the adventurer roster and Thunderpass encounters', () => {
+      engine.setHeraldGreeting(0, 'Valiant', 'Wanderer', 'triumph');
+
+      // Check adventurer roster lists our motto
+      engine.parseAndDispatchTerminalInput('who');
+      const feed = engine.terminalFeed();
+      const youLine = feed.find((l) => l.text.includes('• You:'));
+      expect(youLine?.text).toContain('May the Valiant Wanderer guide your journey.');
+
+      // Check neighbor peer motto
+      const peerLine = feed.find((l) => l.text.includes('Kite_Zero'));
+      expect(peerLine?.text).toContain('Beware: Eldritch Shadow lurks ahead.');
+
+      // Simulate a Thunderpass encounter and verify motto propagation
+      thunderpass.simulateThunderpassCollision(
+        'Motto_Traveler',
+        'Ω: Scorching Clockwork Crucible',
+      );
+      const latestEnc = thunderpass.streetPassLog()[0];
+      expect(latestEnc.echo.heraldGreeting).toBe('Praise the Harmonic Loom! Time to triumph.');
+      expect(latestEnc.heraldGreeting).toBe('Praise the Harmonic Loom! Time to triumph.');
+
+      // Verify motto is logged in network feed
+      const encFeedLine = engine.terminalFeed().find((l) => l.text.includes('Motto_Traveler'));
+      expect(encFeedLine?.text).toContain('Motto: "Praise the Harmonic Loom! Time to triumph."');
+    });
+  });
 });

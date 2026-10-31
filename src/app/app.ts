@@ -99,6 +99,27 @@ export class App {
       ).formatted,
   );
 
+  // Approved Herald Greeting Catalog
+  readonly heraldTemplates = HERALD_TEMPLATES;
+  readonly heraldAdjectives = HERALD_ADJECTIVES;
+  readonly heraldNouns = HERALD_NOUNS;
+  readonly heraldVerbs = HERALD_VERBS;
+
+  // Herald Motto Composer State
+  readonly heraldTemplateId = signal<number>(0);
+  readonly heraldAdjective = signal<string>(HERALD_ADJECTIVES[0]);
+  readonly heraldNoun = signal<string>(HERALD_NOUNS[0]);
+  readonly heraldVerb = signal<string>(HERALD_VERBS[0]);
+
+  readonly heraldPreview = computed<string>(() =>
+    formatHeraldGreeting(
+      this.heraldTemplateId(),
+      this.heraldAdjective(),
+      this.heraldNoun(),
+      this.heraldVerb(),
+    ).formatted,
+  );
+
   // Terminal Input
   readonly terminalCommandText = signal<string>('');
 
