@@ -1,0 +1,13 @@
+{
+  "name": "linked-pocket-realms-broker",
+  "version": "1.0.0",
+  "description": "Serverless WebRTC Signaling Broker & Zero-Knowledge Thunderpass StreetPass Relay for Linked Pocket Realms",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "npx @google-cloud/functions-framework --target=broker"
+  },
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.4.5"
+  }
+}

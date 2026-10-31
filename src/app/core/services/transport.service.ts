@@ -35,6 +35,14 @@ export class TransportService implements OnDestroy {
   readonly localSdpPayload = signal<string>('');
   readonly activeRoomCode = signal<string>('');
 
+  // Serverless gcloud Broker Integration
+  readonly brokerUrl = signal<string>('');
+  readonly brokerSessions = signal<
+    { roomCode: string; hostName: string; triChord: string; hasOffer: boolean }[]
+  >([]);
+  readonly isBrokerConnecting = signal<boolean>(false);
+  private brokerPollIntervalId: ReturnType<typeof setInterval> | null = null;
+
   constructor() {
     this.initBroadcastChannelAdapter();
   }
@@ -312,7 +320,115 @@ export class TransportService implements OnDestroy {
     };
   }
 
+  async refreshBrokerSessions(): Promise<void> {
+    const url = this.brokerUrl().trim();
+    if (!url) return;
+
+    try {
+      const res = await fetch(`${url}/sessions`);
+      if (res.ok) {
+        const data = await res.json();
+        this.brokerSessions.set(data.sessions || []);
+      }
+    } catch {
+      // Offline fallback: keep existing list
+    }
+  }
+
+  async publishBrokerOffer(hostName: string, triChord: string): Promise<string> {
+    this.isBrokerConnecting.set(true);
+    const offerToken = await this.createWebRtcOffer();
+    const roomCode = this.activeRoomCode();
+    const url = this.brokerUrl().trim();
+
+    if (url) {
+      try {
+        await fetch(`${url}/signal`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomCode,
+            type: 'OFFER',
+            payload: offerToken,
+            senderId: this.localPeerId,
+            hostName,
+            triChord,
+          }),
+        });
+
+        // Poll for answer
+        this.clearBrokerPoll();
+        this.brokerPollIntervalId = setInterval(async () => {
+          try {
+            const res = await fetch(`${url}/signal?roomCode=${roomCode}`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.sdpAnswer) {
+                this.clearBrokerPoll();
+                await this.acceptWebRtcHandshake(data.sdpAnswer);
+                this.isBrokerConnecting.set(false);
+              }
+            }
+          } catch {
+            // Keep polling
+          }
+        }, 1500);
+      } catch {
+        this.isBrokerConnecting.set(false);
+      }
+    } else {
+      this.isBrokerConnecting.set(false);
+    }
+
+    return offerToken;
+  }
+
+  async joinBrokerSession(roomCode: string): Promise<boolean> {
+    this.isBrokerConnecting.set(true);
+    const url = this.brokerUrl().trim();
+    if (!url) {
+      this.isBrokerConnecting.set(false);
+      return false;
+    }
+
+    try {
+      const res = await fetch(`${url}/signal?roomCode=${roomCode}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.sdpOffer) {
+          const answerToken = await this.acceptWebRtcHandshake(data.sdpOffer);
+          if (answerToken) {
+            await fetch(`${url}/signal`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                roomCode,
+                type: 'ANSWER',
+                payload: answerToken,
+                senderId: this.localPeerId,
+              }),
+            });
+            this.isBrokerConnecting.set(false);
+            return true;
+          }
+        }
+      }
+    } catch {
+      // Error connecting
+    }
+    this.isBrokerConnecting.set(false);
+    return false;
+  }
+
+  private clearBrokerPoll(): void {
+    if (this.brokerPollIntervalId) {
+      clearInterval(this.brokerPollIntervalId);
+      this.brokerPollIntervalId = null;
+    }
+  }
+
   private closeRtc(): void {
+    this.clearBrokerPoll();
     if (this.rtcDataChannel) {
       this.rtcDataChannel.close();
       this.rtcDataChannel = null;
@@ -324,6 +440,7 @@ export class TransportService implements OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.clearBrokerPoll();
     if (this.broadcastChannel) {
       this.broadcastChannel.close();
     }

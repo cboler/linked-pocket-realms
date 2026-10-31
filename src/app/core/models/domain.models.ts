@@ -182,9 +182,44 @@ export interface CharacterState {
   currentRoomId: string;
   visitedRoomIds: string[];
   bestiaryUnlocked: Record<string, { kills: number; inspectedLevel: number }>;
+  resonanceShards: number;
 }
 
 export type ExitDirection = 'N' | 'S' | 'E' | 'W' | 'U' | 'D';
+export type CompassDirection = 'N' | 'E' | 'S' | 'W';
+
+export interface TravelerEcho {
+  id: string;
+  playerName: string;
+  archetype: ArchetypeClass;
+  level: number;
+  triChord: string;
+  forgedItems: EquipmentItem[];
+  encounterTimestampIso: string;
+  isDefeated?: boolean;
+  hp?: number;
+  maxHp?: number;
+}
+
+export interface ThunderpassSporePayload {
+  peerPublicKey: string;
+  playerName: string;
+  triChord: string;
+  echo: TravelerEcho;
+  signatureRoomDelta?: RoomDeltaOverride;
+  timestampMs: number;
+}
+
+export interface ThunderpassEncounter {
+  id: string;
+  zoneHash: string;
+  peerPublicKey: string;
+  playerName: string;
+  triChord: string;
+  timestampIso: string;
+  echo: TravelerEcho;
+  roomsGrafted: string[];
+}
 
 export interface RoomExit {
   direction: ExitDirection;
@@ -239,6 +274,12 @@ export interface RoomNode {
   triggers: DeclarativeTrigger[];
   rumorSignal: string; // Shown in Fog-of-War on adjacent unvisited nodes
   isCustomDug?: boolean;
+  isOvergrowth?: boolean;
+  originTriChord?: string;
+  originPlayerName?: string;
+  isPrunable?: boolean;
+  shardsHarvestable?: number;
+  travelerEcho?: TravelerEcho;
 }
 
 export interface RulesetManifest {
@@ -261,6 +302,12 @@ export interface RoomDeltaOverride {
   x?: number;
   y?: number;
   isCustomDug?: boolean;
+  isOvergrowth?: boolean;
+  originTriChord?: string;
+  originPlayerName?: string;
+  isPrunable?: boolean;
+  shardsHarvestable?: number;
+  travelerEcho?: TravelerEcho;
 }
 
 export interface RealmDelta {
@@ -352,6 +399,8 @@ export type CommandActionType =
   | 'EQUIP_ITEM'
   | 'REST_CAMPFIRE'
   | 'ENTER_PORTAL'
+  | 'PRUNE_ROOM'
+  | 'BARTER_ECHO'
   | 'MOO_DIG'
   | 'MOO_DESCRIBE'
   | 'MOO_CRAFT'
@@ -389,7 +438,8 @@ export type NetworkPacketType =
   | 'VISITOR_POSITION_UPDATE'
   | 'COOP_COMBAT_INTENT'
   | 'GRAVESTONE_RECORD'
-  | 'TRADE_OFFER';
+  | 'TRADE_OFFER'
+  | 'THUNDERPASS_SPORE';
 
 export interface NetworkPeerVisitor {
   peerId: string;
@@ -415,6 +465,8 @@ export interface NetworkPacket {
   combatIntent?: CommandIntent;
   gravestone?: GuestbookGravestoneEntry;
   tradeItem?: EquipmentItem;
+  spore?: ThunderpassSporePayload;
+  echo?: TravelerEcho;
   visitorState?: {
     level: number;
     archetype: ArchetypeClass;

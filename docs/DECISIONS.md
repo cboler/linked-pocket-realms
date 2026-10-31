@@ -13,6 +13,7 @@ Each record outlines the context, rationale, consequences, and trade-offs of sig
 - [ADR-003: Vitest for Unit Testing and Playwright for Multi-Viewport E2E Testing](#adr-003-vitest-for-unit-testing-and-playwright-for-multi-viewport-e2e-testing)
 - [ADR-004: Vanilla SCSS Design Tokens over External CSS Frameworks](#adr-004-vanilla-scss-design-tokens-over-external-css-frameworks)
 - [ADR-005: Built-in Angular Service Worker for Offline PWA Support](#adr-005-built-in-angular-service-worker-for-offline-pwa-support)
+- [ADR-006: 1st-Person Perspective Viewport, Overgrowth Grafting, gcloud WebRTC Broker, and Privacy-Preserving Thunderpass](#adr-006-1st-person-perspective-viewport-overgrowth-grafting-gcloud-webrtc-broker-and-privacy-preserving-thunderpass)
 
 ---
 
@@ -132,7 +133,35 @@ Progressive Web Applications require service workers to cache application assets
 
 ---
 
-## Template for New Decisions (For Derivations)
+## ADR-006: 1st-Person Perspective Viewport, Overgrowth Grafting, gcloud WebRTC Broker, and Privacy-Preserving Thunderpass
+
+### Status
+
+Accepted
+
+### Context
+
+Linked Pocket Realms was originally explored through a pure 2D topological cartography map and text MUD narrative. Players required greater spatial immersion (visual doorways, chamber depth, enemy silhouettes, and tactile forward/turn navigation) without compromising the lightweight declarative room graph or offline PWA capabilities. Furthermore, peer-to-peer multiplayer needed persistent offline aftermath ("Overgrowth" incursion rooms) and effortless zero-configuration rendezvous, including physical 3DS StreetPass-style proximity collisions on real-world walks ("Thunderpass").
+
+### Decision
+
+1. **First-Person Dungeon Viewport (`FirstPersonStageComponent`)**:
+   - Render perspective chambers (ceiling, floor, left/right/back walls) dynamically themed and lit by room Tri-Chords using lightweight declarative SVG projection.
+   - Maintain client state `playerFacing: 'N' | 'E' | 'S' | 'W'` with 90° rotation and forward navigation.
+   - Project spatial exits (ahead, left, right) and interactive room entities (monsters, chests, traveler echoes) that dispatch identical `CommandIntent` payloads as the terminal parser.
+2. **Persistent Overgrowth Grafting & Pruning**:
+   - P2P realm collisions deterministically splice Tri-Chord seeds (`Hash(LocalSeed ^ RemoteSeed)`) to graft 2-3 hybrid Overgrowth rooms onto outer boundaries.
+   - Overgrowth rooms persist across disconnects in local IndexedDB until defeated guardians allow `@prune` commands to collapse the rooms and harvest Resonance Shards.
+3. **Serverless gcloud Broker & Thunderpass**:
+   - Deploy a lightweight zero-cost-tier Gen 2 Cloud Function supporting in-memory WebRTC signaling (5-min TTL) and zero-knowledge geohash proximity spore matching (6-hour TTL).
+   - Compute blinded precision-6/7 geohashes on the client via `SubtleCrypto` (`SHA-256(geohash + window + salt)`) so raw GPS coordinates never leave the device, supported by screen WakeLock and optional BLE scanning.
+
+### Consequences
+
+- **Positive**: Rich first-person dungeon crawler immersion while preserving the core lightweight MUD engine; permanent playable world-blending upon collisions; effortless WebRTC lobby discovery and passive proximity gameplay.
+- **Trade-offs**: Geolocation requires user permission for active walk mode; WakeLock requires active foreground browser tab (mitigated with battery-saver pocket overlay).
+
+---
 
 When recording a new architectural decision, copy and fill out the following template:
 

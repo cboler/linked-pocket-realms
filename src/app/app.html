@@ -14,7 +14,7 @@
           <div
             class="gate-address-pill"
             data-testid="active-gate-address"
-            title="3-Word Chaos Gate Address: [Era] + [Atmosphere] + [Theme] + [Biome]"
+            title="Resonance Loom Tri-Chord: [Atmosphere] · [Architecture/Theme] · [Biome]"
           >
             <span class="era-badge" title="Server Era Tier & Difficulty Multiplier">{{
               engine.activeGateAddress().era
@@ -28,6 +28,20 @@
                 Customs Cap: {{ engine.activeRealmDelta().ruleset.maxItemStatBudget }}
               </span>
             }
+          </div>
+
+          <!-- OVERGROWTH & RESONANCE SHARDS METER PILL -->
+          <div
+            class="overgrowth-meter-pill"
+            title="Overgrowth Incursion Encroachment & Resonance Shards"
+            data-testid="overgrowth-meter-pill"
+          >
+            <span class="meter-item overgrowth-item" [class.alert]="engine.overgrowthCount() > 0">
+              🌿 Incursions: <strong>{{ engine.overgrowthCount() }}</strong>
+            </span>
+            <span class="meter-item shards-item">
+              💎 Shards: <strong>{{ engine.character().resonanceShards || 0 }}</strong>
+            </span>
           </div>
         </div>
       </div>
@@ -318,6 +332,33 @@
 
               @if (node.room.id === engine.character().currentRoomId) {
                 <circle r="38" fill="url(#activeNodeGlow)" />
+                <!-- Directional Arrow Indicating playerFacing inside current node -->
+                <path
+                  d="M 0,-34 L 5,-23 L -5,-23 Z"
+                  fill="#38bdf8"
+                  [attr.transform]="'rotate(' + getFacingRotationAngle(engine.playerFacing()) + ')'"
+                  data-testid="map-facing-arrow"
+                />
+              }
+
+              <!-- Distinct Foreign Overgrowth Ring & Incursion Sigil -->
+              @if (node.room.isOvergrowth) {
+                <circle
+                  r="29"
+                  fill="none"
+                  stroke="#d946ef"
+                  stroke-width="2.5"
+                  stroke-dasharray="4,2"
+                />
+                <text
+                  x="14"
+                  y="-14"
+                  font-size="11"
+                  fill="#f43f5e"
+                  title="Grafted Overgrowth Incursion"
+                >
+                  🌿
+                </text>
               }
 
               <!-- Node Outer Ring (Dashed [?] if unexplored in Explorer View) -->
@@ -675,8 +716,72 @@
       <!-- ZONE 1 (TOP): THE PERSISTENT ROOM STAGE (ALWAYS VISIBLE, NEVER SCROLLS OFF) -->
       <!-- ===================================================================== -->
       <div class="persistent-room-stage" data-testid="persistent-room-stage">
+        <!-- 3-LENS STAGE VIEWPORT SELECTOR (1st-Person / Card Stage / Split) -->
+        <div
+          class="stage-lens-bar"
+          role="group"
+          aria-label="Room Stage Lens"
+          data-testid="stage-lens-bar"
+        >
+          <div class="lens-switcher">
+            <button
+              type="button"
+              class="lens-btn"
+              [class.active]="stageLensMode() === 'FIRST_PERSON'"
+              (click)="setStageLensMode('FIRST_PERSON')"
+              title="First-Person Perspective 3D Dungeon Crawler Viewport"
+              data-testid="lens-btn-fp"
+            >
+              👁 1st-Person
+            </button>
+            <button
+              type="button"
+              class="lens-btn"
+              [class.active]="stageLensMode() === 'CARD_STAGE'"
+              (click)="setStageLensMode('CARD_STAGE')"
+              title="2D Tactical Entity Cards & Exit Deck"
+              data-testid="lens-btn-cards"
+            >
+              🃏 Card Stage
+            </button>
+            <button
+              type="button"
+              class="lens-btn"
+              [class.active]="stageLensMode() === 'SPLIT'"
+              (click)="setStageLensMode('SPLIT')"
+              title="Dual Lens: 1st-Person Perspective + 2D Entity Cards"
+              data-testid="lens-btn-split"
+            >
+              ⚡ Split Lens
+            </button>
+          </div>
+
+          @if (engine.currentRoom().isOvergrowth) {
+            <div class="overgrowth-stage-badge" data-testid="stage-overgrowth-badge">
+              <span
+                >🌿 Incursion ({{ engine.currentRoom().originPlayerName || 'Foreign Realm' }})</span
+              >
+              @if (engine.livingRoomMonsters().length === 0) {
+                <button
+                  type="button"
+                  class="prune-stage-btn"
+                  (click)="pruneCurrentRoom()"
+                  data-testid="stage-prune-btn"
+                >
+                  ✂️ Prune Chamber (+{{ engine.currentRoom().shardsHarvestable || 20 }} Shards)
+                </button>
+              }
+            </div>
+          }
+        </div>
+
+        <!-- FIRST-PERSON PERSPECTIVE DUNGEON CRAWLER VIEWPORT -->
+        @if (stageLensMode() === 'FIRST_PERSON' || stageLensMode() === 'SPLIT') {
+          <app-first-person-stage></app-first-person-stage>
+        }
+
         <!-- 1A. ROOM STAGE HEADER -->
-        <div class="stage-room-header">
+        <div class="stage-room-header" [class.cards-hidden]="stageLensMode() === 'FIRST_PERSON'">
           <div class="stage-title-block">
             <span
               class="stage-legend-badge"
@@ -1924,96 +2029,418 @@
             </div>
           }
 
-          <!-- 5. SERVERLESS P2P NETWORKING & CUSTOMS GATE DRAWER -->
+          <!-- 5. RESONANCE LOOM: P2P COLLIDER, THUNDERPASS & OVERGROWTH DRAWER -->
           @if (engine.activeDrawer() === 'NETWORK') {
-            <div class="drawer-split-grid" data-testid="network-drawer-content">
-              <div class="telemetry-card">
-                <h3>BroadcastChannel & Active Chaos Gate Portals</h3>
-                <p class="card-help">
-                  Opening two browser tabs automatically links Anchor Rooms via
-                  <code>BroadcastChannel</code>. Click any discovered portal to traverse into that
-                  player's realm.
-                </p>
-                <div class="peer-list">
-                  @for (peer of transport.activeVisitorsList(); track peer.peerId) {
-                    <div class="peer-row" [attr.data-testid]="'peer-portal-' + peer.peerId">
-                      <div>
-                        <strong
-                          >{{ peer.playerName }} (Lv.{{ peer.level }} {{ peer.archetype }})</strong
-                        >
-                        <div class="peer-sub">
-                          Gate: {{ peer.gateAddress }} • Sector: {{ peer.currentRoomId }} •
-                          {{ peer.transport }}
-                        </div>
-                      </div>
+            <div class="resonance-loom-sheet" data-testid="network-drawer-content">
+              <!-- LOOM SUB-NAVIGATION TABS -->
+              <nav class="loom-subtabs" role="tablist" aria-label="Resonance Loom Controls">
+                <button
+                  type="button"
+                  class="loom-tab-btn"
+                  [class.active]="loomActiveTab() === 'WEAVER'"
+                  (click)="setLoomActiveTab('WEAVER')"
+                  data-testid="loom-tab-weaver"
+                >
+                  🧬 Tri-Chord Weaver
+                </button>
+                <button
+                  type="button"
+                  class="loom-tab-btn"
+                  [class.active]="loomActiveTab() === 'WEBRTC'"
+                  (click)="setLoomActiveTab('WEBRTC')"
+                  data-testid="loom-tab-webrtc"
+                >
+                  🌐 WebRTC Collider
+                </button>
+                <button
+                  type="button"
+                  class="loom-tab-btn"
+                  [class.active]="loomActiveTab() === 'THUNDERPASS'"
+                  (click)="setLoomActiveTab('THUNDERPASS')"
+                  data-testid="loom-tab-thunderpass"
+                >
+                  📡 Thunderpass Radar
+                </button>
+                <button
+                  type="button"
+                  class="loom-tab-btn"
+                  [class.active]="loomActiveTab() === 'OVERGROWTH'"
+                  (click)="setLoomActiveTab('OVERGROWTH')"
+                  data-testid="loom-tab-overgrowth"
+                >
+                  🌿 Overgrowth ({{ engine.overgrowthCount() }})
+                </button>
+              </nav>
+
+              <!-- TAB 1: TRI-CHORD WEAVER -->
+              @if (loomActiveTab() === 'WEAVER') {
+                <div class="loom-tab-content">
+                  <div class="telemetry-card">
+                    <h3>Tri-Chord Lexicon & Realm Cartridges</h3>
+                    <p class="card-help">
+                      Weave your realm's 3-word DNA seed:
+                      <code>[Atmosphere] · [Architecture/Theme] · [Biome]</code>.
+                    </p>
+                    <div class="dialer-readout">
+                      <strong>{{ engine.activeGateAddress().formatted }}</strong>
+                    </div>
+
+                    <h4>Base64 Realm Delta Cartridge</h4>
+                    <textarea
+                      rows="2"
+                      readonly
+                      aria-label="Base64 Realm Cartridge"
+                      [ngModel]="exportedCartridgeText()"
+                      data-testid="cartridge-textarea"
+                    ></textarea>
+                    <div class="arch-row">
+                      <button
+                        type="button"
+                        class="mini-action-btn accent"
+                        (click)="importRealmCartridge()"
+                        data-testid="import-cartridge-btn"
+                      >
+                        Load Cartridge Into Loom
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              }
+
+              <!-- TAB 2: WEBRTC COLLIDER -->
+              @if (loomActiveTab() === 'WEBRTC') {
+                <div class="loom-tab-content drawer-split-grid">
+                  <div class="telemetry-card">
+                    <h3>Serverless gcloud Lobby Sessions</h3>
+                    <p class="card-help">
+                      Discovers active public lobbies published to the zero-idle
+                      <code>gcloud</code> broker.
+                    </p>
+                    <div class="arch-row" style="margin-bottom: 0.5rem">
+                      <input
+                        type="url"
+                        placeholder="Cloud Function Broker URL (optional)"
+                        aria-label="Serverless Broker Endpoint"
+                        [ngModel]="transport.brokerUrl()"
+                        (ngModelChange)="
+                          transport.brokerUrl.set($event); thunderpass.brokerUrl.set($event)
+                        "
+                        data-testid="broker-url-input"
+                      />
+                    </div>
+                    <div class="arch-row">
                       <button
                         type="button"
                         class="mini-action-btn accent"
                         (click)="
-                          engine.traverseChaosGatePortal(peer.gateAddress);
-                          engine.activeDrawer.set('NONE')
+                          transport.publishBrokerOffer(
+                            engine.character().name,
+                            engine.activeGateAddress().formatted
+                          )
                         "
-                        [attr.data-testid]="'traverse-portal-' + peer.peerId"
+                        data-testid="create-broker-lobby-btn"
                       >
-                        ◈ Enter Portal
+                        Create 1-Click Lobby
+                      </button>
+                      <button
+                        type="button"
+                        class="mini-action-btn"
+                        (click)="transport.refreshBrokerSessions()"
+                        data-testid="refresh-broker-lobbies-btn"
+                      >
+                        Refresh Lobbies
                       </button>
                     </div>
-                  }
-                </div>
-              </div>
 
-              <div class="telemetry-card">
-                <h3>WebRTC SDP Handshake & JSON Delta Cartridge</h3>
-                <div class="arch-row">
-                  <button
-                    type="button"
-                    class="mini-action-btn accent"
-                    (click)="generateWebRtcOffer()"
-                    data-testid="webrtc-offer-btn"
-                  >
-                    Generate WebRTC Room Code
-                  </button>
-                  <span class="rtc-status">Status: {{ transport.rtcConnectionState() }}</span>
-                </div>
-                @if (transport.localSdpPayload()) {
-                  <textarea
-                    readonly
-                    rows="2"
-                    aria-label="Local WebRTC SDP Token"
-                    [value]="transport.localSdpPayload()"
-                    data-testid="webrtc-sdp-output"
-                  ></textarea>
-                }
-                <div class="arch-row">
-                  <input
-                    type="text"
-                    aria-label="Remote SDP Handshake Token"
-                    [ngModel]="remoteHandshakeInput()"
-                    (ngModelChange)="remoteHandshakeInput.set($event)"
-                    placeholder="Paste Peer SDP Offer/Answer..."
-                  />
-                  <button type="button" class="mini-action-btn" (click)="acceptWebRtcHandshake()">
-                    Connect Peer
-                  </button>
-                </div>
+                    <div class="peer-list">
+                      @for (sess of transport.brokerSessions(); track sess.roomCode) {
+                        <div class="peer-row">
+                          <div>
+                            <strong>{{ sess.hostName }} ({{ sess.roomCode }})</strong>
+                            <div class="peer-sub">{{ sess.triChord }}</div>
+                          </div>
+                          <button
+                            type="button"
+                            class="mini-action-btn accent"
+                            (click)="transport.joinBrokerSession(sess.roomCode)"
+                          >
+                            Join Lobby
+                          </button>
+                        </div>
+                      }
+                      @if (transport.brokerSessions().length === 0) {
+                        <div class="card-help" style="margin-top: 0.5rem">
+                          No active broker lobbies discovered. Create one above or use
+                          BroadcastChannel!
+                        </div>
+                      }
+                    </div>
 
-                <h4>Base64 Realm Delta Cartridge</h4>
-                <textarea
-                  rows="2"
-                  aria-label="Base64 Realm Cartridge"
-                  [ngModel]="exportedCartridgeText()"
-                  (ngModelChange)="exportedCartridgeText.set($event)"
-                  data-testid="cartridge-textarea"
-                ></textarea>
-                <button
-                  type="button"
-                  class="mini-action-btn"
-                  (click)="importRealmCartridge()"
-                  data-testid="import-cartridge-btn"
-                >
-                  Load Cartridge Into Portal
-                </button>
-              </div>
+                    <h4>BroadcastChannel Local Anchor Portals</h4>
+                    <div class="peer-list">
+                      @for (peer of transport.activeVisitorsList(); track peer.peerId) {
+                        <div class="peer-row" [attr.data-testid]="'peer-portal-' + peer.peerId">
+                          <div>
+                            <strong
+                              >{{ peer.playerName }} (Lv.{{ peer.level }}
+                              {{ peer.archetype }})</strong
+                            >
+                            <div class="peer-sub">
+                              Gate: {{ peer.gateAddress }} • Sector: {{ peer.currentRoomId }} •
+                              {{ peer.transport }}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            class="mini-action-btn accent"
+                            (click)="
+                              engine.traverseChaosGatePortal(peer.gateAddress);
+                              engine.activeDrawer.set('NONE')
+                            "
+                            [attr.data-testid]="'traverse-portal-' + peer.peerId"
+                          >
+                            ◈ Enter Portal
+                          </button>
+                        </div>
+                      }
+                    </div>
+                  </div>
+
+                  <div class="telemetry-card">
+                    <h3>Air-Gapped WebRTC SDP Handshake</h3>
+                    <div class="arch-row">
+                      <button
+                        type="button"
+                        class="mini-action-btn accent"
+                        (click)="generateWebRtcOffer()"
+                        data-testid="webrtc-offer-btn"
+                      >
+                        Generate Manual SDP
+                      </button>
+                      <span class="rtc-status">Status: {{ transport.rtcConnectionState() }}</span>
+                    </div>
+                    @if (transport.localSdpPayload()) {
+                      <textarea
+                        readonly
+                        rows="2"
+                        aria-label="Local WebRTC SDP Token"
+                        [value]="transport.localSdpPayload()"
+                        data-testid="webrtc-sdp-output"
+                      ></textarea>
+                    }
+                    <div class="arch-row">
+                      <input
+                        type="text"
+                        aria-label="Remote SDP Handshake Token"
+                        [ngModel]="remoteHandshakeInput()"
+                        (ngModelChange)="remoteHandshakeInput.set($event)"
+                        placeholder="Paste Peer SDP Offer/Answer..."
+                      />
+                      <button
+                        type="button"
+                        class="mini-action-btn"
+                        (click)="acceptWebRtcHandshake()"
+                      >
+                        Connect Peer
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              }
+
+              <!-- TAB 3: THUNDERPASS PROXIMITY RADAR (3DS STREETPASS WALK MODE) -->
+              @if (loomActiveTab() === 'THUNDERPASS') {
+                <div class="loom-tab-content drawer-split-grid">
+                  <div class="telemetry-card">
+                    <h3>Thunderpass Walk Mode (Proximity Incursions)</h3>
+                    <p class="card-help">
+                      Slip your phone in your pocket during real-world walks. When you pass near
+                      another player, both realms collide and sprout hybrid Overgrowth chambers!
+                    </p>
+
+                    <div class="thunderpass-controls-cluster">
+                      <button
+                        type="button"
+                        class="mini-action-btn"
+                        [class.accent]="thunderpass.isWalkModeActive()"
+                        (click)="thunderpass.toggleWalkMode()"
+                        data-testid="toggle-walk-mode-btn"
+                      >
+                        {{
+                          thunderpass.isWalkModeActive()
+                            ? '📡 Disable Walk Mode'
+                            : '📡 Enable Thunderpass Walk Mode'
+                        }}
+                      </button>
+                      <button
+                        type="button"
+                        class="mini-action-btn"
+                        (click)="thunderpass.toggleBatterySaverOverlay()"
+                        title="Dim screen to black to save OLED battery in pocket"
+                        data-testid="toggle-battery-saver-btn"
+                      >
+                        🔋 Pocket Battery Saver
+                      </button>
+                    </div>
+
+                    <div class="radar-readout-card">
+                      <div class="radar-status-line">
+                        <span>Radar Status:</span>
+                        <strong
+                          [style.color]="thunderpass.isWalkModeActive() ? '#22c55e' : '#94a3b8'"
+                        >
+                          {{
+                            thunderpass.isWalkModeActive() ? 'Scanning Proximity Grid' : 'Standby'
+                          }}
+                        </strong>
+                      </div>
+                      <div class="radar-status-line">
+                        <span>Blinded Grid Cell:</span>
+                        <code>{{ thunderpass.currentGeohashDisplay() }}</code>
+                      </div>
+                      <div class="radar-privacy-note">
+                        🔒 <strong>Zero-Knowledge Privacy:</strong> Coarse ~600m Geohashes are
+                        SHA-256 salted on device before relaying. Raw coordinates never leave your
+                        browser.
+                      </div>
+                    </div>
+
+                    <div class="arch-row" style="margin-top: 0.75rem">
+                      <button
+                        type="button"
+                        class="mini-action-btn"
+                        (click)="scanBleRelic()"
+                        [disabled]="thunderpass.isScanningBle()"
+                        data-testid="scan-ble-relic-btn"
+                      >
+                        {{
+                          thunderpass.isScanningBle()
+                            ? 'Scanning BLE...'
+                            : '📡 Scan Nearby BLE Relic'
+                        }}
+                      </button>
+                      <button
+                        type="button"
+                        class="mini-action-btn accent"
+                        (click)="simulateThunderpassIncursion()"
+                        data-testid="sim-incursion-btn"
+                      >
+                        ⚡ Simulate Walk Incursion
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="telemetry-card">
+                    <h3>Thunderpass Street-Log</h3>
+                    <p class="card-help">
+                      Log of travelers encountered on proximity walks and their harvested Traveler's
+                      Echoes.
+                    </p>
+                    <div class="encounter-list" data-testid="thunderpass-street-log">
+                      @for (enc of thunderpass.streetPassLog(); track enc.id) {
+                        <div class="encounter-row" data-testid="encounter-row">
+                          <div class="enc-header">
+                            <strong>{{ enc.playerName }} (Echo Lv.{{ enc.echo.level }})</strong>
+                            <span class="enc-time">{{ enc.timestampIso | date: 'shortTime' }}</span>
+                          </div>
+                          <div class="enc-sub">
+                            Tri-Chord: <code>{{ enc.triChord }}</code>
+                          </div>
+                          <div class="enc-actions">
+                            <span>Grafted Chambers: {{ enc.roomsGrafted.length }}</span>
+                            @if (enc.echo.forgedItems.length > 0) {
+                              <button
+                                type="button"
+                                class="mini-action-btn accent"
+                                (click)="engine.barterEcho(enc.echo.id, enc.echo.forgedItems[0].id)"
+                              >
+                                💎 Barter ({{ enc.echo.forgedItems[0].name }})
+                              </button>
+                            }
+                          </div>
+                        </div>
+                      }
+                      @if (thunderpass.streetPassLog().length === 0) {
+                        <div class="card-help">
+                          No streetpass encounters logged yet. Enable Walk Mode and take a walk!
+                        </div>
+                      }
+                    </div>
+                  </div>
+                </div>
+              }
+
+              <!-- TAB 4: OVERGROWTH & PRUNING -->
+              @if (loomActiveTab() === 'OVERGROWTH') {
+                <div class="loom-tab-content">
+                  <div class="telemetry-card">
+                    <h3>Overgrowth Incursions & Resonance Shards</h3>
+                    <p class="card-help">
+                      Foreign realms collide with yours, sprouting hybrid Overgrowth chambers.
+                      Defeat the guardian in each chamber to prune it and harvest Resonance Shards.
+                    </p>
+
+                    <div class="overgrowth-stats-grid">
+                      <div class="overgrowth-stat-card">
+                        <span class="stat-num">{{ engine.overgrowthCount() }}</span>
+                        <span class="stat-lbl">Grafted Foreign Chambers</span>
+                      </div>
+                      <div class="overgrowth-stat-card">
+                        <span class="stat-num"
+                          >💎 {{ engine.character().resonanceShards || 0 }}</span
+                        >
+                        <span class="stat-lbl">Resonance Shards Balance</span>
+                      </div>
+                    </div>
+
+                    <h4>Currently Grafted Overgrowth Chambers</h4>
+                    <div class="peer-list">
+                      @for (r of engine.rooms(); track r.id) {
+                        @if (r.isOvergrowth) {
+                          <div
+                            class="peer-row overgrowth-row"
+                            [attr.data-testid]="'overgrowth-room-' + r.id"
+                          >
+                            <div>
+                              <strong>{{ r.title }}</strong>
+                              <div class="peer-sub">
+                                Origin: {{ r.originTriChord }} (Seeded by
+                                {{ r.originPlayerName || 'Unknown' }}) • Status:
+                                {{
+                                  r.monsters.length === 0
+                                    ? 'Guardian Cleared'
+                                    : r.monsters[0].name + ' Alive'
+                                }}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              class="mini-action-btn"
+                              [class.accent]="r.monsters.length === 0"
+                              [disabled]="r.monsters.length > 0"
+                              (click)="engine.pruneRoom(r.id)"
+                              [title]="
+                                r.monsters.length > 0
+                                  ? 'Defeat foreign guardian first'
+                                  : 'Prune chamber and harvest shards'
+                              "
+                              [attr.data-testid]="'prune-room-' + r.id"
+                            >
+                              ✂️ Prune (+{{ r.shardsHarvestable || 20 }} Shards)
+                            </button>
+                          </div>
+                        }
+                      }
+                      @if (engine.overgrowthCount() === 0) {
+                        <div class="card-help" style="margin-top: 0.5rem">
+                          No Overgrowth chambers currently encroaching on your realm. Collide with a
+                          peer or simulate a walk to seed one!
+                        </div>
+                      }
+                    </div>
+                  </div>
+                </div>
+              }
             </div>
           }
         </div>
@@ -2042,4 +2469,22 @@
       >
     </div>
   </footer>
+
+  <!-- POCKET BATTERY SAVER DIM OVERLAY (OLED SAVER FOR REAL-WORLD WALKS) -->
+  @if (thunderpass.batterySaverOverlay()) {
+    <div
+      class="battery-saver-pocket-overlay"
+      (click)="thunderpass.toggleBatterySaverOverlay()"
+      role="button"
+      tabindex="0"
+      aria-label="Pocket Battery Saver Overlay - Tap anywhere to Wake"
+      data-testid="battery-saver-overlay"
+    >
+      <div class="pocket-pulse-sigil">◈</div>
+      <div class="pocket-text">Thunderpass Walk Mode Active</div>
+      <div class="pocket-sub">
+        Screen Dimmed for Pocket Battery Conservation • Tap Anywhere to Wake Display
+      </div>
+    </div>
+  }
 </div>

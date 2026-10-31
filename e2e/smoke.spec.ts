@@ -23,13 +23,15 @@ test.describe('Linked Pocket Realms — Tactical HUD, Perspectives & Drawers E2E
     await page.getByTestId('confirm-awakening-btn').click();
     await expect(onboardingModal).toBeHidden();
 
-    // 2. Root Tactical HUD, Persistent Room Stage & Brand Verification
+    // 2. Root Tactical HUD, Persistent Room Stage, 1st-Person Viewport & Overgrowth Meter
     await expect(page.locator('#starter-title')).toHaveText('Linked Pocket Realms');
     await expect(page.getByTestId('active-gate-address')).toContainText(
       'Θ: Scorching Clockwork Catacombs',
     );
     await expect(page.getByTestId('realm-svg-map')).toBeVisible();
     await expect(page.getByTestId('persistent-room-stage')).toBeVisible();
+    await expect(page.getByTestId('first-person-stage')).toBeVisible();
+    await expect(page.getByTestId('overgrowth-meter-pill')).toBeVisible();
 
     // 3. Verify zero horizontal overflow & Mobile Layout Switcher on narrow viewports
     const hasHorizontalOverflow = await page.evaluate(() => {
@@ -48,7 +50,13 @@ test.describe('Linked Pocket Realms — Tactical HUD, Perspectives & Drawers E2E
       await expect(page.getByTestId('persistent-room-stage')).toBeVisible();
     }
 
-    // 4. Tactile Point-and-Click Navigation on Persistent Room Stage & Syntax Echo Verification
+    // 4. First-Person Viewport Heading Rotation & Tactile Point-and-Click Navigation
+    await expect(page.getByTestId('fp-facing-indicator')).toHaveText('N');
+    await page.getByTestId('fp-turn-right').click();
+    await expect(page.getByTestId('fp-facing-indicator')).toHaveText('E');
+    await page.getByTestId('fp-turn-left').click();
+    await expect(page.getByTestId('fp-facing-indicator')).toHaveText('N');
+
     await expect(page.getByTestId('stage-exits-bar')).toBeVisible();
     await page.getByTestId('stage-exit-N').click();
     await expect(page.getByTestId('current-room-title')).toContainText('Vaulted Crypt 1');
@@ -90,9 +98,15 @@ test.describe('Linked Pocket Realms — Tactical HUD, Perspectives & Drawers E2E
     await expect(page.getByTestId('chronicle-drawer-content')).toBeVisible();
     await expect(page.getByTestId('career-progression-svg')).toBeVisible();
 
-    // 9. Traverse P2P Portal and verify Customs Gate Clamping on Paperdoll
+    // 9. Resonance Loom Sub-Tabs, P2P Portal Traversal & Customs Gate Clamping
     await page.getByTestId('drawer-network-btn').click();
     await expect(page.getByTestId('network-drawer-content')).toBeVisible();
+
+    // Verify Loom sub-tabs
+    await page.getByTestId('loom-tab-thunderpass').click();
+    await expect(page.getByTestId('toggle-walk-mode-btn')).toBeVisible();
+
+    await page.getByTestId('loom-tab-webrtc').click();
     await page.getByTestId('traverse-portal-peer-astral-echo').click();
     await expect(page.getByTestId('active-gate-address')).toContainText(
       'Δ: Silent Fungal Observatory',

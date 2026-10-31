@@ -1,0 +1,702 @@
+<section
+  class="first-person-stage"
+  [attr.data-theme]="roomTheme()"
+  aria-label="First-Person Dungeon Crawler Viewport"
+  data-testid="first-person-stage"
+>
+  <!-- TOP CHAMBER STATUS BANNER -->
+  <div class="stage-top-bar">
+    <div class="chamber-info">
+      <span class="facing-pill" title="Current Heading">
+        🧭 <strong data-testid="fp-facing-indicator">{{ playerFacing() }}</strong>
+      </span>
+      <span class="chamber-title" data-testid="fp-chamber-title">
+        {{ currentRoom().title }}
+      </span>
+      @if (currentRoom().isOvergrowth) {
+        <span class="overgrowth-incursion-pill" title="Foreign Spliced Chamber">
+          🌿 Overgrowth Incursion ({{ currentRoom().originPlayerName || 'Unknown Peer' }})
+        </span>
+      }
+    </div>
+
+    <!-- TACTILE DIRECTIONAL CONTROLS -->
+    <div class="compass-nav-controls" role="group" aria-label="Tactile Dungeon Navigation">
+      <button
+        type="button"
+        class="nav-btn turn-btn"
+        (click)="turnLeft()"
+        title="Turn Left 90° (Q / A / Left)"
+        data-testid="fp-turn-left"
+      >
+        ↺ Left [Q]
+      </button>
+      <button
+        type="button"
+        class="nav-btn forward-btn"
+        [disabled]="!exitAhead()"
+        (click)="stepForward()"
+        title="Step Forward (W / Up)"
+        data-testid="fp-step-forward"
+      >
+        ⬆ Forward [W]
+      </button>
+      <button
+        type="button"
+        class="nav-btn turn-btn"
+        (click)="turnRight()"
+        title="Turn Right 90° (E / D / Right)"
+        data-testid="fp-turn-right"
+      >
+        ↻ Right [E]
+      </button>
+      <button
+        type="button"
+        class="nav-btn back-btn"
+        (click)="stepBack()"
+        title="Turn Around / Step Back (S / Down)"
+        data-testid="fp-step-back"
+      >
+        ⬇ Back [S]
+      </button>
+    </div>
+  </div>
+
+  <!-- PERSPECTIVE 2.5D SVG CHAMBER -->
+  <div class="stage-canvas-container">
+    <svg
+      viewBox="0 0 800 480"
+      class="perspective-chamber-svg"
+      role="img"
+      aria-label="First-person perspective chamber visualization"
+      data-testid="fp-perspective-svg"
+    >
+      <defs>
+        <!-- Thematic Room Gradients & Lighting Shaders -->
+        <radialGradient id="vanishingGlow" cx="50%" cy="45%" r="60%">
+          <stop offset="0%" stop-color="var(--fp-glow-color, rgba(56, 189, 248, 0.25))" />
+          <stop offset="60%" stop-color="rgba(15, 23, 42, 0.4)" />
+          <stop offset="100%" stop-color="rgba(2, 6, 23, 0.95)" />
+        </radialGradient>
+
+        <linearGradient id="wallLeftGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="var(--fp-wall-outer, #0f172a)" />
+          <stop offset="100%" stop-color="var(--fp-wall-inner, #1e293b)" />
+        </linearGradient>
+
+        <linearGradient id="wallRightGrad" x1="100%" y1="0%" x2="0%" y2="0%">
+          <stop offset="0%" stop-color="var(--fp-wall-outer, #0f172a)" />
+          <stop offset="100%" stop-color="var(--fp-wall-inner, #1e293b)" />
+        </linearGradient>
+
+        <linearGradient id="ceilingGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#020617" />
+          <stop offset="100%" stop-color="#0f172a" />
+        </linearGradient>
+
+        <linearGradient id="floorGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+          <stop offset="0%" stop-color="#020617" />
+          <stop offset="100%" stop-color="#1e293b" />
+        </linearGradient>
+
+        <linearGradient id="portalShimmer" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.9" />
+          <stop offset="50%" stop-color="#c084fc" stop-opacity="0.8" />
+          <stop offset="100%" stop-color="#f43f5e" stop-opacity="0.9" />
+        </linearGradient>
+
+        <filter id="auraGlow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="6" result="blur" />
+          <feComposite in="SourceGraphic" in2="blur" operator="over" />
+        </filter>
+      </defs>
+
+      <!-- BASE PERSPECTIVE ROOM WALLS -->
+      <!-- Ceiling -->
+      <polygon
+        points="0,0 800,0 580,100 220,100"
+        fill="url(#ceilingGrad)"
+        stroke="#334155"
+        stroke-width="1.5"
+      />
+      <!-- Floor -->
+      <polygon
+        points="0,480 800,480 580,360 220,360"
+        fill="url(#floorGrad)"
+        stroke="#334155"
+        stroke-width="1.5"
+      />
+      <!-- Floor Grid Depth Lines (Radiating from Vanishing Point 400, 230) -->
+      <line
+        x1="220"
+        y1="360"
+        x2="0"
+        y2="480"
+        stroke="var(--fp-grid-line, #475569)"
+        stroke-width="2"
+      />
+      <line
+        x1="310"
+        y1="360"
+        x2="200"
+        y2="480"
+        stroke="var(--fp-grid-line, #334155)"
+        stroke-width="1"
+      />
+      <line
+        x1="400"
+        y1="360"
+        x2="400"
+        y2="480"
+        stroke="var(--fp-grid-line, #475569)"
+        stroke-width="1.5"
+      />
+      <line
+        x1="490"
+        y1="360"
+        x2="600"
+        y2="480"
+        stroke="var(--fp-grid-line, #334155)"
+        stroke-width="1"
+      />
+      <line
+        x1="580"
+        y1="360"
+        x2="800"
+        y2="480"
+        stroke="var(--fp-grid-line, #475569)"
+        stroke-width="2"
+      />
+      <line
+        x1="165"
+        y1="390"
+        x2="635"
+        y2="390"
+        stroke="var(--fp-grid-line, #334155)"
+        stroke-width="1"
+        stroke-dasharray="4,4"
+      />
+      <line
+        x1="90"
+        y1="430"
+        x2="710"
+        y2="430"
+        stroke="var(--fp-grid-line, #334155)"
+        stroke-width="1"
+        stroke-dasharray="6,6"
+      />
+
+      <!-- Left Wall -->
+      <polygon
+        points="0,0 220,100 220,360 0,480"
+        fill="url(#wallLeftGrad)"
+        stroke="#334155"
+        stroke-width="1.5"
+      />
+      <!-- Left Wall Pilasters -->
+      <line x1="90" y1="40" x2="90" y2="440" stroke="#1e293b" stroke-width="4" opacity="0.6" />
+
+      <!-- Right Wall -->
+      <polygon
+        points="800,0 580,100 580,360 800,480"
+        fill="url(#wallRightGrad)"
+        stroke="#334155"
+        stroke-width="1.5"
+      />
+      <!-- Right Wall Pilasters -->
+      <line x1="710" y1="40" x2="710" y2="440" stroke="#1e293b" stroke-width="4" opacity="0.6" />
+
+      <!-- Back Wall -->
+      <rect
+        x="220"
+        y="100"
+        width="360"
+        height="260"
+        fill="#0f172a"
+        stroke="#334155"
+        stroke-width="2"
+      />
+      <!-- Vanishing Depth Atmosphere Radial Glow -->
+      <rect x="220" y="100" width="360" height="260" fill="url(#vanishingGlow)" />
+
+      <!-- THEMATIC OVERLAY: Clockwork Cogs / Fungal Veins / Overgrowth Pulsing -->
+      @if (roomTheme() === 'clockwork') {
+        <!-- Brass Gears etched on back wall -->
+        <g opacity="0.25" stroke="#f59e0b" fill="none" stroke-width="2">
+          <circle cx="280" cy="160" r="35" stroke-dasharray="6,4" />
+          <circle cx="280" cy="160" r="15" />
+          <circle cx="520" cy="160" r="45" stroke-dasharray="8,5" />
+          <circle cx="520" cy="160" r="20" />
+        </g>
+      } @else if (roomTheme() === 'overgrowth') {
+        <!-- Violet/Magenta Bioluminescent Incursion Veins -->
+        <g stroke="#d946ef" fill="none" opacity="0.6" stroke-width="2.5" filter="url(#auraGlow)">
+          <path d="M 0,440 Q 120,380 220,330 T 360,260" />
+          <path d="M 800,440 Q 680,380 580,330 T 440,260" />
+          <path d="M 220,100 Q 300,160 400,140 T 580,100" />
+        </g>
+      } @else if (roomTheme() === 'fungal') {
+        <!-- Bioluminescent Spore Canopy -->
+        <g fill="#10b981" opacity="0.4">
+          <circle cx="260" cy="130" r="8" />
+          <circle cx="540" cy="130" r="10" />
+          <circle cx="300" cy="90" r="6" />
+          <circle cx="500" cy="85" r="7" />
+        </g>
+      } @else if (roomTheme() === 'scorching') {
+        <!-- Ember Glow and Lava Crevices on Floor -->
+        <path
+          d="M 120,480 Q 260,420 330,360"
+          stroke="#ef4444"
+          stroke-width="3"
+          fill="none"
+          opacity="0.7"
+          filter="url(#auraGlow)"
+        />
+        <path
+          d="M 680,480 Q 540,420 470,360"
+          stroke="#f97316"
+          stroke-width="3"
+          fill="none"
+          opacity="0.7"
+          filter="url(#auraGlow)"
+        />
+      } @else if (roomTheme() === 'crystalline') {
+        <!-- Frosted Icicle Stalactites -->
+        <polygon points="250,100 260,100 255,145" fill="#38bdf8" opacity="0.7" />
+        <polygon points="320,100 332,100 326,160" fill="#38bdf8" opacity="0.8" />
+        <polygon points="480,100 492,100 486,155" fill="#38bdf8" opacity="0.8" />
+        <polygon points="550,100 560,100 555,140" fill="#38bdf8" opacity="0.7" />
+      }
+
+      <!-- SPATIAL DOORWAY: AHEAD (CENTER BACK WALL) -->
+      @if (exitAhead()) {
+        <g
+          class="portal-interactive-ahead"
+          (click)="onAheadExitClick()"
+          role="button"
+          tabindex="0"
+          aria-label="Doorway Ahead"
+          data-testid="fp-doorway-ahead"
+        >
+          <!-- Archway Frame -->
+          <rect
+            x="320"
+            y="130"
+            width="160"
+            height="230"
+            rx="20"
+            fill="#020617"
+            stroke="var(--fp-door-stroke, #38bdf8)"
+            stroke-width="3"
+            filter="url(#auraGlow)"
+          />
+          <!-- Portal Energy or Open Corridor -->
+          <rect
+            x="332"
+            y="142"
+            width="136"
+            height="218"
+            rx="14"
+            fill="url(#portalShimmer)"
+            opacity="0.85"
+          />
+          <text
+            x="400"
+            y="235"
+            text-anchor="middle"
+            fill="#ffffff"
+            font-size="14"
+            font-weight="bold"
+            letter-spacing="1"
+          >
+            FORWARD [W]
+          </text>
+          <text x="400" y="260" text-anchor="middle" fill="#e0f2fe" font-size="12">
+            Door ({{ exitAhead()?.direction }})
+          </text>
+        </g>
+      } @else {
+        <!-- Blank Solid Wall Emblem -->
+        <circle cx="400" cy="220" r="32" fill="#1e293b" stroke="#334155" stroke-width="2" />
+        <text x="400" y="226" text-anchor="middle" fill="#64748b" font-size="20">❖</text>
+      }
+
+      <!-- SPATIAL DOORWAY: LEFT (ANGLED ON LEFT WALL) -->
+      @if (exitLeft()) {
+        <g
+          class="portal-interactive-side portal-left"
+          (click)="onLeftExitClick()"
+          role="button"
+          tabindex="0"
+          aria-label="Doorway to the Left"
+          data-testid="fp-doorway-left"
+        >
+          <polygon
+            points="50,170 170,195 170,335 50,385"
+            fill="#020617"
+            stroke="var(--fp-door-stroke, #38bdf8)"
+            stroke-width="2"
+          />
+          <polygon
+            points="60,185 160,205 160,325 60,370"
+            fill="url(#portalShimmer)"
+            opacity="0.75"
+          />
+          <text
+            x="110"
+            y="270"
+            text-anchor="middle"
+            fill="#ffffff"
+            font-size="13"
+            font-weight="bold"
+            transform="rotate(6, 110, 270)"
+          >
+            LEFT [A]
+          </text>
+        </g>
+      }
+
+      <!-- SPATIAL DOORWAY: RIGHT (ANGLED ON RIGHT WALL) -->
+      @if (exitRight()) {
+        <g
+          class="portal-interactive-side portal-right"
+          (click)="onRightExitClick()"
+          role="button"
+          tabindex="0"
+          aria-label="Doorway to the Right"
+          data-testid="fp-doorway-right"
+        >
+          <polygon
+            points="630,195 750,170 750,385 630,335"
+            fill="#020617"
+            stroke="var(--fp-door-stroke, #38bdf8)"
+            stroke-width="2"
+          />
+          <polygon
+            points="640,205 740,185 740,370 640,325"
+            fill="url(#portalShimmer)"
+            opacity="0.75"
+          />
+          <text
+            x="690"
+            y="270"
+            text-anchor="middle"
+            fill="#ffffff"
+            font-size="13"
+            font-weight="bold"
+            transform="rotate(-6, 690, 270)"
+          >
+            RIGHT [D]
+          </text>
+        </g>
+      }
+
+      <!-- VISUAL ENTITIES INSIDE CHAMBER -->
+
+      <!-- 1. Monsters / Guardians -->
+      @for (monster of currentRoom().monsters; track monster.id; let idx = $index) {
+        @if (monster.hp > 0) {
+          <!-- Centered / Offset Monster Silhouette -->
+          <g
+            class="monster-silhouette"
+            [class.selected]="selectedMonster()?.id === monster.id"
+            (click)="selectMonster(monster)"
+            role="button"
+            tabindex="0"
+            [attr.aria-label]="'Monster: ' + monster.name"
+            [attr.data-testid]="'fp-monster-' + monster.id"
+            [attr.transform]="'translate(' + (260 + idx * 140) + ', 180)'"
+          >
+            <!-- Threat Aura Glow -->
+            <ellipse
+              cx="70"
+              cy="165"
+              rx="60"
+              ry="18"
+              fill="rgba(244, 63, 94, 0.25)"
+              filter="url(#auraGlow)"
+            />
+
+            <!-- Monster Body Silhouette (Automaton / Beast / Guardian) -->
+            @if (monster.isBoss) {
+              <!-- Boss / Guardian Colossus Silhouette -->
+              <polygon
+                points="70,25 30,70 45,150 95,150 110,70"
+                fill="#881337"
+                stroke="#f43f5e"
+                stroke-width="2.5"
+              />
+              <circle cx="70" cy="65" r="14" fill="#f43f5e" filter="url(#auraGlow)" />
+            } @else {
+              <!-- Standard Mob Silhouette -->
+              <polygon
+                points="70,45 40,85 50,150 90,150 100,85"
+                fill="#1e293b"
+                stroke="#ef4444"
+                stroke-width="2"
+              />
+              <circle cx="70" cy="75" r="9" fill="#ef4444" />
+            }
+
+            <!-- Floating Monster HP Gauge -->
+            <rect x="15" y="0" width="110" height="10" rx="3" fill="#0f172a" stroke="#334155" />
+            <rect
+              x="15"
+              y="0"
+              [attr.width]="Math.max(0, (monster.hp / monster.maxHp) * 110)"
+              height="10"
+              rx="3"
+              fill="#22c55e"
+            />
+
+            <!-- Floating Monster ATB Gauge -->
+            <rect x="25" y="12" width="90" height="4" rx="2" fill="#0f172a" />
+            <rect
+              x="25"
+              y="12"
+              [attr.width]="Math.max(0, (monster.atbGauge / 100) * 90)"
+              height="4"
+              rx="2"
+              fill="#38bdf8"
+            />
+
+            <!-- Name and Level Pill -->
+            <text
+              x="70"
+              y="-6"
+              text-anchor="middle"
+              fill="#ffffff"
+              font-size="11"
+              font-weight="bold"
+            >
+              {{ monster.name }} (Lv.{{ monster.level }})
+            </text>
+          </g>
+        } @else {
+          <!-- Defeated Slain Remains Marker -->
+          <g
+            class="slain-marker"
+            [attr.transform]="'translate(' + (280 + idx * 120) + ', 330)'"
+            (click)="inspectTarget(monster.id)"
+            role="button"
+            tabindex="0"
+            title="Slain entity remains"
+          >
+            <ellipse cx="40" cy="20" rx="30" ry="10" fill="#334155" opacity="0.6" />
+            <text x="40" y="24" text-anchor="middle" fill="#94a3b8" font-size="12">💀 Slain</text>
+          </g>
+        }
+      }
+
+      <!-- 2. Traveler's Echo (Overgrowth Incursion) -->
+      @if (currentRoom().travelerEcho; as echo) {
+        <g
+          class="traveler-echo-silhouette"
+          [class.selected]="selectedEcho()?.id === echo.id"
+          (click)="selectEcho(echo)"
+          role="button"
+          tabindex="0"
+          aria-label="Traveler's Echo"
+          data-testid="fp-traveler-echo"
+          transform="translate(140, 220)"
+        >
+          <!-- Ethereal Phantom Halo -->
+          <ellipse
+            cx="50"
+            cy="130"
+            rx="40"
+            ry="14"
+            fill="rgba(192, 132, 252, 0.3)"
+            filter="url(#auraGlow)"
+          />
+          <!-- Hooded Wanderer Shape -->
+          <polygon
+            points="50,20 20,60 30,120 70,120 80,60"
+            fill="#4a044e"
+            stroke="#c084fc"
+            stroke-width="2"
+          />
+          <circle cx="50" cy="45" r="10" fill="#e879f9" filter="url(#auraGlow)" />
+          <text x="50" y="-4" text-anchor="middle" fill="#f0abfc" font-size="11" font-weight="bold">
+            Echo: {{ echo.playerName }}
+          </text>
+        </g>
+      }
+
+      <!-- 3. Ground Loot Items & Chests -->
+      @for (item of currentRoom().items; track item.id; let idx = $index) {
+        <g
+          class="ground-item-chest"
+          [class.selected]="selectedItem()?.id === item.id"
+          (click)="selectItem(item)"
+          role="button"
+          tabindex="0"
+          [attr.aria-label]="'Item on ground: ' + item.name"
+          [attr.data-testid]="'fp-item-' + item.id"
+          [attr.transform]="'translate(' + (440 + idx * 70) + ', 345)'"
+        >
+          <!-- Rarity Glow Aura -->
+          <circle
+            cx="24"
+            cy="18"
+            r="20"
+            fill="var(--fp-rarity-glow, rgba(234, 179, 8, 0.3))"
+            filter="url(#auraGlow)"
+          />
+          <!-- Chest Graphic -->
+          <rect
+            x="6"
+            y="8"
+            width="36"
+            height="24"
+            rx="4"
+            fill="#78350f"
+            stroke="#f59e0b"
+            stroke-width="1.5"
+          />
+          <line x1="6" y1="18" x2="42" y2="18" stroke="#f59e0b" stroke-width="1.5" />
+          <circle cx="24" cy="18" r="3" fill="#fde047" />
+          <text x="24" y="42" text-anchor="middle" fill="#fde047" font-size="10" font-weight="bold">
+            {{ item.name }}
+          </text>
+        </g>
+      }
+
+      <!-- 4. Prunable Overgrowth Chamber Cleared Banner -->
+      @if (currentRoom().isOvergrowth && engine.livingRoomMonsters().length === 0) {
+        <g
+          class="prune-sigil-banner"
+          (click)="pruneCurrentRoom()"
+          role="button"
+          tabindex="0"
+          aria-label="Prune Cleared Overgrowth Chamber"
+          data-testid="fp-prune-banner"
+          transform="translate(260, 290)"
+        >
+          <rect
+            x="0"
+            y="0"
+            width="280"
+            height="44"
+            rx="8"
+            fill="#701a75"
+            stroke="#f43f5e"
+            stroke-width="2"
+            filter="url(#auraGlow)"
+          />
+          <text
+            x="140"
+            y="27"
+            text-anchor="middle"
+            fill="#ffffff"
+            font-size="13"
+            font-weight="bold"
+          >
+            ✂️ Prune Chamber (+{{ currentRoom().shardsHarvestable || 20 }} Shards)
+          </text>
+        </g>
+      }
+    </svg>
+  </div>
+
+  <!-- CONTEXTUAL ACTION PILLS DOCK (Point-and-Click Direct Interaction) -->
+  <footer class="stage-context-dock" aria-label="Target Actions">
+    @if (selectedMonster(); as mob) {
+      <div class="target-action-cluster" data-testid="fp-target-actions">
+        <span class="target-label"
+          >Target: <strong>{{ mob.name }}</strong> ({{ mob.hp }}/{{ mob.maxHp }} HP)</span
+        >
+        <button
+          type="button"
+          class="action-pill attack-pill"
+          (click)="attackMonster(mob)"
+          data-testid="fp-action-attack"
+        >
+          ⚔️ Attack
+        </button>
+        <button
+          type="button"
+          class="action-pill skill-pill"
+          (click)="castPrimarySkill(mob)"
+          data-testid="fp-action-skill"
+        >
+          ⚡ Sunder
+        </button>
+        <button
+          type="button"
+          class="action-pill inspect-pill"
+          (click)="inspectTarget(mob.id)"
+          data-testid="fp-action-inspect"
+        >
+          🔍 Inspect
+        </button>
+      </div>
+    } @else if (selectedItem(); as it) {
+      <div class="target-action-cluster" data-testid="fp-item-actions">
+        <span class="target-label"
+          >Item: <strong>{{ it.name }}</strong> ({{ it.rarity }})</span
+        >
+        <button
+          type="button"
+          class="action-pill take-pill"
+          (click)="takeItem(it)"
+          data-testid="fp-action-take"
+        >
+          ✋ Take Item
+        </button>
+        <button
+          type="button"
+          class="action-pill inspect-pill"
+          (click)="inspectTarget(it.id)"
+          data-testid="fp-action-inspect-item"
+        >
+          🔍 Inspect
+        </button>
+      </div>
+    } @else if (selectedEcho(); as echo) {
+      <div class="target-action-cluster" data-testid="fp-echo-actions">
+        <span class="target-label"
+          >Echo: <strong>{{ echo.playerName }}</strong> ({{ echo.triChord }})</span
+        >
+        @if (echo.forgedItems.length > 0) {
+          <button
+            type="button"
+            class="action-pill barter-pill"
+            (click)="barterItem(echo.forgedItems[0])"
+            title="Spend 15 Resonance Shards to buy replica of forged item"
+            data-testid="fp-action-barter"
+          >
+            💎 Barter (15 Shards: {{ echo.forgedItems[0].name }})
+          </button>
+        }
+        <button
+          type="button"
+          class="action-pill inspect-pill"
+          (click)="inspectTarget(echo.id)"
+          data-testid="fp-action-inspect-echo"
+        >
+          🔍 Inspect Echo
+        </button>
+      </div>
+    } @else {
+      <!-- Idle Hint / Room Controls -->
+      <div class="stage-idle-hint">
+        <span class="hint-text">
+          Click doorways to move. Click monsters, chests, or echoes to interact. Hotkeys:
+          <strong>W/A/S/D</strong> or <strong>Arrows</strong>.
+        </span>
+        @if (currentRoom().isOvergrowth && engine.livingRoomMonsters().length === 0) {
+          <button
+            type="button"
+            class="action-pill prune-pill"
+            (click)="pruneCurrentRoom()"
+            data-testid="fp-btn-prune"
+          >
+            ✂️ Prune Overgrowth
+          </button>
+        }
+      </div>
+    }
+  </footer>
+</section>

@@ -52,4 +52,3 @@ While the initial implementation of **Linked Pocket Realms** established the ful
 
 - **Ceiling / Known Limitation**: Both the SVG Cartography Map and Persistent Room Stage remain visible in default `SPLIT` mode to support simultaneous spatial and narrative awareness; mobile users can switch to `STAGE` or `MAP` focus with a single tap.
 - **Rollback Strategy**: Revert changes to `src/app/app.html`, `src/app/app.ts`, and `src/styles.scss` via git if any viewport regression occurs.
-

@@ -32,11 +32,13 @@ import { LegendRegistryService } from './core/services/legend-registry.service';
 import { ARCHETYPE_CATALOG, MudEngineService } from './core/services/mud-engine.service';
 import { StorageService } from './core/services/storage.service';
 import { TransportService } from './core/services/transport.service';
+import { ThunderpassService } from './core/services/thunderpass.service';
+import { FirstPersonStageComponent } from './viewport/first-person-stage';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, FirstPersonStageComponent],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
@@ -46,6 +48,7 @@ export class App {
   readonly transport = inject(TransportService);
   readonly storage = inject(StorageService);
   readonly chaosGate = inject(ChaosGateService);
+  readonly thunderpass = inject(ThunderpassService);
 
   // Constants exposed for templates
   readonly archetypeCatalog = ARCHETYPE_CATALOG;
@@ -87,6 +90,8 @@ export class App {
 
   // Mobile-First Viewport & Ergonomic State
   readonly mobileLayoutMode = signal<'SPLIT' | 'STAGE' | 'MAP'>('SPLIT');
+  readonly stageLensMode = signal<'FIRST_PERSON' | 'CARD_STAGE' | 'SPLIT'>('FIRST_PERSON');
+  readonly loomActiveTab = signal<'WEAVER' | 'WEBRTC' | 'THUNDERPASS' | 'OVERGROWTH'>('WEAVER');
   readonly gateDialerExpanded = signal<boolean>(false);
 
   // Interactive Stage & Map Popovers / Tooltips
@@ -515,6 +520,44 @@ export class App {
 
   setMobileLayoutMode(mode: 'SPLIT' | 'STAGE' | 'MAP'): void {
     this.mobileLayoutMode.set(mode);
+  }
+
+  setStageLensMode(mode: 'FIRST_PERSON' | 'CARD_STAGE' | 'SPLIT'): void {
+    this.stageLensMode.set(mode);
+  }
+
+  setLoomActiveTab(tab: 'WEAVER' | 'WEBRTC' | 'THUNDERPASS' | 'OVERGROWTH'): void {
+    this.loomActiveTab.set(tab);
+    if (tab === 'WEBRTC') {
+      void this.transport.refreshBrokerSessions();
+    }
+  }
+
+  getFacingRotationAngle(facing: string): number {
+    switch (facing) {
+      case 'N':
+        return 0;
+      case 'E':
+        return 90;
+      case 'S':
+        return 180;
+      case 'W':
+        return 270;
+      default:
+        return 0;
+    }
+  }
+
+  pruneCurrentRoom(): void {
+    this.engine.pruneRoom();
+  }
+
+  simulateThunderpassIncursion(): void {
+    this.thunderpass.simulateThunderpassCollision();
+  }
+
+  scanBleRelic(): void {
+    void this.thunderpass.scanNearbyBleRelic();
   }
 
   setPerspective(role: PerspectiveRole): void {

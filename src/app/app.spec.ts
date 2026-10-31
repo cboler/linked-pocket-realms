@@ -9,6 +9,7 @@ import { LegendRegistryService } from './core/services/legend-registry.service';
 import { MudEngineService } from './core/services/mud-engine.service';
 import { StorageService } from './core/services/storage.service';
 import { TransportService } from './core/services/transport.service';
+import { ThunderpassService } from './core/services/thunderpass.service';
 import { EquipmentItem } from './core/models/domain.models';
 
 describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
@@ -17,6 +18,7 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
   let storage: StorageService;
   let transport: TransportService;
   let engine: MudEngineService;
+  let thunderpass: ThunderpassService;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -28,6 +30,7 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
     storage = TestBed.inject(StorageService);
     transport = TestBed.inject(TransportService);
     engine = TestBed.inject(MudEngineService);
+    thunderpass = TestBed.inject(ThunderpassService);
     expect(transport.localPeerId).toContain('peer-');
     engine.stopAtbLoop();
   });
@@ -255,6 +258,162 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
       expect(customRoom.monsters.length).toBe(1);
       expect(customRoom.items.length).toBe(1);
       expect(customRoom.triggers.length).toBe(1);
+    });
+  });
+
+  describe('Feature Evolution: First-Person Perspective Viewport & Directional Orientation', () => {
+    it('should initialize playerFacing to North and rotate 90 degrees on turnLeft / turnRight', () => {
+      expect(engine.playerFacing()).toBe('N');
+
+      engine.turnLeft();
+      expect(engine.playerFacing()).toBe('W');
+
+      engine.turnLeft();
+      expect(engine.playerFacing()).toBe('S');
+
+      engine.turnRight();
+      expect(engine.playerFacing()).toBe('W');
+
+      engine.turnAround();
+      expect(engine.playerFacing()).toBe('E');
+    });
+
+    it('should step forward through doorway matching playerFacing and update position', () => {
+      engine.moveToRoom('room-0');
+      engine.setFacing('N');
+      const startRoom = engine.currentRoom();
+      expect(startRoom.exits.some((e) => e.direction === 'N')).toBe(true);
+
+      engine.stepForward();
+      expect(engine.currentRoom().id).not.toBe('room-0');
+      expect(engine.playerFacing()).toBe('N');
+    });
+
+    it('should render the First-Person Stage component and switch 3-lens layout modes', async () => {
+      const fixture = TestBed.createComponent(App);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('[data-testid="first-person-stage"]')).toBeTruthy();
+
+      const app = fixture.componentInstance;
+      expect(app.stageLensMode()).toBe('FIRST_PERSON');
+
+      app.setStageLensMode('CARD_STAGE');
+      fixture.detectChanges();
+      expect(app.stageLensMode()).toBe('CARD_STAGE');
+      expect(compiled.querySelector('[data-testid="first-person-stage"]')).toBeFalsy();
+
+      app.setStageLensMode('SPLIT');
+      fixture.detectChanges();
+      expect(compiled.querySelector('[data-testid="first-person-stage"]')).toBeTruthy();
+      expect(compiled.querySelector('[data-testid="persistent-room-stage"]')).toBeTruthy();
+    });
+  });
+
+  describe('Feature Evolution: Tri-Chord Splicing, Overgrowth Incursions & Pruning', () => {
+    it('should deterministically generate hybrid Overgrowth rooms when realms collide', () => {
+      const localAddr = chaosGate.createAddress('Θ', 'Scorching', 'Clockwork', 'Catacombs');
+      const remoteAddr = chaosGate.createAddress('Δ', 'Silent', 'Fungal', 'Observatory');
+      const baseRooms = chaosGate.generateRealm(localAddr);
+
+      const incursion = chaosGate.generateOvergrowthIncursion(
+        localAddr,
+        remoteAddr,
+        'Explorer_Kite',
+        baseRooms,
+      );
+
+      expect(incursion.newRooms.length).toBeGreaterThanOrEqual(2);
+      expect(incursion.newRooms[0].isOvergrowth).toBe(true);
+      expect(incursion.newRooms[0].originPlayerName).toBe('Explorer_Kite');
+      expect(incursion.newRooms[0].originTriChord).toBe(remoteAddr.formatted);
+      expect(incursion.newRooms[0].shardsHarvestable).toBeGreaterThanOrEqual(15);
+    });
+
+    it('should graft overgrowth chambers onto local realm and track overgrowthCount', () => {
+      const beforeCount = engine.rooms().length;
+      expect(engine.overgrowthCount()).toBe(0);
+
+      const remoteAddr = chaosGate.createAddress('Λ', 'Crystalline', 'Astral', 'Spire');
+      engine.graftOvergrowthIncursion(remoteAddr, 'Aura_Visitor');
+
+      expect(engine.rooms().length).toBeGreaterThan(beforeCount);
+      expect(engine.overgrowthCount()).toBeGreaterThan(0);
+      const overgrowthRoom = engine.rooms().find((r) => r.isOvergrowth);
+      expect(overgrowthRoom).toBeTruthy();
+    });
+
+    it('should block pruning when guardian is alive, and award Resonance Shards upon pruning cleared chamber', () => {
+      const remoteAddr = chaosGate.createAddress('Σ', 'Tempestuous', 'Monolithic', 'Citadel');
+      const grafted = engine.graftOvergrowthIncursion(remoteAddr, 'Tempest_Wanderer');
+      const targetRoom = grafted[grafted.length - 1]; // Guardian chamber
+
+      // Attempting to prune while guardian lives fails
+      const pruneBlocked = engine.pruneRoom(targetRoom.id);
+      expect(pruneBlocked).toBe(false);
+
+      // Slay guardian in the chamber
+      engine.rooms.update((all) =>
+        all.map((r) =>
+          r.id === targetRoom.id ? { ...r, monsters: r.monsters.map((m) => ({ ...m, hp: 0 })) } : r,
+        ),
+      );
+
+      const shardsBefore = engine.character().resonanceShards || 0;
+      const pruneSuccess = engine.pruneRoom(targetRoom.id);
+      expect(pruneSuccess).toBe(true);
+      expect(engine.rooms().some((r) => r.id === targetRoom.id)).toBe(false);
+      expect(engine.character().resonanceShards).toBeGreaterThan(shardsBefore);
+    });
+  });
+
+  describe('Feature Evolution: Thunderpass Proximity StreetPass & Zero-Knowledge Geohash Blinding', () => {
+    it('should encode latitude and longitude into coarse precision-6 base32 geohashes', () => {
+      // Golden Gate Bridge coordinates approx: 37.8199, -122.4783
+      const geohash = thunderpass.encodeGeohash(37.8199, -122.4783, 6);
+      expect(geohash.length).toBe(6);
+      expect(typeof geohash).toBe('string');
+    });
+
+    it('should compute privacy-preserving SHA-256 blinded zone hashes where raw coordinates never leave device', async () => {
+      const hash1 = await thunderpass.computeZoneHash('9q8yyk');
+      const hash2 = await thunderpass.computeZoneHash('9q8yyk');
+      expect(hash1).toBe(hash2);
+      expect(hash1.length).toBe(64);
+    });
+
+    it('should log streetpass encounters, sprout overgrowth chambers, and barter for forged items using Resonance Shards', () => {
+      const startEncounterCount = thunderpass.streetPassLog().length;
+      thunderpass.simulateThunderpassCollision('Street_Walker_7', 'Ω: Gilded Forge Crucible');
+
+      expect(thunderpass.streetPassLog().length).toBe(startEncounterCount + 1);
+      const latest = thunderpass.streetPassLog()[0];
+      expect(latest.playerName).toBe('Street_Walker_7');
+      expect(latest.roomsGrafted.length).toBeGreaterThan(0);
+
+      // Verify barter exchange with Echo using Resonance Shards
+      const echo = latest.echo;
+      expect(echo.forgedItems.length).toBeGreaterThan(0);
+
+      const shardsBefore = engine.character().resonanceShards;
+      const invBefore = engine.character().inventory.length;
+
+      // Move into chamber with echo to barter
+      engine.rooms.update((all) =>
+        all.map((r) =>
+          r.id === latest.roomsGrafted[latest.roomsGrafted.length - 1]
+            ? { ...r, travelerEcho: echo }
+            : r,
+        ),
+      );
+      engine.moveToRoom(latest.roomsGrafted[latest.roomsGrafted.length - 1]);
+
+      const barterResult = engine.barterEcho(echo.id, echo.forgedItems[0].id);
+      expect(barterResult).toBe(true);
+      expect(engine.character().inventory.length).toBe(invBefore + 1);
+      expect(engine.character().resonanceShards).toBe(shardsBefore - 15);
     });
   });
 });

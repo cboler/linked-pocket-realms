@@ -60,17 +60,18 @@ When creating a new project from this template, complete the following customiza
 
 > **For Derivations**: Replace this section with your application's phased delivery milestones.
 
-### Phase 1: MVP & Core User Flow
+### Phase 1: MVP & Core MUD Engine (Completed)
 
-- [ ] **Milestone 1.1: Core Domain Entities & State**: Define models, core state signals, and validation rules.
-- [ ] **Milestone 1.2: Primary Interactive View**: Implement the primary user interface and essential interaction controls.
-- [ ] **Milestone 1.3: User Flow Smoke Test**: Add Playwright assertions validating the happy-path user journey across viewports.
+- [x] **Milestone 1.1: Core Domain Entities & State**: 3-Word Tri-Chord addresses, Mulberry32 PRNG, ATB combat loop, and terminal parser.
+- [x] **Milestone 1.2: Dual-Input Tactile HUD & Drawers**: SVG topological node cartography, equipment paperdoll, combat telemetry, and career chronicle.
+- [x] **Milestone 1.3: User Flow Smoke Test**: Playwright multi-viewport smoke assertions across phone, tablet, and desktop.
 
-### Phase 2: Offline Persistence & Interactivity
+### Phase 2: First-Person Lens, Overgrowth Splicing & Thunderpass (In Progress)
 
-- [ ] **Milestone 2.1: Local Storage / IndexedDB Sync**: Persist user data locally so changes survive browser reloads.
-- [ ] **Milestone 2.2: Offline Indicator & Error Handling**: Provide feedback to users when actions require network connectivity.
-- [ ] **Milestone 2.3: Undo/Redo or State Reset**: Provide safe recovery options for destructive user operations.
+- [x] **Milestone 2.1: Spliced Lore & Terminology**: Resonance Loom, Tri-Chord Lexicon, Overgrowth incursion rooms, and Pruning (`@prune`) for Resonance Shards.
+- [ ] **Milestone 2.2: First-Person Dungeon Viewport (`FirstPersonStageComponent`)**: 2.5D perspective room renderer, spatial doorways, entity silhouettes, and directional movement (`playerFacing`).
+- [ ] **Milestone 2.3: Persistent Overgrowth Grafting & Pruning**: Deterministic incursion generation on collision, IndexedDB persistence across disconnects, and shard harvesting.
+- [ ] **Milestone 2.4: Serverless gcloud Broker & Thunderpass**: Gen 2 Cloud Function signaling broker, zero-knowledge geohash proximity relay, screen WakeLock, BLE scan, and Traveler's Echo encounters.
 
 ### Phase 3: Platform Capabilities & Polish
 

@@ -15,6 +15,7 @@ import {
   ServerEraMetadata,
   StructuralTheme,
   TopologyPattern,
+  TravelerEcho,
 } from '../models/domain.models';
 
 export const SERVER_ERAS: Record<ServerEraLetter, ServerEraMetadata> = {
@@ -765,6 +766,211 @@ export class ChaosGateService {
     };
   }
 
+  generateOvergrowthIncursion(
+    localAddress: ChaosGateAddress,
+    remoteAddress: ChaosGateAddress,
+    remoteOwner: string,
+    existingRooms: RoomNode[],
+    remoteEcho?: TravelerEcho,
+  ): {
+    incursionId: string;
+    newRooms: RoomNode[];
+    anchorRoomId: string;
+    anchorExitDir: ExitDirection;
+  } {
+    // Deterministic splicing of both realm DNA seeds
+    const splicedSeed = (localAddress.seed ^ remoteAddress.seed ^ 0x5f3759df) >>> 0;
+    const prng = createMulberry32(splicedSeed);
+    const incursionId = `inc-${splicedSeed.toString(36)}`;
+
+    // Pick an anchor room from outer/deeper existing rooms that has free cardinal exits
+    const candidateRooms = [...existingRooms].reverse();
+    const cardinalDirs: ExitDirection[] = ['E', 'S', 'W', 'N'];
+    let chosenAnchor = candidateRooms[0];
+    let chosenDir: ExitDirection = 'E';
+
+    for (const r of candidateRooms) {
+      const usedDirs = new Set(r.exits.map((e) => e.direction));
+      const free = cardinalDirs.find((d) => !usedDirs.has(d));
+      if (free) {
+        chosenAnchor = r;
+        chosenDir = free;
+        break;
+      }
+    }
+
+    const oppositeDirMap: Record<ExitDirection, ExitDirection> = {
+      N: 'S',
+      S: 'N',
+      E: 'W',
+      W: 'E',
+      U: 'D',
+      D: 'U',
+    };
+
+    const deltaOffsets: Record<ExitDirection, { dx: number; dy: number }> = {
+      N: { dx: 0, dy: -90 },
+      S: { dx: 0, dy: 90 },
+      E: { dx: 110, dy: 0 },
+      W: { dx: -110, dy: 0 },
+      U: { dx: 0, dy: -60 },
+      D: { dx: 0, dy: 60 },
+    };
+
+    const offset = deltaOffsets[chosenDir] || { dx: 100, dy: 50 };
+    const roomCount = prng() > 0.4 ? 3 : 2;
+    const newRooms: RoomNode[] = [];
+
+    const hybridElements: ElementalAffinity[] = [
+      ATMOSPHERE_META[localAddress.atmosphere].element,
+      ATMOSPHERE_META[remoteAddress.atmosphere].element,
+    ];
+    const blendedElement = hybridElements[Math.floor(prng() * hybridElements.length)];
+
+    // Hybrid titles blending atmospheric and architectural DNA
+    const titleVariants = [
+      `${localAddress.atmosphere} ${remoteAddress.theme} Spore-Vent`,
+      `${remoteAddress.atmosphere} ${localAddress.theme} Border-Hollow`,
+      `${remoteAddress.theme}-${localAddress.theme} Hybrid Chamber`,
+      `Entangled ${remoteAddress.biome} Incursion`,
+      `${remoteOwner}'s Echo Sanctum`,
+    ];
+
+    const eraMeta = SERVER_ERAS[localAddress.era] || SERVER_ERAS['Θ'];
+
+    for (let i = 0; i < roomCount; i++) {
+      const roomId = `${incursionId}-${i + 1}`;
+      const title = titleVariants[i % titleVariants.length];
+      const isSanctum = i === roomCount - 1;
+
+      // Position along anchor vector
+      const posX = Math.max(50, Math.min(950, chosenAnchor.x + offset.dx * (i + 1)));
+      const posY = Math.max(50, Math.min(550, chosenAnchor.y + offset.dy * (i + 1)));
+
+      const roomExits: RoomNode['exits'] = [];
+      if (i === 0) {
+        // Exits back to anchor room
+        roomExits.push({
+          direction: oppositeDirMap[chosenDir],
+          targetRoomId: chosenAnchor.id,
+        });
+      } else {
+        // Exits back to previous incursion room
+        roomExits.push({
+          direction: oppositeDirMap[chosenDir],
+          targetRoomId: `${incursionId}-${i}`,
+        });
+      }
+
+      if (i < roomCount - 1) {
+        // Exits forward to next incursion room
+        roomExits.push({
+          direction: chosenDir,
+          targetRoomId: `${incursionId}-${i + 2}`,
+        });
+      }
+
+      // Generate incursion monster or guardian
+      const monsters: MonsterEntity[] = [];
+      const mobElement = i % 2 === 0 ? blendedElement : 'Bio';
+      const weakness = mobElement === 'Fire' ? 'Frost' : mobElement === 'Frost' ? 'Fire' : 'Void';
+
+      if (isSanctum) {
+        // Overgrowth Guardian
+        const guardianHp = Math.round(180 * eraMeta.statMultiplier);
+        monsters.push({
+          id: `mob-${roomId}-guardian`,
+          templateId: 'overgrowth-guardian',
+          name: `${remoteAddress.theme} Overgrowth Guardian`,
+          level: eraMeta.levelTier + 2,
+          isBoss: true,
+          hp: guardianHp,
+          maxHp: guardianHp,
+          atk: Math.round(18 * eraMeta.statMultiplier),
+          mitigationPct: 18,
+          speed: 12,
+          atbGauge: 0,
+          element: mobElement,
+          weakness,
+          statuses: [],
+          loreSnippet: `A foreign harmonic manifestation seeded by realm collision with ${remoteAddress.formatted}.`,
+          secretWeaknessHint: `Foreign roots unravel under ${weakness} elemental attacks.`,
+          lootTable: [
+            this.createDeterministicItem(`loot-${roomId}`, remoteAddress, eraMeta, prng, true),
+          ],
+        });
+      } else {
+        // Incursion spore scout
+        const mobHp = Math.round(90 * eraMeta.statMultiplier);
+        monsters.push({
+          id: `mob-${roomId}-creeper`,
+          templateId: 'incursion-creeper',
+          name: `${remoteAddress.atmosphere} Incursion Creeper`,
+          level: eraMeta.levelTier,
+          isBoss: false,
+          hp: mobHp,
+          maxHp: mobHp,
+          atk: Math.round(12 * eraMeta.statMultiplier),
+          mitigationPct: 10,
+          speed: 10,
+          atbGauge: 0,
+          element: mobElement,
+          weakness,
+          statuses: [],
+          loreSnippet: `Invasive biological growth encroaching from ${remoteAddress.formatted}.`,
+          secretWeaknessHint: `Vulnerable to ${weakness} damage.`,
+          lootTable: [
+            this.createDeterministicItem(`loot-${roomId}`, localAddress, eraMeta, prng, false),
+          ],
+        });
+      }
+
+      const shardsHarvestable = 15 + Math.floor(prng() * 16);
+
+      newRooms.push({
+        id: roomId,
+        title,
+        description: `A hybridized chamber where the native ${localAddress.theme} architecture has been violently breached by foreign ${remoteAddress.theme} overgrowth from ${remoteAddress.formatted} (Seeded by ${remoteOwner}). Pulsing violet mycelial veins cover the masonry.`,
+        x: posX,
+        y: posY,
+        depthTier: chosenAnchor.depthTier + i + 1,
+        legendType: isSanctum ? 'elite-boss' : 'hazard-trap',
+        customLegendId: undefined,
+        atmosphereEffect: `Incursion Veins: Foreign resonance from ${remoteAddress.formatted}`,
+        elementalMutator: blendedElement,
+        exits: roomExits,
+        monsters,
+        items: isSanctum
+          ? [
+              this.createDeterministicItem(
+                `item-${roomId}-relic`,
+                remoteAddress,
+                eraMeta,
+                prng,
+                false,
+              ),
+            ]
+          : [],
+        triggers: [],
+        rumorSignal: `Overgrowth Pulse: ${remoteAddress.theme} incursion ahead`,
+        isCustomDug: false,
+        isOvergrowth: true,
+        originTriChord: remoteAddress.formatted,
+        originPlayerName: remoteOwner,
+        isPrunable: false,
+        shardsHarvestable,
+        travelerEcho: isSanctum && remoteEcho ? remoteEcho : undefined,
+      });
+    }
+
+    return {
+      incursionId,
+      newRooms,
+      anchorRoomId: chosenAnchor.id,
+      anchorExitDir: chosenDir,
+    };
+  }
+
   private applyDeltaLayer(
     baseRooms: RoomNode[],
     delta: RealmDelta,
@@ -790,9 +996,15 @@ export class ChaosGateService {
           items: override.customItems ?? existing.items,
           x: override.x ?? existing.x,
           y: override.y ?? existing.y,
+          isOvergrowth: override.isOvergrowth ?? existing.isOvergrowth,
+          originTriChord: override.originTriChord ?? existing.originTriChord,
+          originPlayerName: override.originPlayerName ?? existing.originPlayerName,
+          isPrunable: override.isPrunable ?? existing.isPrunable,
+          shardsHarvestable: override.shardsHarvestable ?? existing.shardsHarvestable,
+          travelerEcho: override.travelerEcho ?? existing.travelerEcho,
         });
       } else {
-        // Custom dug room added by Architect
+        // Custom dug room or overgrowth room added by Incursion/Architect
         roomMap.set(roomId, {
           id: roomId,
           title: override.title ?? 'Architect Excavated Chamber',
@@ -802,16 +1014,24 @@ export class ChaosGateService {
           x: override.x ?? 520,
           y: override.y ?? 320,
           depthTier: baseRooms.length,
-          legendType: override.legendType ?? 'custom',
+          legendType: override.legendType ?? (override.isOvergrowth ? 'hazard-trap' : 'custom'),
           customLegendId: override.customLegendId,
-          atmosphereEffect: 'Architect-tuned chamber resonance',
+          atmosphereEffect: override.isOvergrowth
+            ? `Incursion Veins: ${override.originTriChord ?? 'Foreign resonance'}`
+            : 'Architect-tuned chamber resonance',
           elementalMutator: 'Physical',
           exits: override.exits ?? [],
           monsters: override.customMonsters ?? [],
           items: override.customItems ?? [],
           triggers: override.triggers ?? [],
-          rumorSignal: `Architect Signal: ${override.title ?? 'Custom Chamber'}`,
-          isCustomDug: true,
+          rumorSignal: `Signal: ${override.title ?? 'Custom Chamber'}`,
+          isCustomDug: override.isCustomDug ?? !override.isOvergrowth,
+          isOvergrowth: override.isOvergrowth,
+          originTriChord: override.originTriChord,
+          originPlayerName: override.originPlayerName,
+          isPrunable: override.isPrunable,
+          shardsHarvestable: override.shardsHarvestable,
+          travelerEcho: override.travelerEcho,
         });
       }
     }

@@ -8,6 +8,7 @@ import {
   ChaosGateAddress,
   CharacterState,
   CommandIntent,
+  CompassDirection,
   CoreAttributes,
   CoreLegendType,
   DeclarativeTrigger,
@@ -30,6 +31,7 @@ import {
   StructuralTheme,
   TelemetryLog,
   TerminalFeedLine,
+  TravelerEcho,
 } from '../models/domain.models';
 import { ChaosGateService, createMulberry32 } from './chaos-gate.service';
 import { LegendRegistryService } from './legend-registry.service';
@@ -380,6 +382,7 @@ export class MudEngineService implements OnDestroy {
 
   readonly activeRealmDelta = signal<RealmDelta>(this.createInitialRealmDelta());
   readonly rooms = signal<RoomNode[]>([]);
+  readonly playerFacing = signal<CompassDirection>('N');
 
   // Player Character State
   readonly character = signal<CharacterState>(this.createInitialCharacter('Vanguard'));
@@ -394,6 +397,10 @@ export class MudEngineService implements OnDestroy {
   readonly telemetry = signal<TelemetryLog>(this.createInitialTelemetry());
 
   // Derived Signals
+  readonly overgrowthCount = computed<number>(() => {
+    return this.rooms().filter((r) => r.isOvergrowth).length;
+  });
+
   readonly currentRoom = computed<RoomNode>(() => {
     const allRooms = this.rooms();
     const curId = this.character().currentRoomId;
@@ -761,6 +768,14 @@ export class MudEngineService implements OnDestroy {
       case 'MOO_LEGEND':
         this.handleMooLegend(intent.payload ?? {});
         break;
+      case 'PRUNE_ROOM':
+        this.pruneRoom(intent.targetId);
+        break;
+      case 'BARTER_ECHO':
+        if (intent.targetId && intent.payload?.['itemId']) {
+          this.barterEcho(intent.targetId, intent.payload['itemId']);
+        }
+        break;
     }
   }
 
@@ -968,6 +983,17 @@ export class MudEngineService implements OnDestroy {
         rawInput: trimmed,
         source: 'TERMINAL',
         payload: { glyph, colorHex, label },
+      };
+      this.dispatchCommandIntent(intent);
+      return intent;
+    }
+
+    if (verb === '@prune' || verb === 'prune') {
+      const intent: CommandIntent = {
+        type: 'PRUNE_ROOM',
+        rawInput: trimmed,
+        source: 'TERMINAL',
+        targetId: parts[1] || this.currentRoom().id,
       };
       this.dispatchCommandIntent(intent);
       return intent;
@@ -1391,7 +1417,73 @@ export class MudEngineService implements OnDestroy {
     }
   }
 
+  turnLeft(): void {
+    const leftMap: Record<CompassDirection, CompassDirection> = {
+      N: 'W',
+      W: 'S',
+      S: 'E',
+      E: 'N',
+    };
+    this.playerFacing.update((f) => leftMap[f]);
+    this.appendFeed('SYSTEM', `Turned left. Facing ${this.playerFacing()}.`);
+  }
+
+  turnRight(): void {
+    const rightMap: Record<CompassDirection, CompassDirection> = {
+      N: 'E',
+      E: 'S',
+      S: 'W',
+      W: 'N',
+    };
+    this.playerFacing.update((f) => rightMap[f]);
+    this.appendFeed('SYSTEM', `Turned right. Facing ${this.playerFacing()}.`);
+  }
+
+  turnAround(): void {
+    const oppMap: Record<CompassDirection, CompassDirection> = {
+      N: 'S',
+      S: 'N',
+      E: 'W',
+      W: 'E',
+    };
+    this.playerFacing.update((f) => oppMap[f]);
+    this.appendFeed('SYSTEM', `Turned around. Facing ${this.playerFacing()}.`);
+  }
+
+  stepForward(): void {
+    const facing = this.playerFacing();
+    this.dispatchCommandIntent({
+      type: 'MOVE',
+      direction: facing,
+      source: 'HUD',
+      rawInput: facing.toLowerCase(),
+    });
+  }
+
+  stepBack(): void {
+    const oppMap: Record<CompassDirection, CompassDirection> = {
+      N: 'S',
+      S: 'N',
+      E: 'W',
+      W: 'E',
+    };
+    const backDir = oppMap[this.playerFacing()];
+    this.dispatchCommandIntent({
+      type: 'MOVE',
+      direction: backDir,
+      source: 'HUD',
+      rawInput: backDir.toLowerCase(),
+    });
+  }
+
+  setFacing(dir: CompassDirection): void {
+    this.playerFacing.set(dir);
+  }
+
   moveDirection(direction: ExitDirection): void {
+    if (['N', 'S', 'E', 'W'].includes(direction)) {
+      this.playerFacing.set(direction as CompassDirection);
+    }
     const room = this.currentRoom();
     const exit = room.exits.find((e) => e.direction === direction);
     if (!exit) {
@@ -2211,11 +2303,228 @@ export class MudEngineService implements OnDestroy {
     void this.storage.saveRealmDelta(this.activeRealmDelta());
   }
 
+  graftOvergrowthIncursion(
+    remoteAddress: ChaosGateAddress,
+    remoteOwner: string,
+    remoteEcho?: TravelerEcho,
+  ): RoomNode[] {
+    const localAddr = this.activeGateAddress();
+    const incursion = this.chaosGate.generateOvergrowthIncursion(
+      localAddr,
+      remoteAddress,
+      remoteOwner,
+      this.rooms(),
+      remoteEcho,
+    );
+
+    // Link anchor room to incursion
+    const updatedRooms = this.rooms().map((r) => {
+      if (r.id === incursion.anchorRoomId) {
+        const exits = [...r.exits];
+        if (!exits.some((e) => e.direction === incursion.anchorExitDir)) {
+          exits.push({
+            direction: incursion.anchorExitDir,
+            targetRoomId: incursion.newRooms[0].id,
+          });
+        }
+        return { ...r, exits };
+      }
+      return r;
+    });
+
+    const allRooms = [...updatedRooms, ...incursion.newRooms];
+    this.rooms.set(allRooms);
+
+    // Persist in activeRealmDelta overrides so it survives reloads and disconnects
+    const delta = this.activeRealmDelta();
+    const updatedOverrides = { ...delta.roomOverrides };
+
+    // Update anchor room override
+    const anchor = allRooms.find((r) => r.id === incursion.anchorRoomId)!;
+    updatedOverrides[anchor.id] = {
+      roomId: anchor.id,
+      title: anchor.title,
+      description: anchor.description,
+      exits: anchor.exits,
+      x: anchor.x,
+      y: anchor.y,
+    };
+
+    // Save incursion rooms overrides
+    for (const nr of incursion.newRooms) {
+      updatedOverrides[nr.id] = {
+        roomId: nr.id,
+        title: nr.title,
+        description: nr.description,
+        legendType: nr.legendType,
+        exits: nr.exits,
+        customMonsters: nr.monsters,
+        customItems: nr.items,
+        x: nr.x,
+        y: nr.y,
+        isOvergrowth: true,
+        originTriChord: nr.originTriChord,
+        originPlayerName: nr.originPlayerName,
+        isPrunable: false,
+        shardsHarvestable: nr.shardsHarvestable,
+        travelerEcho: nr.travelerEcho,
+      };
+    }
+
+    const newDelta: RealmDelta = {
+      ...delta,
+      roomOverrides: updatedOverrides,
+      customRoomIds: Array.from(
+        new Set([...delta.customRoomIds, ...incursion.newRooms.map((r) => r.id)]),
+      ),
+      updatedAtIso: new Date().toISOString(),
+    };
+
+    this.activeRealmDelta.set(newDelta);
+    void this.storage.saveRealmDelta(newDelta);
+
+    this.appendFeed(
+      'NETWORK',
+      `⚡ [Overgrowth Incursion] Spliced Tri-Chords with ${remoteOwner} (${remoteAddress.formatted})! ${incursion.newRooms.length} hybrid chambers sprouted at ${anchor.title}.`,
+    );
+
+    return incursion.newRooms;
+  }
+
+  pruneRoom(roomId?: string): boolean {
+    const targetId = roomId || this.currentRoom().id;
+    const targetRoom = this.rooms().find((r) => r.id === targetId);
+
+    if (!targetRoom) {
+      this.appendFeed('SYSTEM', `Room ${targetId} does not exist.`);
+      return false;
+    }
+
+    if (!targetRoom.isOvergrowth) {
+      this.appendFeed(
+        'SYSTEM',
+        `Chamber '${targetRoom.title}' is native architecture. Only foreign Overgrowth chambers can be pruned.`,
+      );
+      return false;
+    }
+
+    const livingMobs = targetRoom.monsters.filter((m) => m.hp > 0);
+    if (livingMobs.length > 0) {
+      this.appendFeed(
+        'COMBAT',
+        `Cannot prune chamber! Foreign guardian '${livingMobs[0].name}' still guards this overgrowth. Defeat all hostiles first.`,
+      );
+      return false;
+    }
+
+    // Determine return room
+    const returnExit = targetRoom.exits[0];
+    const fallbackRoomId = returnExit ? returnExit.targetRoomId : 'room-0';
+
+    const shardsEarned = targetRoom.shardsHarvestable ?? 20;
+
+    // Update player currency & move player if inside
+    this.character.update((c) => ({
+      ...c,
+      resonanceShards: (c.resonanceShards ?? 0) + shardsEarned,
+      currentRoomId: c.currentRoomId === targetId ? fallbackRoomId : c.currentRoomId,
+    }));
+    void this.storage.saveCharacterState(this.character());
+
+    // Remove room from rooms array and remove references in exits
+    const updatedRooms = this.rooms()
+      .filter((r) => r.id !== targetId)
+      .map((r) => ({
+        ...r,
+        exits: r.exits.filter((e) => e.targetRoomId !== targetId),
+      }));
+
+    this.rooms.set(updatedRooms);
+
+    // Remove from activeRealmDelta overrides
+    const delta = this.activeRealmDelta();
+    const updatedOverrides = { ...delta.roomOverrides };
+    delete updatedOverrides[targetId];
+
+    // Clean exit references in remaining overrides
+    for (const ovr of Object.values(updatedOverrides)) {
+      if (ovr.exits) {
+        ovr.exits = ovr.exits.filter((e) => e.targetRoomId !== targetId);
+      }
+    }
+
+    const newDelta: RealmDelta = {
+      ...delta,
+      roomOverrides: updatedOverrides,
+      customRoomIds: delta.customRoomIds.filter((id) => id !== targetId),
+      updatedAtIso: new Date().toISOString(),
+    };
+    this.activeRealmDelta.set(newDelta);
+    void this.storage.saveRealmDelta(newDelta);
+
+    this.appendFeed(
+      'NARRATIVE',
+      `✂️ [Pruned] Severed foreign overgrowth chamber '${targetRoom.title}'. Harvested +${shardsEarned} Resonance Shards (Balance: ${this.character().resonanceShards}).`,
+    );
+
+    return true;
+  }
+
+  barterEcho(echoId: string, itemId: string): boolean {
+    const char = this.character();
+    const currentRoom = this.currentRoom();
+    const echo = currentRoom.travelerEcho;
+    if (!echo || echo.id !== echoId) {
+      this.appendFeed('SYSTEM', 'No Traveler Echo present in this chamber to barter with.');
+      return false;
+    }
+
+    const item = echo.forgedItems.find((it) => it.id === itemId);
+    if (!item) {
+      this.appendFeed('SYSTEM', 'Item is not offered in the Echo catalog.');
+      return false;
+    }
+
+    const cost = 15;
+    if ((char.resonanceShards ?? 0) < cost) {
+      this.appendFeed(
+        'SYSTEM',
+        `Insufficient Resonance Shards! Required: ${cost}, current balance: ${char.resonanceShards ?? 0}.`,
+      );
+      return false;
+    }
+
+    // Purchase copy
+    const purchasedItem: EquipmentItem = {
+      ...item,
+      id: `echo-replica-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      name: `Replica of ${item.name}`,
+    };
+
+    this.character.update((c) => ({
+      ...c,
+      resonanceShards: c.resonanceShards - cost,
+      inventory: [...c.inventory, purchasedItem],
+    }));
+    void this.storage.saveCharacterState(this.character());
+
+    this.appendFeed(
+      'SYSTEM',
+      `💎 [Resonance Trade] Traded ${cost} Resonance Shards with Echo ${echo.playerName} for '${purchasedItem.name}'.`,
+    );
+    return true;
+  }
+
   private onNetworkPacket(pkt: NetworkPacket): void {
     if (pkt.type === 'GATE_BEACON' && pkt.realmCartridgeBase64) {
       const imported = this.storage.importCartridgeBase64(pkt.realmCartridgeBase64);
       if (imported?.customLegendEntries?.length) {
         this.legendRegistry.mergeHostCustomLegends(imported.customLegendEntries);
+      }
+    } else if (pkt.type === 'THUNDERPASS_SPORE' && pkt.spore) {
+      const remoteAddr = this.chaosGate.parseAddressString(pkt.spore.triChord);
+      if (remoteAddr) {
+        this.graftOvergrowthIncursion(remoteAddr, pkt.spore.playerName, pkt.spore.echo);
       }
     } else if (pkt.type === 'COOP_COMBAT_INTENT' && pkt.combatIntent) {
       this.appendFeed(
@@ -2293,7 +2602,7 @@ export class MudEngineService implements OnDestroy {
     );
   }
 
-  private appendFeed(
+  appendFeed(
     category: TerminalFeedLine['category'],
     text: string,
     badges?: TerminalFeedLine['badges'],
@@ -2429,6 +2738,7 @@ export class MudEngineService implements OnDestroy {
       bestiaryUnlocked: {
         'chrono-automaton': { kills: 2, inspectedLevel: 2 },
       },
+      resonanceShards: 25,
     };
   }
 
