@@ -15,11 +15,11 @@ echo "=========================================================="
 
 echo ""
 echo "[1/4] Checking Cloud Function Gen 2 & Cloud Run Settings..."
-if gcloud functions describe "$FUNCTION_NAME" --gen2 --region="$REGION" &>/dev/null; then
-  MIN_INST=$(gcloud functions describe "$FUNCTION_NAME" --gen2 --region="$REGION" --format="value(serviceConfig.minInstanceCount)" || echo "0")
-  MAX_INST=$(gcloud functions describe "$FUNCTION_NAME" --gen2 --region="$REGION" --format="value(serviceConfig.maxInstanceCount)" || echo "1")
-  MEM=$(gcloud functions describe "$FUNCTION_NAME" --gen2 --region="$REGION" --format="value(serviceConfig.availableMemory)" || echo "256Mi")
-  TIMEOUT=$(gcloud functions describe "$FUNCTION_NAME" --gen2 --region="$REGION" --format="value(serviceConfig.timeoutSeconds)" || echo "10")
+if gcloud functions describe "$FUNCTION_NAME" --gen2 --region="$REGION" --quiet &>/dev/null; then
+  MIN_INST=$(gcloud functions describe "$FUNCTION_NAME" --gen2 --region="$REGION" --format="value(serviceConfig.minInstanceCount)" --quiet || echo "0")
+  MAX_INST=$(gcloud functions describe "$FUNCTION_NAME" --gen2 --region="$REGION" --format="value(serviceConfig.maxInstanceCount)" --quiet || echo "1")
+  MEM=$(gcloud functions describe "$FUNCTION_NAME" --gen2 --region="$REGION" --format="value(serviceConfig.availableMemory)" --quiet || echo "256Mi")
+  TIMEOUT=$(gcloud functions describe "$FUNCTION_NAME" --gen2 --region="$REGION" --format="value(serviceConfig.timeoutSeconds)" --quiet || echo "10")
 
   echo "  • Min Instances: ${MIN_INST:-0} (Target: 0 for Scale-to-Zero)"
   echo "  • Max Instances: $MAX_INST (Target: 1 for DoS Protection)"
@@ -32,7 +32,7 @@ fi
 echo ""
 echo "[2/4] Checking Artifact Registry Image Storage..."
 IMAGE_PATH="$REGION-docker.pkg.dev/$PROJECT_ID/gcf-artifacts/$FUNCTION_NAME"
-IMAGE_COUNT=$(gcloud artifacts docker images list "$IMAGE_PATH" --format="value(DIGEST)" 2>/dev/null | wc -l || echo "0")
+IMAGE_COUNT=$(gcloud artifacts docker images list "$IMAGE_PATH" --format="value(DIGEST)" --quiet 2>/dev/null | wc -l || echo "0")
 echo "  • Stored Revisions: $IMAGE_COUNT (Target: <= 2 revisions to stay < 500MB)"
 
 echo ""
