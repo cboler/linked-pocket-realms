@@ -796,480 +796,193 @@
           }
         </div>
 
-        <!-- TOPOLOGICAL RADAR MINI-MAP (UPPER-RIGHT CLICK-TO-MOVE CARTOGRAPHY) -->
-        <aside
-          class="dungeon-minimap"
-          [class.collapsed]="isMinimapCollapsed()"
-          aria-label="Topological Radar Mini-Map"
-          data-testid="dungeon-minimap"
-        >
-          <div class="minimap-header">
-            <span class="minimap-title" [title]="engine.currentRoom().title">
-              🧭 {{ engine.activeGateAddress().biome }}
-            </span>
-            <div class="minimap-actions">
-              <button
-                type="button"
-                class="minimap-btn"
-                (click)="setMobileLayoutMode('MAP')"
-                title="Expand Full Observatory Graph (M)"
-                data-testid="expand-observatory-btn"
+        <!-- STAGE SPLIT DECK: 1ST-PERSON VIEWPORT (LEFT) + DESCRIPTION & ENTITY CARDS (RIGHT) -->
+        <div class="stage-deck-container" [attr.data-lens]="stageLensMode()">
+          @if (stageLensMode() === 'FIRST_PERSON' || stageLensMode() === 'SPLIT') {
+            <div class="stage-viewport-deck" data-testid="stage-viewport-deck">
+              <!-- TOPOLOGICAL RADAR MINI-MAP (UPPER-RIGHT CLICK-TO-MOVE CARTOGRAPHY) -->
+              <aside
+                class="dungeon-minimap"
+                [class.collapsed]="isMinimapCollapsed()"
+                aria-label="Topological Radar Mini-Map"
+                data-testid="dungeon-minimap"
               >
-                ⤢ Expand
-              </button>
-              <button
-                type="button"
-                class="minimap-btn icon-only"
-                (click)="isMinimapCollapsed.set(!isMinimapCollapsed())"
-                [title]="isMinimapCollapsed() ? 'Show Radar' : 'Minimize Radar'"
-                data-testid="toggle-minimap-btn"
-              >
-                {{ isMinimapCollapsed() ? '+' : '—' }}
-              </button>
-            </div>
-          </div>
-
-          @if (!isMinimapCollapsed()) {
-            <div class="minimap-body">
-              <svg
-                class="minimap-svg"
-                viewBox="0 0 940 560"
-                role="img"
-                aria-label="Minimap Radar Graph"
-                data-testid="minimap-svg-map"
-              >
-                <defs>
-                  <radialGradient id="minimapActiveGlow" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.6" />
-                    <stop offset="100%" stop-color="#38bdf8" stop-opacity="0" />
-                  </radialGradient>
-                </defs>
-
-                <!-- Minimap Topological Edges -->
-                @for (edge of cartographyEdges(); track edge.id) {
-                  <line
-                    [attr.x1]="edge.x1"
-                    [attr.y1]="edge.y1"
-                    [attr.x2]="edge.x2"
-                    [attr.y2]="edge.y2"
-                    class="minimap-edge"
-                    [class.secret-edge]="edge.isSecret"
-                    [class.locked-edge]="edge.isLocked"
-                  />
-                }
-
-                <!-- Minimap Topological Room Nodes (Click-to-Move) -->
-                @for (node of visibleCartographyNodes(); track node.room.id) {
-                  <g
-                    class="minimap-node-group"
-                    [class.current-node]="node.room.id === engine.character().currentRoomId"
-                    [attr.transform]="'translate(' + node.room.x + ',' + node.room.y + ')'"
-                    (click)="onNodeClick(node.room)"
-                    (mouseenter)="hoveredMapNode.set(node)"
-                    (mouseleave)="hoveredMapNode.set(null)"
-                    [attr.data-testid]="'minimap-node-' + node.room.id"
-                  >
-                    <title>
-                      {{ node.visited ? node.room.title : '[?] ' + node.room.rumorSignal }}
-                    </title>
-
-                    @if (node.room.id === engine.character().currentRoomId) {
-                      <circle r="46" fill="url(#minimapActiveGlow)" class="minimap-active-glow" />
-                      <!-- Player Facing Arrow in Mini-Map -->
-                      <path
-                        d="M 0,-42 L 7,-28 L -7,-28 Z"
-                        fill="#38bdf8"
-                        [attr.transform]="
-                          'rotate(' + getFacingRotationAngle(engine.playerFacing()) + ')'
-                        "
-                        class="minimap-facing-arrow"
-                        data-testid="minimap-facing-arrow"
-                      />
-                    }
-
-                    <!-- Overgrowth Ring -->
-                    @if (node.room.isOvergrowth) {
-                      <circle
-                        r="36"
-                        fill="none"
-                        stroke="#d946ef"
-                        stroke-width="3"
-                        stroke-dasharray="5 3"
-                      />
-                    }
-
-                    <!-- Node Circle -->
-                    <circle
-                      r="28"
-                      [attr.fill]="
-                        node.room.id === engine.character().currentRoomId ? '#0369a1' : '#0f172a'
-                      "
-                      [attr.stroke]="node.colorHex"
-                      stroke-width="3"
-                    />
-
-                    <!-- Semantic Glyph -->
-                    <text
-                      text-anchor="middle"
-                      dominant-baseline="central"
-                      class="minimap-glyph"
-                      [attr.fill]="node.colorHex"
-                    >
-                      {{ node.glyph }}
-                    </text>
-                  </g>
-                }
-              </svg>
-
-              <!-- Minimap Sensor Readout -->
-              @if (hoveredMapNode(); as hov) {
-                <div class="minimap-hover-pill">
-                  {{ hov.visited ? hov.room.title : '[?] Unexplored' }}
-                </div>
-              }
-            </div>
-          }
-        </aside>
-
-        <!-- FIRST-PERSON PERSPECTIVE DUNGEON CRAWLER VIEWPORT -->
-        @if (stageLensMode() === 'FIRST_PERSON' || stageLensMode() === 'SPLIT') {
-          <app-first-person-stage></app-first-person-stage>
-        }
-
-        <!-- 1A. ROOM STAGE HEADER -->
-        <div class="stage-room-header" [class.cards-hidden]="stageLensMode() === 'FIRST_PERSON'">
-          <div class="stage-title-block">
-            <span
-              class="stage-legend-badge"
-              [style.borderColor]="currentRoomLegend().colorHex"
-              [style.color]="currentRoomLegend().colorHex"
-              [title]="currentRoomLegend().tooltipDescription"
-            >
-              {{ currentRoomLegend().glyph }} {{ currentRoomLegend().label }}
-            </span>
-            <h2 class="stage-room-title" data-testid="current-room-title">
-              {{ engine.currentRoom().title }}
-            </h2>
-            <span
-              class="stage-mutator-pill"
-              [title]="
-                'Atmosphere Effect: ' +
-                engine.currentRoom().atmosphereEffect +
-                ' (' +
-                engine.currentRoom().elementalMutator +
-                ' skills gain +15% damage)'
-              "
-            >
-              ⚡ {{ engine.currentRoom().elementalMutator }} Mutator
-            </span>
-          </div>
-
-          <div class="stage-header-actions">
-            <button
-              type="button"
-              class="mini-action-btn"
-              (click)="
-                engine.dispatchCommandIntent({
-                  type: 'INSPECT',
-                  rawInput: 'inspect',
-                  source: 'HUD',
-                })
-              "
-              title="Scan the current room for hidden doors, traps, and lore (Uses PER stat)"
-              data-testid="inspect-room-btn"
-            >
-              🔍 Scan Room (PER {{ engine.effectiveAttributes().PER }})
-            </button>
-            @if (engine.perspective() === 'ARCHITECT') {
-              <button
-                type="button"
-                class="mini-action-btn accent"
-                (click)="openInlineRoomEditor()"
-                title="Edit this room's title, description, or legend category inline"
-                data-testid="edit-room-inline-btn"
-              >
-                ✏️ Edit Room
-              </button>
-            }
-          </div>
-        </div>
-
-        <!-- INLINE ROOM EDITOR (WHEN CLICKING `[✏️ Edit Room]` IN ARCHITECT MODE) -->
-        @if (inlineEditingRoom()) {
-          <div class="inline-room-editor-card" data-testid="inline-room-editor">
-            <div class="arch-row">
-              <input
-                type="text"
-                aria-label="Edit Room Title"
-                [ngModel]="editRoomTitle()"
-                (ngModelChange)="editRoomTitle.set($event)"
-                placeholder="Room Title"
-                data-testid="arch-room-title-input"
-              />
-              <select
-                aria-label="Edit Room Legend Type"
-                [ngModel]="editRoomLegend()"
-                (ngModelChange)="editRoomLegend.set($event)"
-              >
-                <option value="corridor">Normal / Transit Hall</option>
-                <option value="elite-boss">Elite/Boss Chamber</option>
-                <option value="treasure-vault">Treasure Vault</option>
-                <option value="puzzle-mechanism">Puzzle/Mechanism</option>
-                <option value="safe-campfire">Safe Campfire</option>
-                <option value="lore-terminal">Lore Terminal</option>
-                <option value="hazard-trap">Hazard/Trap</option>
-                <option value="anchor-portal">Anchor Portal</option>
-              </select>
-              <button
-                type="button"
-                class="mini-action-btn accent"
-                (click)="saveArchitectRoomChanges()"
-                data-testid="arch-save-room-btn"
-              >
-                💾 Save Room
-              </button>
-              <button type="button" class="mini-action-btn" (click)="inlineEditingRoom.set(false)">
-                Cancel
-              </button>
-            </div>
-            <textarea
-              rows="2"
-              aria-label="Edit Room Description"
-              [ngModel]="editRoomDesc()"
-              (ngModelChange)="editRoomDesc.set($event)"
-              data-testid="arch-room-desc-input"
-            ></textarea>
-          </div>
-        }
-
-        <!-- 1B. ROOM NARRATIVE CARD -->
-        <div class="stage-narrative-card" data-testid="stage-narrative-card">
-          <p class="room-prose">{{ engine.currentRoom().description }}</p>
-          <div class="sensory-hook-line">
-            <span>🌫 {{ engine.currentRoom().atmosphereEffect }}</span>
-          </div>
-        </div>
-
-        <!-- INSPECTOR LENS POPUP CARD (WHEN INSPECTING AN ENTITY OR ROOM) -->
-        @if (engine.inspectedEntity(); as lens) {
-          <div class="inspector-lens-card" data-testid="inspector-lens-card">
-            <div class="lens-header">
-              <strong>🔎 Inspector Lens: {{ lens.title }} ({{ lens.subtitle }})</strong>
-              <button type="button" class="lens-close" (click)="engine.inspectedEntity.set(null)">
-                ✕
-              </button>
-            </div>
-            <ul class="lens-details">
-              @for (line of lens.details; track line) {
-                <li>{{ line }}</li>
-              }
-            </ul>
-          </div>
-        }
-
-        <!-- 1C. INTERACTIVE ENTITY CARDS GRID (MONSTERS, LOOT, PROPS & MECHANISMS) -->
-        <div class="stage-entities-grid" data-testid="stage-entities-grid">
-          <!-- MONSTER CARDS -->
-          @for (mob of engine.livingRoomMonsters(); track mob.id) {
-            <div
-              class="entity-card monster-entity-card"
-              [class.targeted]="engine.selectedTargetId() === mob.id"
-              [attr.data-testid]="'stage-monster-card-' + mob.id"
-            >
-              <div class="entity-card-top">
-                <div>
-                  <span class="entity-badge hostile">
-                    {{ mob.isBoss ? '☠ BOSS' : '⚔ Lv.' + mob.level }}
+                <div class="minimap-header">
+                  <span class="minimap-title" [title]="engine.currentRoom().title">
+                    🧭 {{ engine.activeGateAddress().biome }}
                   </span>
-                  <strong class="entity-name">{{ mob.name }}</strong>
-                </div>
-                <span
-                  class="elem-pill"
-                  [title]="'Elemental Affinity: ' + mob.element + ' | Weakness: ' + mob.weakness"
-                >
-                  {{ mob.element }}
-                </span>
-              </div>
-
-              <div class="entity-bars">
-                <div class="bar-row">
-                  <span>HP {{ mob.hp }}/{{ mob.maxHp }}</span>
-                  <div class="mini-bar hp">
-                    <div [style.width.%]="(mob.hp / mob.maxHp) * 100"></div>
+                  <div class="minimap-actions">
+                    <button
+                      type="button"
+                      class="minimap-btn"
+                      (click)="setMobileLayoutMode('MAP')"
+                      title="Expand Full Observatory Graph (M)"
+                      data-testid="expand-observatory-btn"
+                    >
+                      ⤢ Expand
+                    </button>
+                    <button
+                      type="button"
+                      class="minimap-btn icon-only"
+                      (click)="isMinimapCollapsed.set(!isMinimapCollapsed())"
+                      [title]="isMinimapCollapsed() ? 'Show Radar' : 'Minimize Radar'"
+                      data-testid="toggle-minimap-btn"
+                    >
+                      {{ isMinimapCollapsed() ? '+' : '—' }}
+                    </button>
                   </div>
                 </div>
-                <div class="bar-row">
-                  <span>ATB {{ mob.atbGauge | number: '1.0-0' }}%</span>
-                  <div class="mini-bar atb">
-                    <div [style.width.%]="mob.atbGauge"></div>
-                  </div>
-                </div>
-              </div>
 
-              @if (mob.statuses.length > 0) {
-                <div class="entity-status-row">
-                  @for (st of mob.statuses; track st.tag) {
-                    <span class="status-tag" [title]="'Active Status Effect: ' + st.tag">
-                      {{ st.tag }} x{{ st.stacks }}
-                    </span>
-                  }
-                </div>
-              }
+                @if (!isMinimapCollapsed()) {
+                  <div class="minimap-body">
+                    <svg
+                      class="minimap-svg"
+                      viewBox="0 0 940 560"
+                      role="img"
+                      aria-label="Minimap Radar Graph"
+                      data-testid="minimap-svg-map"
+                    >
+                      <defs>
+                        <radialGradient id="minimapActiveGlow" cx="50%" cy="50%" r="50%">
+                          <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.6" />
+                          <stop offset="100%" stop-color="#38bdf8" stop-opacity="0" />
+                        </radialGradient>
+                      </defs>
 
-              <div class="entity-actions-row">
-                <button
-                  type="button"
-                  class="entity-btn danger"
-                  (click)="onStageAttackMonster(mob)"
-                  [attr.data-testid]="'attack-mob-btn-' + mob.id"
-                >
-                  ⚔ Attack
-                </button>
-                <div class="skill-dropdown-wrap">
-                  <button
-                    type="button"
-                    class="entity-btn accent"
-                    (click)="
-                      activeSkillMenuMonsterId.set(
-                        activeSkillMenuMonsterId() === mob.id ? null : mob.id
-                      )
-                    "
-                    [attr.data-testid]="'skills-menu-btn-' + mob.id"
-                  >
-                    ⚡ Skills ▾
-                  </button>
-                  @if (activeSkillMenuMonsterId() === mob.id) {
-                    <div class="skill-popover-menu" data-testid="monster-skill-popover">
-                      @for (sk of engine.character().activeSkills; track sk.id) {
-                        <button
-                          type="button"
-                          class="skill-popover-item"
-                          [disabled]="sk.currentCooldownMs > 0"
-                          (click)="onStageCastSkillOnMonster(sk, mob)"
-                        >
-                          <strong>{{ sk.name }}</strong>
-                          <span>{{ sk.element }} • {{ sk.staminaCost }} STA</span>
-                        </button>
+                      <!-- Minimap Topological Edges -->
+                      @for (edge of cartographyEdges(); track edge.id) {
+                        <line
+                          [attr.x1]="edge.x1"
+                          [attr.y1]="edge.y1"
+                          [attr.x2]="edge.x2"
+                          [attr.y2]="edge.y2"
+                          class="minimap-edge"
+                          [class.secret-edge]="edge.isSecret"
+                          [class.locked-edge]="edge.isLocked"
+                        />
                       }
-                    </div>
-                  }
-                </div>
-                <button
-                  type="button"
-                  class="entity-btn"
-                  (click)="onStageInspectMonster(mob)"
-                  [attr.data-testid]="'inspect-mob-btn-' + mob.id"
-                >
-                  🔍 Inspect
-                </button>
-              </div>
+
+                      <!-- Minimap Topological Room Nodes (Click-to-Move) -->
+                      @for (node of visibleCartographyNodes(); track node.room.id) {
+                        <g
+                          class="minimap-node-group"
+                          [class.current-node]="node.room.id === engine.character().currentRoomId"
+                          [attr.transform]="'translate(' + node.room.x + ',' + node.room.y + ')'"
+                          (click)="onNodeClick(node.room)"
+                          (mouseenter)="hoveredMapNode.set(node)"
+                          (mouseleave)="hoveredMapNode.set(null)"
+                          [attr.data-testid]="'minimap-node-' + node.room.id"
+                        >
+                          <title>
+                            {{ node.visited ? node.room.title : '[?] ' + node.room.rumorSignal }}
+                          </title>
+
+                          @if (node.room.id === engine.character().currentRoomId) {
+                            <circle
+                              r="46"
+                              fill="url(#minimapActiveGlow)"
+                              class="minimap-active-glow"
+                            />
+                            <!-- Player Facing Arrow in Mini-Map -->
+                            <path
+                              d="M 0,-42 L 7,-28 L -7,-28 Z"
+                              fill="#38bdf8"
+                              [attr.transform]="
+                                'rotate(' + getFacingRotationAngle(engine.playerFacing()) + ')'
+                              "
+                              class="minimap-facing-arrow"
+                              data-testid="minimap-facing-arrow"
+                            />
+                          }
+
+                          <!-- Overgrowth Ring -->
+                          @if (node.room.isOvergrowth) {
+                            <circle
+                              r="36"
+                              fill="none"
+                              stroke="#d946ef"
+                              stroke-width="3"
+                              stroke-dasharray="5 3"
+                            />
+                          }
+
+                          <!-- Node Circle -->
+                          <circle
+                            r="28"
+                            [attr.fill]="
+                              node.room.id === engine.character().currentRoomId
+                                ? '#0369a1'
+                                : '#0f172a'
+                            "
+                            [attr.stroke]="node.colorHex"
+                            stroke-width="3"
+                          />
+
+                          <!-- Semantic Glyph -->
+                          <text
+                            text-anchor="middle"
+                            dominant-baseline="central"
+                            class="minimap-glyph"
+                            [attr.fill]="node.colorHex"
+                          >
+                            {{ node.glyph }}
+                          </text>
+                        </g>
+                      }
+                    </svg>
+
+                    <!-- Minimap Sensor Readout -->
+                    @if (hoveredMapNode(); as hov) {
+                      <div class="minimap-hover-pill">
+                        {{ hov.visited ? hov.room.title : '[?] Unexplored' }}
+                      </div>
+                    }
+                  </div>
+                }
+              </aside>
+
+              <app-first-person-stage></app-first-person-stage>
             </div>
           }
 
-          <!-- GROUND LOOT / ITEM CARDS -->
-          @for (item of engine.currentRoom().items; track item.id) {
-            <div
-              class="entity-card loot-entity-card"
-              [attr.data-rarity]="item.rarity"
-              [attr.data-testid]="'stage-item-card-' + item.id"
-            >
-              <div class="entity-card-top">
-                <div>
-                  <span class="entity-badge loot">{{ item.rarity }} {{ item.slot }}</span>
-                  <strong class="entity-name">❖ {{ item.name }}</strong>
-                </div>
-                <span class="prov-badge" [class.verified]="item.provenance === 'Verified Drop'">
-                  {{ item.provenance }}
+          <!-- DESCRIPTION & TACTICAL CARDS COLUMN (SIDE DECK) -->
+          <div
+            class="stage-cards-deck"
+            [class.only-cards]="stageLensMode() === 'CARD_STAGE'"
+            data-testid="stage-cards-deck"
+          >
+            <!-- 1A. ROOM STAGE HEADER -->
+            <div class="stage-room-header">
+              <div class="stage-title-block">
+                <span
+                  class="stage-legend-badge"
+                  [style.borderColor]="currentRoomLegend().colorHex"
+                  [style.color]="currentRoomLegend().colorHex"
+                  [title]="currentRoomLegend().tooltipDescription"
+                >
+                  {{ currentRoomLegend().glyph }} {{ currentRoomLegend().label }}
+                </span>
+                <h2 class="stage-room-title" data-testid="current-room-title">
+                  {{ engine.currentRoom().title }}
+                </h2>
+                <span
+                  class="stage-mutator-pill"
+                  [title]="
+                    'Atmosphere Effect: ' +
+                    engine.currentRoom().atmosphereEffect +
+                    ' (' +
+                    engine.currentRoom().elementalMutator +
+                    ' skills gain +15% damage)'
+                  "
+                >
+                  ⚡ {{ engine.currentRoom().elementalMutator }} Mutator
                 </span>
               </div>
-              <p class="entity-subtext">
-                Stat Budget: {{ item.totalStatBudget }} • {{ computeStatComparisonTooltip(item) }}
-              </p>
-              <div class="entity-actions-row">
-                <button
-                  type="button"
-                  class="entity-btn accent"
-                  (click)="onStageTakeItem(item)"
-                  [attr.data-testid]="'take-item-btn-' + item.id"
-                >
-                  ✋ Take
-                </button>
-                <button
-                  type="button"
-                  class="entity-btn success"
-                  (click)="onStageTakeAndEquipItem(item)"
-                  [attr.data-testid]="'take-equip-item-btn-' + item.id"
-                >
-                  🛡 Take & Equip
-                </button>
-                <button
-                  type="button"
-                  class="entity-btn"
-                  (click)="onStageInspectItem(item)"
-                  [attr.data-testid]="'inspect-item-btn-' + item.id"
-                >
-                  🔍 Inspect
-                </button>
-              </div>
-            </div>
-          }
 
-          <!-- INTERACTABLE ROOM PROPS (CAMPFIRE / PUZZLE MECHANISMS / LORE TERMINALS) -->
-          @if (engine.currentRoom().legendType === 'safe-campfire') {
-            <div class="entity-card prop-entity-card" data-testid="stage-campfire-card">
-              <div class="entity-card-top">
-                <span class="entity-badge sanctuary">♨ Sanctuary</span>
-                <strong class="entity-name">Azure Sanctuary Campfire</strong>
-              </div>
-              <p class="entity-subtext">
-                Restores 100% HP & Stamina and purges negative status effects.
-              </p>
-              <div class="entity-actions-row">
+              <div class="stage-header-actions">
                 <button
                   type="button"
-                  class="entity-btn success"
-                  (click)="
-                    engine.dispatchCommandIntent({
-                      type: 'REST_CAMPFIRE',
-                      rawInput: 'rest',
-                      source: 'HUD',
-                    })
-                  "
-                  data-testid="rest-campfire-btn"
-                >
-                  ♨ Rest at Campfire
-                </button>
-              </div>
-            </div>
-          }
-
-          @if (
-            engine.currentRoom().triggers.length > 0 ||
-            engine.currentRoom().legendType === 'puzzle-mechanism' ||
-            engine.currentRoom().legendType === 'lore-terminal'
-          ) {
-            <div class="entity-card prop-entity-card" data-testid="stage-mechanism-card">
-              <div class="entity-card-top">
-                <span class="entity-badge mechanism">⚙ Mechanism</span>
-                <strong class="entity-name"
-                  >{{ engine.activeGateAddress().theme }} Contraption</strong
-                >
-              </div>
-              <p class="entity-subtext">
-                Interactive room mechanism governed by Perception and declarative triggers.
-              </p>
-              <div class="entity-actions-row">
-                <button
-                  type="button"
-                  class="entity-btn accent"
-                  (click)="engine.useOrPullRoomMechanisms()"
-                  data-testid="use-mechanism-btn"
-                >
-                  ⚙ Use / Pull
-                </button>
-                <button
-                  type="button"
-                  class="entity-btn"
+                  class="mini-action-btn"
                   (click)="
                     engine.dispatchCommandIntent({
                       type: 'INSPECT',
@@ -1277,173 +990,491 @@
                       source: 'HUD',
                     })
                   "
+                  title="Scan the current room for hidden doors, traps, and lore (Uses PER stat)"
+                  data-testid="inspect-room-btn"
                 >
-                  🔍 Inspect
+                  🔍 Scan Room (PER {{ engine.effectiveAttributes().PER }})
                 </button>
+                @if (engine.perspective() === 'ARCHITECT') {
+                  <button
+                    type="button"
+                    class="mini-action-btn accent"
+                    (click)="openInlineRoomEditor()"
+                    title="Edit this room's title, description, or legend category inline"
+                    data-testid="edit-room-inline-btn"
+                  >
+                    ✏️ Edit Room
+                  </button>
+                }
               </div>
             </div>
-          }
-        </div>
 
-        <!-- 1D. DIRECT EXIT & PORTAL BAR (SINGLE-CLICK TRAVEL + ARCHITECT `[+ Dig Room]` GHOST BUTTONS) -->
-        <div
-          class="stage-exits-bar"
-          role="navigation"
-          aria-label="Direct Room Exits and Chaos Gate Portals"
-          data-testid="stage-exits-bar"
-        >
-          @for (ex of currentRoomStageExits(); track ex.direction) {
-            <button
-              type="button"
-              class="exit-pill-btn"
-              [class.unvisited]="!ex.visited"
-              [class.locked]="ex.isLocked"
-              (click)="onDirectionClick(ex.direction)"
-              [title]="ex.visited ? 'Travel to ' + ex.targetTitle : 'Rumor: ' + ex.rumorSignal"
-              [attr.data-testid]="'stage-exit-' + ex.direction"
-            >
-              <span class="exit-arrow">{{ ex.arrow }}</span>
-              <span class="exit-text">{{ ex.dirLabel }}: {{ ex.targetTitle }}</span>
-            </button>
-          }
-
-          <!-- Chaos Gate Portals in Anchor Room -->
-          @if (engine.currentRoom().legendType === 'anchor-portal') {
-            @for (peer of transport.activeVisitorsList(); track peer.peerId) {
-              <button
-                type="button"
-                class="exit-pill-btn portal"
-                (click)="
-                  engine.dispatchCommandIntent({
-                    type: 'ENTER_PORTAL',
-                    rawInput: 'portal ' + peer.gateAddress,
-                    source: 'HUD',
-                    targetId: peer.gateAddress,
-                  })
-                "
-                [title]="'Traverse P2P Chaos Gate Portal into ' + peer.playerName + 's realm'"
-                [attr.data-testid]="'stage-portal-' + peer.peerId"
-              >
-                🌀 Chaos Gate: {{ peer.gateAddress }} ({{ peer.playerName }})
-              </button>
+            <!-- INLINE ROOM EDITOR (WHEN CLICKING `[✏️ Edit Room]` IN ARCHITECT MODE) -->
+            @if (inlineEditingRoom()) {
+              <div class="inline-room-editor-card" data-testid="inline-room-editor">
+                <div class="arch-row">
+                  <input
+                    type="text"
+                    aria-label="Edit Room Title"
+                    [ngModel]="editRoomTitle()"
+                    (ngModelChange)="editRoomTitle.set($event)"
+                    placeholder="Room Title"
+                    data-testid="arch-room-title-input"
+                  />
+                  <select
+                    aria-label="Edit Room Legend Type"
+                    [ngModel]="editRoomLegend()"
+                    (ngModelChange)="editRoomLegend.set($event)"
+                  >
+                    <option value="corridor">Normal / Transit Hall</option>
+                    <option value="elite-boss">Elite/Boss Chamber</option>
+                    <option value="treasure-vault">Treasure Vault</option>
+                    <option value="puzzle-mechanism">Puzzle/Mechanism</option>
+                    <option value="safe-campfire">Safe Campfire</option>
+                    <option value="lore-terminal">Lore Terminal</option>
+                    <option value="hazard-trap">Hazard/Trap</option>
+                    <option value="anchor-portal">Anchor Portal</option>
+                  </select>
+                  <button
+                    type="button"
+                    class="mini-action-btn accent"
+                    (click)="saveArchitectRoomChanges()"
+                    data-testid="arch-save-room-btn"
+                  >
+                    💾 Save Room
+                  </button>
+                  <button
+                    type="button"
+                    class="mini-action-btn"
+                    (click)="inlineEditingRoom.set(false)"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                <textarea
+                  rows="2"
+                  aria-label="Edit Room Description"
+                  [ngModel]="editRoomDesc()"
+                  (ngModelChange)="editRoomDesc.set($event)"
+                  data-testid="arch-room-desc-input"
+                ></textarea>
+              </div>
             }
-          }
 
-          <!-- Zero-Syntax Architect `[+ Dig Room]` Ghost Buttons on Room Stage -->
-          @for (ghost of architectGhostDigDirections(); track ghost.direction) {
-            <button
-              type="button"
-              class="exit-pill-btn ghost-dig"
-              (click)="openDigPopover(ghost.direction)"
-              [attr.data-testid]="'stage-ghost-dig-' + ghost.direction"
-            >
-              ➕ [+ Dig Room {{ ghost.direction }}]
-            </button>
-          }
-        </div>
-
-        <!-- ZERO-SYNTAX ARCHITECT `[+ DIG ROOM]` CREATION POPOVER -->
-        @if (digPopoverDirection(); as digDir) {
-          <div class="architect-dig-popover" data-testid="architect-dig-popover">
-            <div class="popover-head">
-              <strong>✨ Excavate New Room ({{ digDir }} Exit)</strong>
-              <div class="popover-head-btns">
-                <button
-                  type="button"
-                  class="mini-action-btn accent"
-                  (click)="rollProceduralRoomDraft()"
-                  data-testid="roll-procedural-room-btn"
-                >
-                  🎲 Roll Procedural Room
-                </button>
-                <button
-                  type="button"
-                  class="mini-action-btn"
-                  (click)="digPopoverDirection.set(null)"
-                >
-                  ✕
-                </button>
+            <!-- 1B. ROOM NARRATIVE CARD -->
+            <div class="stage-narrative-card" data-testid="stage-narrative-card">
+              <p class="room-prose">{{ engine.currentRoom().description }}</p>
+              <div class="sensory-hook-line">
+                <span>🌫 {{ engine.currentRoom().atmosphereEffect }}</span>
               </div>
             </div>
 
-            <div class="popover-grid">
-              <label>
-                <span>Room Title</span>
-                <input
-                  type="text"
-                  [ngModel]="digTitle()"
-                  (ngModelChange)="digTitle.set($event)"
-                  data-testid="arch-dig-title-input"
-                />
-              </label>
+            <!-- INSPECTOR LENS POPUP CARD (WHEN INSPECTING AN ENTITY OR ROOM) -->
+            @if (engine.inspectedEntity(); as lens) {
+              <div class="inspector-lens-card" data-testid="inspector-lens-card">
+                <div class="lens-header">
+                  <strong>🔎 Inspector Lens: {{ lens.title }} ({{ lens.subtitle }})</strong>
+                  <button
+                    type="button"
+                    class="lens-close"
+                    (click)="engine.inspectedEntity.set(null)"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <ul class="lens-details">
+                  @for (line of lens.details; track line) {
+                    <li>{{ line }}</li>
+                  }
+                </ul>
+              </div>
+            }
 
-              <label>
-                <span>Legend Category</span>
-                <select
-                  [ngModel]="digLegendType()"
-                  (ngModelChange)="digLegendType.set($event)"
-                  data-testid="arch-dig-legend-select"
+            <!-- 1C. INTERACTIVE ENTITY CARDS GRID (MONSTERS, LOOT, PROPS & MECHANISMS) -->
+            <div class="stage-entities-grid" data-testid="stage-entities-grid">
+              <!-- MONSTER CARDS -->
+              @for (mob of engine.livingRoomMonsters(); track mob.id) {
+                <div
+                  class="entity-card monster-entity-card"
+                  [class.targeted]="engine.selectedTargetId() === mob.id"
+                  [attr.data-testid]="'stage-monster-card-' + mob.id"
                 >
-                  <option value="corridor">Normal / Transit Hall</option>
-                  <option value="elite-boss">Elite/Boss Chamber</option>
-                  <option value="treasure-vault">Treasure Vault</option>
-                  <option value="puzzle-mechanism">Puzzle/Mechanism</option>
-                  <option value="safe-campfire">Safe Campfire</option>
-                </select>
-              </label>
+                  <div class="entity-card-top">
+                    <div>
+                      <span class="entity-badge hostile">
+                        {{ mob.isBoss ? '☠ BOSS' : '⚔ Lv.' + mob.level }}
+                      </span>
+                      <strong class="entity-name">{{ mob.name }}</strong>
+                    </div>
+                    <span
+                      class="elem-pill"
+                      [title]="
+                        'Elemental Affinity: ' + mob.element + ' | Weakness: ' + mob.weakness
+                      "
+                    >
+                      {{ mob.element }}
+                    </span>
+                  </div>
 
-              <label class="full-col">
-                <span>Room Description</span>
-                <input
-                  type="text"
-                  [ngModel]="digDescription()"
-                  (ngModelChange)="digDescription.set($event)"
-                />
-              </label>
+                  <div class="entity-bars">
+                    <div class="bar-row">
+                      <span>HP {{ mob.hp }}/{{ mob.maxHp }}</span>
+                      <div class="mini-bar hp">
+                        <div [style.width.%]="(mob.hp / mob.maxHp) * 100"></div>
+                      </div>
+                    </div>
+                    <div class="bar-row">
+                      <span>ATB {{ mob.atbGauge | number: '1.0-0' }}%</span>
+                      <div class="mini-bar atb">
+                        <div [style.width.%]="mob.atbGauge"></div>
+                      </div>
+                    </div>
+                  </div>
 
-              <label>
-                <span>Add Monster</span>
-                <select [ngModel]="digSpawnMonster()" (ngModelChange)="digSpawnMonster.set($event)">
-                  <option value="NONE">None</option>
-                  <option value="Chrono-Automaton">Chrono-Automaton</option>
-                  <option value="Mycelial Hulk">Mycelial Hulk</option>
-                  <option value="Void Weaver">Void Weaver</option>
-                  <option value="Runic Golem">Runic Golem</option>
-                </select>
-              </label>
+                  @if (mob.statuses.length > 0) {
+                    <div class="entity-status-row">
+                      @for (st of mob.statuses; track st.tag) {
+                        <span class="status-tag" [title]="'Active Status Effect: ' + st.tag">
+                          {{ st.tag }} x{{ st.stacks }}
+                        </span>
+                      }
+                    </div>
+                  }
 
-              <label>
-                <span>Add Loot / Relic</span>
-                <select [ngModel]="digSpawnLoot()" (ngModelChange)="digSpawnLoot.set($event)">
-                  <option value="NONE">None</option>
-                  <option value="Astral Resonance Blade">Astral Resonance Blade</option>
-                  <option value="Clockwork Aegis Plate">Clockwork Aegis Plate</option>
-                  <option value="Rusted Vault Key">Rusted Vault Key</option>
-                </select>
-              </label>
+                  <div class="entity-actions-row">
+                    <button
+                      type="button"
+                      class="entity-btn danger"
+                      (click)="onStageAttackMonster(mob)"
+                      [attr.data-testid]="'attack-mob-btn-' + mob.id"
+                    >
+                      ⚔ Attack
+                    </button>
+                    <div class="skill-dropdown-wrap">
+                      <button
+                        type="button"
+                        class="entity-btn accent"
+                        (click)="
+                          activeSkillMenuMonsterId.set(
+                            activeSkillMenuMonsterId() === mob.id ? null : mob.id
+                          )
+                        "
+                        [attr.data-testid]="'skills-menu-btn-' + mob.id"
+                      >
+                        ⚡ Skills ▾
+                      </button>
+                      @if (activeSkillMenuMonsterId() === mob.id) {
+                        <div class="skill-popover-menu" data-testid="monster-skill-popover">
+                          @for (sk of engine.character().activeSkills; track sk.id) {
+                            <button
+                              type="button"
+                              class="skill-popover-item"
+                              [disabled]="sk.currentCooldownMs > 0"
+                              (click)="onStageCastSkillOnMonster(sk, mob)"
+                            >
+                              <strong>{{ sk.name }}</strong>
+                              <span>{{ sk.element }} • {{ sk.staminaCost }} STA</span>
+                            </button>
+                          }
+                        </div>
+                      }
+                    </div>
+                    <button
+                      type="button"
+                      class="entity-btn"
+                      (click)="onStageInspectMonster(mob)"
+                      [attr.data-testid]="'inspect-mob-btn-' + mob.id"
+                    >
+                      🔍 Inspect
+                    </button>
+                  </div>
+                </div>
+              }
 
-              <label>
-                <span>Add Hazard / Trap</span>
-                <select [ngModel]="digSpawnTrap()" (ngModelChange)="digSpawnTrap.set($event)">
-                  <option value="NONE">None</option>
-                  <option value="Arc-Flash Floorplate">Arc-Flash Floorplate</option>
-                  <option value="Pendulum Scythe Trap">Pendulum Scythe Trap</option>
-                </select>
-              </label>
+              <!-- GROUND LOOT / ITEM CARDS -->
+              @for (item of engine.currentRoom().items; track item.id) {
+                <div
+                  class="entity-card loot-entity-card"
+                  [attr.data-rarity]="item.rarity"
+                  [attr.data-testid]="'stage-item-card-' + item.id"
+                >
+                  <div class="entity-card-top">
+                    <div>
+                      <span class="entity-badge loot">{{ item.rarity }} {{ item.slot }}</span>
+                      <strong class="entity-name">❖ {{ item.name }}</strong>
+                    </div>
+                    <span class="prov-badge" [class.verified]="item.provenance === 'Verified Drop'">
+                      {{ item.provenance }}
+                    </span>
+                  </div>
+                  <p class="entity-subtext">
+                    Stat Budget: {{ item.totalStatBudget }} •
+                    {{ computeStatComparisonTooltip(item) }}
+                  </p>
+                  <div class="entity-actions-row">
+                    <button
+                      type="button"
+                      class="entity-btn accent"
+                      (click)="onStageTakeItem(item)"
+                      [attr.data-testid]="'take-item-btn-' + item.id"
+                    >
+                      ✋ Take
+                    </button>
+                    <button
+                      type="button"
+                      class="entity-btn success"
+                      (click)="onStageTakeAndEquipItem(item)"
+                      [attr.data-testid]="'take-equip-item-btn-' + item.id"
+                    >
+                      🛡 Take & Equip
+                    </button>
+                    <button
+                      type="button"
+                      class="entity-btn"
+                      (click)="onStageInspectItem(item)"
+                      [attr.data-testid]="'inspect-item-btn-' + item.id"
+                    >
+                      🔍 Inspect
+                    </button>
+                  </div>
+                </div>
+              }
+
+              <!-- INTERACTABLE ROOM PROPS (CAMPFIRE / PUZZLE MECHANISMS / LORE TERMINALS) -->
+              @if (engine.currentRoom().legendType === 'safe-campfire') {
+                <div class="entity-card prop-entity-card" data-testid="stage-campfire-card">
+                  <div class="entity-card-top">
+                    <span class="entity-badge sanctuary">♨ Sanctuary</span>
+                    <strong class="entity-name">Azure Sanctuary Campfire</strong>
+                  </div>
+                  <p class="entity-subtext">
+                    Restores 100% HP & Stamina and purges negative status effects.
+                  </p>
+                  <div class="entity-actions-row">
+                    <button
+                      type="button"
+                      class="entity-btn success"
+                      (click)="
+                        engine.dispatchCommandIntent({
+                          type: 'REST_CAMPFIRE',
+                          rawInput: 'rest',
+                          source: 'HUD',
+                        })
+                      "
+                      data-testid="rest-campfire-btn"
+                    >
+                      ♨ Rest at Campfire
+                    </button>
+                  </div>
+                </div>
+              }
+
+              @if (
+                engine.currentRoom().triggers.length > 0 ||
+                engine.currentRoom().legendType === 'puzzle-mechanism' ||
+                engine.currentRoom().legendType === 'lore-terminal'
+              ) {
+                <div class="entity-card prop-entity-card" data-testid="stage-mechanism-card">
+                  <div class="entity-card-top">
+                    <span class="entity-badge mechanism">⚙ Mechanism</span>
+                    <strong class="entity-name"
+                      >{{ engine.activeGateAddress().theme }} Contraption</strong
+                    >
+                  </div>
+                  <p class="entity-subtext">
+                    Interactive room mechanism governed by Perception and declarative triggers.
+                  </p>
+                  <div class="entity-actions-row">
+                    <button
+                      type="button"
+                      class="entity-btn accent"
+                      (click)="engine.useOrPullRoomMechanisms()"
+                      data-testid="use-mechanism-btn"
+                    >
+                      ⚙ Use / Pull
+                    </button>
+                    <button
+                      type="button"
+                      class="entity-btn"
+                      (click)="
+                        engine.dispatchCommandIntent({
+                          type: 'INSPECT',
+                          rawInput: 'inspect',
+                          source: 'HUD',
+                        })
+                      "
+                    >
+                      🔍 Inspect
+                    </button>
+                  </div>
+                </div>
+              }
             </div>
 
-            <div class="popover-footer">
-              <button
-                type="button"
-                class="mini-action-btn accent"
-                (click)="confirmVisualDigRoom()"
-                data-testid="arch-dig-btn"
-              >
-                🔨 Create Room ({{ digDir }})
-              </button>
+            <!-- 1D. DIRECT EXIT & PORTAL BAR (SINGLE-CLICK TRAVEL + ARCHITECT `[+ Dig Room]` GHOST BUTTONS) -->
+            <div
+              class="stage-exits-bar"
+              role="navigation"
+              aria-label="Direct Room Exits and Chaos Gate Portals"
+              data-testid="stage-exits-bar"
+            >
+              @for (ex of currentRoomStageExits(); track ex.direction) {
+                <button
+                  type="button"
+                  class="exit-pill-btn"
+                  [class.unvisited]="!ex.visited"
+                  [class.locked]="ex.isLocked"
+                  (click)="onDirectionClick(ex.direction)"
+                  [title]="ex.visited ? 'Travel to ' + ex.targetTitle : 'Rumor: ' + ex.rumorSignal"
+                  [attr.data-testid]="'stage-exit-' + ex.direction"
+                >
+                  <span class="exit-arrow">{{ ex.arrow }}</span>
+                  <span class="exit-text">{{ ex.dirLabel }}: {{ ex.targetTitle }}</span>
+                </button>
+              }
+
+              <!-- Chaos Gate Portals in Anchor Room -->
+              @if (engine.currentRoom().legendType === 'anchor-portal') {
+                @for (peer of transport.activeVisitorsList(); track peer.peerId) {
+                  <button
+                    type="button"
+                    class="exit-pill-btn portal"
+                    (click)="
+                      engine.dispatchCommandIntent({
+                        type: 'ENTER_PORTAL',
+                        rawInput: 'portal ' + peer.gateAddress,
+                        source: 'HUD',
+                        targetId: peer.gateAddress,
+                      })
+                    "
+                    [title]="'Traverse P2P Chaos Gate Portal into ' + peer.playerName + 's realm'"
+                    [attr.data-testid]="'stage-portal-' + peer.peerId"
+                  >
+                    🌀 Chaos Gate: {{ peer.gateAddress }} ({{ peer.playerName }})
+                  </button>
+                }
+              }
+
+              <!-- Zero-Syntax Architect `[+ Dig Room]` Ghost Buttons on Room Stage -->
+              @for (ghost of architectGhostDigDirections(); track ghost.direction) {
+                <button
+                  type="button"
+                  class="exit-pill-btn ghost-dig"
+                  (click)="openDigPopover(ghost.direction)"
+                  [attr.data-testid]="'stage-ghost-dig-' + ghost.direction"
+                >
+                  ➕ [+ Dig Room {{ ghost.direction }}]
+                </button>
+              }
             </div>
+
+            <!-- ZERO-SYNTAX ARCHITECT `[+ DIG ROOM]` CREATION POPOVER -->
+            @if (digPopoverDirection(); as digDir) {
+              <div class="architect-dig-popover" data-testid="architect-dig-popover">
+                <div class="popover-head">
+                  <strong>✨ Excavate New Room ({{ digDir }} Exit)</strong>
+                  <div class="popover-head-btns">
+                    <button
+                      type="button"
+                      class="mini-action-btn accent"
+                      (click)="rollProceduralRoomDraft()"
+                      data-testid="roll-procedural-room-btn"
+                    >
+                      🎲 Roll Procedural Room
+                    </button>
+                    <button
+                      type="button"
+                      class="mini-action-btn"
+                      (click)="digPopoverDirection.set(null)"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+
+                <div class="popover-grid">
+                  <label>
+                    <span>Room Title</span>
+                    <input
+                      type="text"
+                      [ngModel]="digTitle()"
+                      (ngModelChange)="digTitle.set($event)"
+                      data-testid="arch-dig-title-input"
+                    />
+                  </label>
+
+                  <label>
+                    <span>Legend Category</span>
+                    <select
+                      [ngModel]="digLegendType()"
+                      (ngModelChange)="digLegendType.set($event)"
+                      data-testid="arch-dig-legend-select"
+                    >
+                      <option value="corridor">Normal / Transit Hall</option>
+                      <option value="elite-boss">Elite/Boss Chamber</option>
+                      <option value="treasure-vault">Treasure Vault</option>
+                      <option value="puzzle-mechanism">Puzzle/Mechanism</option>
+                      <option value="safe-campfire">Safe Campfire</option>
+                    </select>
+                  </label>
+
+                  <label class="full-col">
+                    <span>Room Description</span>
+                    <input
+                      type="text"
+                      [ngModel]="digDescription()"
+                      (ngModelChange)="digDescription.set($event)"
+                    />
+                  </label>
+
+                  <label>
+                    <span>Add Monster</span>
+                    <select
+                      [ngModel]="digSpawnMonster()"
+                      (ngModelChange)="digSpawnMonster.set($event)"
+                    >
+                      <option value="NONE">None</option>
+                      <option value="Chrono-Automaton">Chrono-Automaton</option>
+                      <option value="Mycelial Hulk">Mycelial Hulk</option>
+                      <option value="Void Weaver">Void Weaver</option>
+                      <option value="Runic Golem">Runic Golem</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Add Loot / Relic</span>
+                    <select [ngModel]="digSpawnLoot()" (ngModelChange)="digSpawnLoot.set($event)">
+                      <option value="NONE">None</option>
+                      <option value="Astral Resonance Blade">Astral Resonance Blade</option>
+                      <option value="Clockwork Aegis Plate">Clockwork Aegis Plate</option>
+                      <option value="Rusted Vault Key">Rusted Vault Key</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Add Hazard / Trap</span>
+                    <select [ngModel]="digSpawnTrap()" (ngModelChange)="digSpawnTrap.set($event)">
+                      <option value="NONE">None</option>
+                      <option value="Arc-Flash Floorplate">Arc-Flash Floorplate</option>
+                      <option value="Pendulum Scythe Trap">Pendulum Scythe Trap</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div class="popover-footer">
+                  <button
+                    type="button"
+                    class="mini-action-btn accent"
+                    (click)="confirmVisualDigRoom()"
+                    data-testid="arch-dig-btn"
+                  >
+                    🔨 Create Room ({{ digDir }})
+                  </button>
+                </div>
+              </div>
+            }
           </div>
-        }
+        </div>
       </div>
 
       <!-- 4 ACTIVE SKILL HOTKEYS + AUTO-ATTACK TOGGLE -->

@@ -1036,6 +1036,97 @@ textarea {
   position: relative;
 }
 
+/* Stage Deck Container: Mobile Stacked -> Desktop Side-by-Side */
+.stage-deck-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+}
+
+.stage-viewport-deck {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 240px;
+  background: #020617;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+
+  app-first-person-stage {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+
+  .dungeon-minimap {
+    position: absolute;
+    top: 3.6rem;
+    right: 0.6rem;
+    z-index: 30;
+  }
+}
+
+.stage-cards-deck {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-height: 0;
+
+  &.only-cards {
+    width: 100%;
+  }
+}
+
+@media (min-width: 900px) {
+  .persistent-room-stage {
+    overflow: hidden;
+  }
+
+  .stage-deck-container {
+    display: grid;
+    grid-template-columns: minmax(380px, 1.25fr) minmax(320px, 1fr);
+    gap: 0.75rem;
+    align-items: stretch;
+    height: 100%;
+    min-height: 0;
+
+    &[data-lens='CARD_STAGE'] {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .stage-viewport-deck {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .stage-cards-deck {
+    overflow-y: auto;
+    height: 100%;
+    max-height: 100%;
+    padding-right: 0.35rem;
+
+    &::-webkit-scrollbar {
+      width: 5px;
+    }
+    &::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.4);
+      border-radius: 99px;
+    }
+    &::-webkit-scrollbar-thumb {
+      background: rgba(56, 189, 248, 0.3);
+      border-radius: 99px;
+    }
+  }
+}
+
 .stage-room-header {
   display: flex;
   flex-wrap: wrap;
@@ -2750,8 +2841,9 @@ textarea {
 }
 
 @media (max-width: 600px) {
-  .dungeon-minimap {
-    top: 8.5rem;
+  .dungeon-minimap,
+  .stage-viewport-deck .dungeon-minimap {
+    top: 5.2rem;
     right: 0.4rem;
     width: 170px;
     height: 120px;
