@@ -1122,6 +1122,14 @@ export class MudEngineService implements OnDestroy {
       return { type: 'LOOK', rawInput: trimmed, source: 'TERMINAL' };
     }
 
+    if (verb === 'map' || verb === '@map' || verb === 'observatory') {
+      this.appendFeed(
+        'SYSTEM',
+        '🗺 [Observatory Graph] God’s-Eye topological cartography toggled. Press [M] or click [⤢ Expand / ✕ Return] to switch views.',
+      );
+      return { type: 'LOOK', rawInput: trimmed, source: 'TERMINAL' };
+    }
+
     this.appendFeed(
       'SYSTEM',
       `Unrecognized command "${verb}". Try: say <msg>, shout <msg>, who, look, n/s/e/w, cast sunder <target>, inspect, rest, @prune.`,

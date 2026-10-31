@@ -123,6 +123,8 @@
 .compass-nav-controls {
   display: flex;
   gap: 0.35rem;
+  position: relative;
+  z-index: 50;
 }
 
 .nav-btn {

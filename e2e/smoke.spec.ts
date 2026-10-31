@@ -26,17 +26,17 @@ test.describe('Linked Pocket Realms — Tactical HUD, Perspectives & Drawers E2E
     await page.getByTestId('confirm-awakening-btn').click();
     await expect(onboardingModal).toBeHidden();
 
-    // 2. Root Tactical HUD, Persistent Room Stage, 1st-Person Viewport & Overgrowth Meter
+    // 2. Root Tactical HUD, Persistent Room Stage, 1st-Person Viewport & Mini-Map Radar
     await expect(page.locator('#starter-title')).toHaveText('Linked Pocket Realms');
     await expect(page.getByTestId('active-gate-address')).toContainText(
       'Θ: Scorching Clockwork Catacombs',
     );
-    await expect(page.getByTestId('realm-svg-map')).toBeVisible();
     await expect(page.getByTestId('persistent-room-stage')).toBeVisible();
     await expect(page.getByTestId('first-person-stage')).toBeVisible();
+    await expect(page.getByTestId('dungeon-minimap')).toBeVisible();
     await expect(page.getByTestId('overgrowth-meter-pill')).toBeVisible();
 
-    // 3. Verify zero horizontal overflow & Mobile Layout Switcher on narrow viewports
+    // 3. Verify zero horizontal overflow & Viewport Layout Switcher
     const hasHorizontalOverflow = await page.evaluate(() => {
       return document.documentElement.scrollWidth > window.innerWidth;
     });
@@ -44,13 +44,14 @@ test.describe('Linked Pocket Realms — Tactical HUD, Perspectives & Drawers E2E
 
     const mobileSwitcher = page.getByTestId('mobile-view-switcher');
     if (await mobileSwitcher.isVisible()) {
-      await page.getByTestId('view-mode-stage').click();
-      await expect(page.getByTestId('persistent-room-stage')).toBeVisible();
       await page.getByTestId('view-mode-map').click();
       await expect(page.getByTestId('realm-svg-map')).toBeVisible();
       await page.getByTestId('view-mode-split').click();
       await expect(page.getByTestId('realm-svg-map')).toBeVisible();
       await expect(page.getByTestId('persistent-room-stage')).toBeVisible();
+      await page.getByTestId('view-mode-stage').click();
+      await expect(page.getByTestId('persistent-room-stage')).toBeVisible();
+      await expect(page.getByTestId('dungeon-minimap')).toBeVisible();
     }
 
     // 4. First-Person Viewport Heading Rotation & Tactile Point-and-Click Navigation

@@ -211,18 +211,25 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
       expect(compiled.querySelector('[data-testid="realm-svg-map"]')).toBeTruthy();
 
       const app = fixture.componentInstance;
-      expect(app.mobileLayoutMode()).toBe('SPLIT');
-      app.setMobileLayoutMode('STAGE');
-      fixture.detectChanges();
-      expect(compiled.querySelector('main.hud-main')?.getAttribute('data-mobile-view')).toBe(
-        'STAGE',
-      );
+      expect(app.mobileLayoutMode()).toBe('STAGE');
+      expect(compiled.querySelector('[data-testid="dungeon-minimap"]')).toBeTruthy();
 
-      // Switching perspective automatically restores SPLIT if in STAGE focus so docks are visible
+      // Switching perspective to ARCHITECT automatically summons the Observatory map and docks in SPLIT mode
       app.setPerspective('ARCHITECT');
       fixture.detectChanges();
       expect(app.mobileLayoutMode()).toBe('SPLIT');
       expect(compiled.querySelector('[data-testid="architect-dock"]')).toBeTruthy();
+
+      // Switching perspective to EXPLORER returns to STAGE
+      app.setPerspective('EXPLORER');
+      fixture.detectChanges();
+      expect(app.mobileLayoutMode()).toBe('STAGE');
+
+      app.setMobileLayoutMode('SPLIT');
+      fixture.detectChanges();
+      expect(compiled.querySelector('main.hud-main')?.getAttribute('data-mobile-view')).toBe(
+        'SPLIT',
+      );
 
       app.toggleDrawer('PAPERDOLL');
       fixture.detectChanges();
@@ -703,6 +710,83 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
       } finally {
         globalThis.fetch = originalFetch;
         transport.setBrokerUrl('');
+      }
+    });
+  });
+
+  describe('Feature Evolution: Observatory Map Summoning & Tactical Mini-Map Radar', () => {
+    it('should default to STAGE (Delve Focus) with active Mini-Map and allow collapsing', async () => {
+      const fixture = TestBed.createComponent(App);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const app = fixture.componentInstance;
+      const compiled = fixture.nativeElement as HTMLElement;
+
+      expect(app.mobileLayoutMode()).toBe('STAGE');
+      expect(app.isMinimapCollapsed()).toBe(false);
+      expect(compiled.querySelector('[data-testid="dungeon-minimap"]')).toBeTruthy();
+      expect(compiled.querySelector('[data-testid="minimap-svg-map"]')).toBeTruthy();
+
+      // Collapse minimap
+      app.isMinimapCollapsed.set(true);
+      fixture.detectChanges();
+      expect(compiled.querySelector('.dungeon-minimap')?.classList.contains('collapsed')).toBe(
+        true,
+      );
+      expect(compiled.querySelector('[data-testid="minimap-svg-map"]')).toBeNull();
+
+      // Expand minimap back
+      app.isMinimapCollapsed.set(false);
+      fixture.detectChanges();
+      expect(compiled.querySelector('[data-testid="minimap-svg-map"]')).toBeTruthy();
+    });
+
+    it('should toggle between STAGE and MAP via toggleObservatoryMap, keyboard M, and terminal command', async () => {
+      const fixture = TestBed.createComponent(App);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const app = fixture.componentInstance;
+
+      expect(app.mobileLayoutMode()).toBe('STAGE');
+
+      // Toggling summons MAP
+      app.toggleObservatoryMap();
+      expect(app.mobileLayoutMode()).toBe('MAP');
+
+      // Toggling again returns to STAGE
+      app.toggleObservatoryMap();
+      expect(app.mobileLayoutMode()).toBe('STAGE');
+
+      // Keyboard 'm' triggers toggle
+      app.handleGlobalKeydown(new KeyboardEvent('keydown', { key: 'm' }));
+      expect(app.mobileLayoutMode()).toBe('MAP');
+
+      // Escape in MAP returns to STAGE
+      app.handleGlobalKeydown(new KeyboardEvent('keydown', { key: 'Escape' }));
+      expect(app.mobileLayoutMode()).toBe('STAGE');
+
+      // Terminal command 'map' toggles
+      app.terminalCommandText.set('map');
+      app.submitTerminalCommand();
+      expect(app.mobileLayoutMode()).toBe('MAP');
+    });
+
+    it('should allow click-to-move navigation directly from Mini-Map nodes', async () => {
+      const fixture = TestBed.createComponent(App);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const app = fixture.componentInstance;
+
+      const currentRoom = engine.currentRoom();
+      const firstExit = currentRoom.exits[0];
+      expect(firstExit).toBeDefined();
+
+      const targetRoom = engine.rooms().find((r) => r.id === firstExit.targetRoomId);
+      expect(targetRoom).toBeDefined();
+
+      if (targetRoom) {
+        app.onNodeClick(targetRoom);
+        expect(engine.character().currentRoomId).toBe(targetRoom.id);
       }
     });
   });

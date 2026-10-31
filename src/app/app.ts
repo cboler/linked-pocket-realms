@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, HostListener, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -116,11 +116,12 @@ export class App {
   readonly onboardingTheme = signal<StructuralTheme>('Clockwork');
   readonly onboardingBiome = signal<BiomeNoun>('Catacombs');
 
-  // Mobile-First Viewport & Ergonomic State
-  readonly mobileLayoutMode = signal<'SPLIT' | 'STAGE' | 'MAP'>('SPLIT');
+  // Mobile-First Viewport & Ergonomic State (Default: Delve Focus with 1st-Person & Mini-Map)
+  readonly mobileLayoutMode = signal<'SPLIT' | 'STAGE' | 'MAP'>('STAGE');
   readonly stageLensMode = signal<'FIRST_PERSON' | 'CARD_STAGE' | 'SPLIT'>('FIRST_PERSON');
   readonly loomActiveTab = signal<'WEAVER' | 'WEBRTC' | 'THUNDERPASS' | 'OVERGROWTH'>('WEAVER');
   readonly gateDialerExpanded = signal<boolean>(false);
+  readonly isMinimapCollapsed = signal<boolean>(false);
 
   // Interactive Stage & Map Popovers / Tooltips
   readonly hoveredMapNode = signal<{
@@ -588,17 +589,54 @@ export class App {
     void this.thunderpass.scanNearbyBleRelic();
   }
 
+  @HostListener('window:keydown', ['$event'])
+  handleGlobalKeydown(event: KeyboardEvent): void {
+    const activeEl = document.activeElement;
+    if (
+      activeEl instanceof HTMLInputElement ||
+      activeEl instanceof HTMLTextAreaElement ||
+      activeEl?.getAttribute('contenteditable') === 'true'
+    ) {
+      return;
+    }
+
+    if (event.key === 'm' || event.key === 'M') {
+      event.preventDefault();
+      this.toggleObservatoryMap();
+    } else if (event.key === 'Escape' && this.mobileLayoutMode() === 'MAP') {
+      event.preventDefault();
+      this.setMobileLayoutMode('STAGE');
+    }
+  }
+
+  toggleObservatoryMap(): void {
+    if (this.mobileLayoutMode() === 'MAP') {
+      this.setMobileLayoutMode('STAGE');
+    } else {
+      this.setMobileLayoutMode('MAP');
+    }
+  }
+
   setPerspective(role: PerspectiveRole): void {
     this.engine.perspective.set(role);
-    if (this.mobileLayoutMode() === 'STAGE') {
-      this.mobileLayoutMode.set('SPLIT');
-    }
     if (role === 'ARCHITECT') {
+      if (this.mobileLayoutMode() === 'STAGE') {
+        this.mobileLayoutMode.set('SPLIT');
+      }
       this.syncArchitectEditorWithSelectedRoom();
-    } else if (role === 'SPECTATOR' && !this.engine.activeReplayEntry()) {
-      const firstGuest = this.engine.telemetry().guestbook[0] ?? null;
-      this.engine.activeReplayEntry.set(firstGuest);
-      this.engine.replayCursorIndex.set(0);
+    } else if (role === 'EXPLORER') {
+      if (this.mobileLayoutMode() === 'MAP' || this.mobileLayoutMode() === 'SPLIT') {
+        this.mobileLayoutMode.set('STAGE');
+      }
+    } else if (role === 'SPECTATOR') {
+      if (this.mobileLayoutMode() === 'STAGE') {
+        this.mobileLayoutMode.set('SPLIT');
+      }
+      if (!this.engine.activeReplayEntry()) {
+        const firstGuest = this.engine.telemetry().guestbook[0] ?? null;
+        this.engine.activeReplayEntry.set(firstGuest);
+        this.engine.replayCursorIndex.set(0);
+      }
     }
   }
 
@@ -618,6 +656,10 @@ export class App {
   submitTerminalCommand(): void {
     const cmd = this.terminalCommandText();
     if (!cmd.trim()) return;
+    const lower = cmd.trim().toLowerCase();
+    if (lower === 'map' || lower === '@map' || lower === 'observatory') {
+      this.toggleObservatoryMap();
+    }
     this.engine.parseAndDispatchTerminalInput(cmd);
     this.terminalCommandText.set('');
   }

@@ -55,42 +55,42 @@
         </div>
       </div>
 
-      <!-- MOBILE VIEWPORT MODE SWITCHER (SPLIT / STAGE / MAP) -->
+      <!-- VIEWPORT MODE SWITCHER (DELVE / OBSERVATORY / SPLIT) -->
       <div
         class="mobile-view-switcher"
         role="group"
-        aria-label="Mobile Layout Mode"
+        aria-label="Viewport Layout Mode"
         data-testid="mobile-view-switcher"
       >
         <button
           type="button"
           class="view-mode-btn"
-          [class.active]="mobileLayoutMode() === 'SPLIT'"
-          (click)="setMobileLayoutMode('SPLIT')"
-          title="Split Deck: Map Radar + Room Stage"
-          data-testid="view-mode-split"
-        >
-          split
-        </button>
-        <button
-          type="button"
-          class="view-mode-btn"
           [class.active]="mobileLayoutMode() === 'STAGE'"
           (click)="setMobileLayoutMode('STAGE')"
-          title="Stage Focus: Full-screen Room Stage & Combat"
+          title="Delve Focus: 1st-Person Dungeon Crawler & Log + Mini-Map (Default)"
           data-testid="view-mode-stage"
         >
-          ⚔ stage
+          ⚔ delve
         </button>
         <button
           type="button"
           class="view-mode-btn"
           [class.active]="mobileLayoutMode() === 'MAP'"
           (click)="setMobileLayoutMode('MAP')"
-          title="Map Focus: Full-screen Topological Cartography"
+          title="Observatory Focus: God's-Eye Topological Cartography (M)"
           data-testid="view-mode-map"
         >
           🗺 map
+        </button>
+        <button
+          type="button"
+          class="view-mode-btn"
+          [class.active]="mobileLayoutMode() === 'SPLIT'"
+          (click)="setMobileLayoutMode('SPLIT')"
+          title="Split Deck: Side-by-Side Dual Deck"
+          data-testid="view-mode-split"
+        >
+          ⚖ split
         </button>
       </div>
     </div>
@@ -289,6 +289,18 @@
               Return Home
             </button>
           }
+        </div>
+
+        <div class="observatory-return-wrap">
+          <button
+            type="button"
+            class="mini-action-btn accent close-observatory-btn"
+            (click)="setMobileLayoutMode('STAGE')"
+            title="Return to 1st-Person Dungeon Delve (M or Esc)"
+            data-testid="close-observatory-btn"
+          >
+            ✕ Return to Delve
+          </button>
         </div>
       </div>
 
@@ -783,6 +795,141 @@
             </div>
           }
         </div>
+
+        <!-- TOPOLOGICAL RADAR MINI-MAP (UPPER-RIGHT CLICK-TO-MOVE CARTOGRAPHY) -->
+        <aside
+          class="dungeon-minimap"
+          [class.collapsed]="isMinimapCollapsed()"
+          aria-label="Topological Radar Mini-Map"
+          data-testid="dungeon-minimap"
+        >
+          <div class="minimap-header">
+            <span class="minimap-title" [title]="engine.currentRoom().title">
+              🧭 {{ engine.activeGateAddress().biome }}
+            </span>
+            <div class="minimap-actions">
+              <button
+                type="button"
+                class="minimap-btn"
+                (click)="setMobileLayoutMode('MAP')"
+                title="Expand Full Observatory Graph (M)"
+                data-testid="expand-observatory-btn"
+              >
+                ⤢ Expand
+              </button>
+              <button
+                type="button"
+                class="minimap-btn icon-only"
+                (click)="isMinimapCollapsed.set(!isMinimapCollapsed())"
+                [title]="isMinimapCollapsed() ? 'Show Radar' : 'Minimize Radar'"
+                data-testid="toggle-minimap-btn"
+              >
+                {{ isMinimapCollapsed() ? '+' : '—' }}
+              </button>
+            </div>
+          </div>
+
+          @if (!isMinimapCollapsed()) {
+            <div class="minimap-body">
+              <svg
+                class="minimap-svg"
+                viewBox="0 0 940 560"
+                role="img"
+                aria-label="Minimap Radar Graph"
+                data-testid="minimap-svg-map"
+              >
+                <defs>
+                  <radialGradient id="minimapActiveGlow" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.6" />
+                    <stop offset="100%" stop-color="#38bdf8" stop-opacity="0" />
+                  </radialGradient>
+                </defs>
+
+                <!-- Minimap Topological Edges -->
+                @for (edge of cartographyEdges(); track edge.id) {
+                  <line
+                    [attr.x1]="edge.x1"
+                    [attr.y1]="edge.y1"
+                    [attr.x2]="edge.x2"
+                    [attr.y2]="edge.y2"
+                    class="minimap-edge"
+                    [class.secret-edge]="edge.isSecret"
+                    [class.locked-edge]="edge.isLocked"
+                  />
+                }
+
+                <!-- Minimap Topological Room Nodes (Click-to-Move) -->
+                @for (node of visibleCartographyNodes(); track node.room.id) {
+                  <g
+                    class="minimap-node-group"
+                    [class.current-node]="node.room.id === engine.character().currentRoomId"
+                    [attr.transform]="'translate(' + node.room.x + ',' + node.room.y + ')'"
+                    (click)="onNodeClick(node.room)"
+                    (mouseenter)="hoveredMapNode.set(node)"
+                    (mouseleave)="hoveredMapNode.set(null)"
+                    [attr.data-testid]="'minimap-node-' + node.room.id"
+                  >
+                    <title>
+                      {{ node.visited ? node.room.title : '[?] ' + node.room.rumorSignal }}
+                    </title>
+
+                    @if (node.room.id === engine.character().currentRoomId) {
+                      <circle r="46" fill="url(#minimapActiveGlow)" class="minimap-active-glow" />
+                      <!-- Player Facing Arrow in Mini-Map -->
+                      <path
+                        d="M 0,-42 L 7,-28 L -7,-28 Z"
+                        fill="#38bdf8"
+                        [attr.transform]="
+                          'rotate(' + getFacingRotationAngle(engine.playerFacing()) + ')'
+                        "
+                        class="minimap-facing-arrow"
+                        data-testid="minimap-facing-arrow"
+                      />
+                    }
+
+                    <!-- Overgrowth Ring -->
+                    @if (node.room.isOvergrowth) {
+                      <circle
+                        r="36"
+                        fill="none"
+                        stroke="#d946ef"
+                        stroke-width="3"
+                        stroke-dasharray="5 3"
+                      />
+                    }
+
+                    <!-- Node Circle -->
+                    <circle
+                      r="28"
+                      [attr.fill]="
+                        node.room.id === engine.character().currentRoomId ? '#0369a1' : '#0f172a'
+                      "
+                      [attr.stroke]="node.colorHex"
+                      stroke-width="3"
+                    />
+
+                    <!-- Semantic Glyph -->
+                    <text
+                      text-anchor="middle"
+                      dominant-baseline="central"
+                      class="minimap-glyph"
+                      [attr.fill]="node.colorHex"
+                    >
+                      {{ node.glyph }}
+                    </text>
+                  </g>
+                }
+              </svg>
+
+              <!-- Minimap Sensor Readout -->
+              @if (hoveredMapNode(); as hov) {
+                <div class="minimap-hover-pill">
+                  {{ hov.visited ? hov.room.title : '[?] Unexplored' }}
+                </div>
+              }
+            </div>
+          }
+        </aside>
 
         <!-- FIRST-PERSON PERSPECTIVE DUNGEON CRAWLER VIEWPORT -->
         @if (stageLensMode() === 'FIRST_PERSON' || stageLensMode() === 'SPLIT') {
