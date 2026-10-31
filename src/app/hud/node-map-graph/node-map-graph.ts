@@ -137,9 +137,7 @@ export class NodeMapGraphComponent {
           (n.room.isOvergrowth && !target.isOvergrowth),
         );
 
-        const isRiftPortal = Boolean(
-          ex.isRiftPortal || n.room.isRiftPortal || target.isRiftPortal,
-        );
+        const isRiftPortal = Boolean(ex.isRiftPortal || n.room.isRiftPortal || target.isRiftPortal);
 
         edges.push({
           id: pairKey,
