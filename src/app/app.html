@@ -151,35 +151,17 @@
     <button
       type="button"
       class="drawer-btn"
-      [class.active]="engine.activeDrawer() === 'COMBAT_TELEMETRY'"
-      (click)="toggleDrawer('COMBAT_TELEMETRY')"
-      title="Open Combat DPS, Damage Mitigation Breakdown, and d100 Roll Histogram"
-      data-testid="drawer-combat-btn"
-    >
-      <span class="drawer-icon" aria-hidden="true">📊</span>
-      <span class="drawer-label">Combat DPS</span>
-    </button>
-    <button
-      type="button"
-      class="drawer-btn"
-      [class.active]="engine.activeDrawer() === 'REALM_ANALYTICS'"
+      [class.active]="
+        engine.activeDrawer() === 'REALM_ANALYTICS' ||
+        engine.activeDrawer() === 'COMBAT_TELEMETRY' ||
+        engine.activeDrawer() === 'CHRONICLE'
+      "
       (click)="toggleDrawer('REALM_ANALYTICS')"
-      title="Open Dungeon Lethality/Traffic Heatmap and Visitor Gravestones"
+      title="Open Unified Statistics, Dungeon Lethality Heatmap, Combat DPS, and Career Timeline"
       data-testid="drawer-analytics-btn"
     >
-      <span class="drawer-icon" aria-hidden="true">🔥</span>
-      <span class="drawer-label">Heatmap &amp; Graves</span>
-    </button>
-    <button
-      type="button"
-      class="drawer-btn"
-      [class.active]="engine.activeDrawer() === 'CHRONICLE'"
-      (click)="toggleDrawer('CHRONICLE')"
-      title="Open Traveler's Career Chronicle, Wealth/XP Curve, and Bestiary"
-      data-testid="drawer-chronicle-btn"
-    >
-      <span class="drawer-icon" aria-hidden="true">📜</span>
-      <span class="drawer-label">Chronicle</span>
+      <span class="drawer-icon" aria-hidden="true">📊</span>
+      <span class="drawer-label">Analytics</span>
     </button>
     <button
       type="button"
@@ -1715,19 +1697,19 @@
           <h2>
             @switch (engine.activeDrawer()) {
               @case ('PAPERDOLL') {
-                🛡 Equipment, Attribute Radar & Inventory
+                🛡 Equipment, Paperdoll &amp; Vault
               }
               @case ('COMBAT_TELEMETRY') {
-                📊 Combat Telemetry, DPS Breakdown & RNG Histogram
+                📊 Statistics &amp; Analytics Dashboard
               }
               @case ('REALM_ANALYTICS') {
-                🔥 Architect Dungeon Heatmap & Visitor Guestbook
+                📊 Statistics &amp; Analytics Dashboard
               }
               @case ('CHRONICLE') {
-                📜 Traveler's Career Chronicle & Compendium
+                📊 Statistics &amp; Analytics Dashboard
               }
               @case ('NETWORK') {
-                🌐 Serverless P2P Chaos Gate Transport & Customs Gate
+                🌐 Serverless P2P Chaos Gate Transport &amp; Customs Gate
               }
             }
           </h2>
@@ -1744,154 +1726,442 @@
         <div class="drawer-body">
           <!-- 1. PAPERDOLL & CHARACTER SHEET DRAWER -->
           @if (engine.activeDrawer() === 'PAPERDOLL') {
-            <div class="drawer-split-grid" data-testid="paperdoll-drawer-content">
-              <div class="paperdoll-card">
-                <h3>
-                  Equipment (Weight: {{ engine.equippedWeight() }}/{{
-                    engine.character().maxWeight
-                  }})
-                </h3>
-                <div class="paperdoll-slots-grid">
-                  @for (slot of paperdollSlots; track slot) {
-                    @let eqItem = engine.character().paperdoll[slot];
-                    <div
-                      class="pd-slot"
-                      [class.filled]="!!eqItem"
-                      [attr.data-testid]="'pd-slot-' + slot"
+            <div class="equipment-drawer-container" data-testid="paperdoll-drawer-content">
+              <!-- HERO LOADOUT SUMMARY BAR -->
+              <div class="hero-loadout-bar">
+                <div class="hero-identity">
+                  <span class="hero-archetype-icon">
+                    @switch (engine.character().archetype) {
+                      @case ('Vanguard') {
+                        🛡️
+                      }
+                      @case ('Chronomancer') {
+                        ⏳
+                      }
+                      @case ('Hexblade') {
+                        🗡️
+                      }
+                      @case ('Artificer') {
+                        ⚙️
+                      }
+                    }
+                  </span>
+                  <div class="hero-meta">
+                    <strong class="hero-name">{{ engine.character().name }}</strong>
+                    <span class="hero-level-class">
+                      Lv.{{ engine.character().level }} {{ engine.character().archetype }}
+                    </span>
+                  </div>
+                </div>
+
+                <div
+                  class="hero-power-score"
+                  title="Total Gear Power calculated from all equipped items"
+                >
+                  <span class="power-label">⚡ Power Level</span>
+                  <strong class="power-value">{{ engine.gearPowerScore() }}</strong>
+                </div>
+
+                <!-- WEIGHT CAPACITY METER -->
+                <div class="weight-meter-cluster" title="Equipped weight and inventory encumbrance">
+                  <div class="weight-label-row">
+                    <span>🎒 Weight</span>
+                    <strong
+                      >{{ engine.equippedWeight() }} / {{ engine.character().maxWeight }}</strong
                     >
-                      <span class="slot-type-label">{{ slot }}</span>
-                      @if (eqItem) {
-                        <strong class="item-title">{{ eqItem.name }}</strong>
-                        <div class="provenance-row">
-                          <span
-                            class="prov-badge"
-                            [class.verified]="eqItem.provenance === 'Verified Drop'"
-                            [class.forged]="eqItem.provenance === 'Architect Forged'"
-                          >
-                            {{ eqItem.provenance }}
+                  </div>
+                  <div class="weight-bar-track">
+                    <div
+                      class="weight-bar-fill"
+                      [style.width.%]="
+                        Math.min(
+                          100,
+                          (engine.equippedWeight() / engine.character().maxWeight) * 100
+                        )
+                      "
+                      [class.warning]="
+                        engine.equippedWeight() > engine.character().maxWeight * 0.75
+                      "
+                      [class.overweight]="engine.equippedWeight() >= engine.character().maxWeight"
+                    ></div>
+                  </div>
+                </div>
+
+                <!-- QOL QUICK LOADOUT BUTTONS -->
+                <div class="loadout-actions-cluster">
+                  <button
+                    type="button"
+                    class="mini-action-btn accent auto-equip-btn"
+                    (click)="engine.autoEquipBest()"
+                    title="Evaluate inventory and auto-equip highest power gear for every slot"
+                    data-testid="auto-equip-best-btn"
+                  >
+                    ⚡ Auto-Equip Best
+                  </button>
+                  <button
+                    type="button"
+                    class="mini-action-btn"
+                    (click)="engine.unequipAll()"
+                    title="Unequip all gear into inventory"
+                    data-testid="unequip-all-btn"
+                  >
+                    🛡️ Unequip All
+                  </button>
+                </div>
+              </div>
+
+              <!-- 3-COLUMN ANATOMICAL STAGE (ARMOR | RADAR & ATTRIBUTES | ARMAMENTS) -->
+              <div class="paperdoll-stage-grid">
+                <!-- COLUMN 1: ARMOR SLOTS (HEAD, CHEST, LEGS) -->
+                <div class="paperdoll-column armor-column">
+                  <h4>🛡️ Armor</h4>
+                  <div class="slot-stack">
+                    @for (slot of armorSlots; track slot) {
+                      @let eqItem = engine.character().paperdoll[slot];
+                      <div
+                        class="pd-slot"
+                        [class.filled]="!!eqItem"
+                        [class.selected]="selectedPaperdollSlot() === slot"
+                        [attr.data-rarity]="eqItem?.rarity"
+                        role="button"
+                        tabindex="0"
+                        (click)="selectPaperdollSlot(slot)"
+                        (keydown.enter)="selectPaperdollSlot(slot)"
+                        [attr.aria-label]="'Select ' + slot + ' slot to filter inventory'"
+                        [attr.data-testid]="'pd-slot-' + slot"
+                      >
+                        <div class="slot-header">
+                          <span class="slot-icon">
+                            @switch (slot) {
+                              @case ('Head') {
+                                🪖
+                              }
+                              @case ('Chest') {
+                                🥋
+                              }
+                              @case ('Legs') {
+                                👖
+                              }
+                            }
                           </span>
-                          @if (eqItem.clampedStatBudget) {
-                            <span class="clamp-badge" data-testid="clamped-item-badge">
-                              Clamped {{ eqItem.totalStatBudget }} → {{ eqItem.clampedStatBudget }}
+                          <span class="slot-type-label">{{ slot }}</span>
+                          @if (eqItem) {
+                            <span class="slot-power-badge">
+                              ⚡{{ eqItem.clampedStatBudget ?? eqItem.totalStatBudget }}
                             </span>
                           }
                         </div>
-                        <button
-                          type="button"
-                          class="mini-action-btn"
-                          (click)="engine.unequipSlot(slot)"
+                        @if (eqItem) {
+                          <strong class="item-title" [attr.data-rarity]="eqItem.rarity">{{
+                            eqItem.name
+                          }}</strong>
+                          <div class="provenance-row">
+                            <span
+                              class="prov-badge"
+                              [class.verified]="eqItem.provenance === 'Verified Drop'"
+                              [class.forged]="eqItem.provenance === 'Architect Forged'"
+                            >
+                              {{
+                                eqItem.provenance === 'Verified Drop' ? '🛡️ Verified' : '⚒️ Forged'
+                              }}
+                            </span>
+                            @if (eqItem.clampedStatBudget) {
+                              <span class="clamp-badge" data-testid="clamped-item-badge">
+                                Clamped {{ eqItem.totalStatBudget }} →
+                                {{ eqItem.clampedStatBudget }}
+                              </span>
+                            }
+                          </div>
+                          <div class="slot-actions">
+                            <button
+                              type="button"
+                              class="mini-action-btn slot-unequip-btn"
+                              (click)="$event.stopPropagation(); engine.unequipSlot(slot)"
+                            >
+                              ✕ Unequip
+                            </button>
+                          </div>
+                        } @else {
+                          <span class="empty-slot-hint">+ Select to Browse</span>
+                        }
+                      </div>
+                    }
+                  </div>
+                </div>
+
+                <!-- COLUMN 2: ATTRIBUTE RADAR & DERIVED CURVES -->
+                <div class="paperdoll-column center-stats-column">
+                  <div class="radar-card">
+                    <h4>Core Attributes &amp; Capabilities</h4>
+                    <svg
+                      class="radar-svg"
+                      viewBox="0 0 220 220"
+                      role="img"
+                      aria-label="Core Attributes Radar Chart"
+                      data-testid="attribute-radar-svg"
+                    >
+                      <circle cx="110" cy="110" r="26" class="radar-ring" />
+                      <circle cx="110" cy="110" r="52" class="radar-ring" />
+                      <circle cx="110" cy="110" r="78" class="radar-ring" />
+                      <polygon [attr.points]="radarPolygonPoints()" class="radar-polygon" />
+                      @for (ax of radarAxisLabels(); track ax.label) {
+                        <text
+                          [attr.x]="ax.x"
+                          [attr.y]="ax.y"
+                          text-anchor="middle"
+                          dominant-baseline="central"
+                          class="radar-label"
                         >
-                          Unequip
-                        </button>
-                      } @else {
-                        <span class="empty-slot-hint">Empty Slot</span>
+                          {{ ax.label }} ({{ ax.value }})
+                        </text>
                       }
+                    </svg>
+
+                    <div class="derived-curves-grid">
+                      <div
+                        class="stat-pill"
+                        title="Attack Rating computed from STR, INT, and equipped weapons"
+                      >
+                        <span class="pill-k">ATK</span>
+                        <strong class="pill-v">{{ engine.derivedStats().atk }}</strong>
+                      </div>
+                      <div
+                        class="stat-pill"
+                        title="Damage Mitigation % computed from VIT and armor"
+                      >
+                        <span class="pill-k">Mitigation</span>
+                        <strong class="pill-v">{{ engine.derivedStats().mitigationPct }}%</strong>
+                      </div>
+                      <div
+                        class="stat-pill"
+                        title="Critical Hit Chance & Multiplier computed from DEX and PER"
+                      >
+                        <span class="pill-k">Crit Chance</span>
+                        <strong class="pill-v">
+                          {{ engine.derivedStats().critChancePct }}% ({{
+                            engine.derivedStats().critMultiplier
+                          }}x)
+                        </strong>
+                      </div>
+                      <div class="stat-pill" title="ATB Gauge percentage gained every 100ms tick">
+                        <span class="pill-k">ATB Speed</span>
+                        <strong class="pill-v"
+                          >{{ engine.derivedStats().atbFillRatePerTick }}%/tick</strong
+                        >
+                      </div>
                     </div>
-                  }
+                  </div>
+                </div>
+
+                <!-- COLUMN 3: ARMAMENTS & ACCESSORIES (MAIN-HAND, OFF-HAND, RELIC 1, RELIC 2) -->
+                <div class="paperdoll-column armament-column">
+                  <h4>⚔️ Armaments &amp; Relics</h4>
+                  <div class="slot-stack">
+                    @for (slot of armamentSlots; track slot) {
+                      @let eqItem = engine.character().paperdoll[slot];
+                      <div
+                        class="pd-slot"
+                        [class.filled]="!!eqItem"
+                        [class.selected]="selectedPaperdollSlot() === slot"
+                        [attr.data-rarity]="eqItem?.rarity"
+                        role="button"
+                        tabindex="0"
+                        (click)="selectPaperdollSlot(slot)"
+                        (keydown.enter)="selectPaperdollSlot(slot)"
+                        [attr.aria-label]="'Select ' + slot + ' slot to filter inventory'"
+                        [attr.data-testid]="'pd-slot-' + slot"
+                      >
+                        <div class="slot-header">
+                          <span class="slot-icon">
+                            @switch (slot) {
+                              @case ('Main-Hand') {
+                                ⚔️
+                              }
+                              @case ('Off-Hand') {
+                                🛡️
+                              }
+                              @case ('Relic 1') {
+                                🔮
+                              }
+                              @case ('Relic 2') {
+                                💍
+                              }
+                            }
+                          </span>
+                          <span class="slot-type-label">{{ slot }}</span>
+                          @if (eqItem) {
+                            <span class="slot-power-badge">
+                              ⚡{{ eqItem.clampedStatBudget ?? eqItem.totalStatBudget }}
+                            </span>
+                          }
+                        </div>
+                        @if (eqItem) {
+                          <strong class="item-title" [attr.data-rarity]="eqItem.rarity">{{
+                            eqItem.name
+                          }}</strong>
+                          <div class="provenance-row">
+                            <span
+                              class="prov-badge"
+                              [class.verified]="eqItem.provenance === 'Verified Drop'"
+                              [class.forged]="eqItem.provenance === 'Architect Forged'"
+                            >
+                              {{
+                                eqItem.provenance === 'Verified Drop' ? '🛡️ Verified' : '⚒️ Forged'
+                              }}
+                            </span>
+                            @if (eqItem.clampedStatBudget) {
+                              <span class="clamp-badge" data-testid="clamped-item-badge">
+                                Clamped {{ eqItem.totalStatBudget }} →
+                                {{ eqItem.clampedStatBudget }}
+                              </span>
+                            }
+                          </div>
+                          <div class="slot-actions">
+                            <button
+                              type="button"
+                              class="mini-action-btn slot-unequip-btn"
+                              (click)="$event.stopPropagation(); engine.unequipSlot(slot)"
+                            >
+                              ✕ Unequip
+                            </button>
+                          </div>
+                        } @else {
+                          <span class="empty-slot-hint">+ Select to Browse</span>
+                        }
+                      </div>
+                    }
+                  </div>
                 </div>
               </div>
 
-              <!-- SVG Attribute Radar/Spider Chart + Derived Curves -->
-              <div class="radar-card">
-                <h3>Core Attribute Radar & Derived Curves</h3>
-                <svg
-                  class="radar-svg"
-                  viewBox="0 0 220 220"
-                  role="img"
-                  aria-label="Core Attributes Radar Chart"
-                  data-testid="attribute-radar-svg"
-                >
-                  <circle cx="110" cy="110" r="26" class="radar-ring" />
-                  <circle cx="110" cy="110" r="52" class="radar-ring" />
-                  <circle cx="110" cy="110" r="78" class="radar-ring" />
-                  <polygon [attr.points]="radarPolygonPoints()" class="radar-polygon" />
-                  @for (ax of radarAxisLabels(); track ax.label) {
-                    <text
-                      [attr.x]="ax.x"
-                      [attr.y]="ax.y"
-                      text-anchor="middle"
-                      dominant-baseline="central"
-                      class="radar-label"
-                    >
-                      {{ ax.label }} ({{ ax.value }})
-                    </text>
-                  }
-                </svg>
-
-                <div class="derived-curves-list">
-                  <div title="Attack Rating computed from STR, INT, and equipped weapons">
-                    <span>Attack Rating (ATK)</span>
-                    <strong>{{ engine.derivedStats().atk }}</strong>
-                  </div>
-                  <div title="Damage Mitigation % computed from VIT and armor">
-                    <span>Damage Mitigation</span>
-                    <strong>{{ engine.derivedStats().mitigationPct }}%</strong>
-                  </div>
-                  <div title="Critical Hit Chance & Multiplier computed from DEX and PER">
-                    <span>Crit Chance / Mult</span>
-                    <strong
-                      >{{ engine.derivedStats().critChancePct }}% ({{
-                        engine.derivedStats().critMultiplier
-                      }}x)</strong
-                    >
-                  </div>
-                  <div title="ATB Gauge percentage gained every 100ms tick">
-                    <span>ATB Fill Rate / 100ms</span>
-                    <strong>{{ engine.derivedStats().atbFillRatePerTick }}%</strong>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Filterable Inventory Grid with Stat-Comparison Tooltips -->
+              <!-- INVENTORY VAULT SECTION -->
               <div class="inventory-card full-span">
-                <div class="inv-header">
-                  <h3>Inventory Vault ({{ filteredInventory().length }} Items)</h3>
-                  <div class="filter-pills">
-                    <button
-                      type="button"
-                      class="mini-action-btn"
-                      [class.accent]="inventoryFilter() === 'ALL'"
-                      (click)="inventoryFilter.set('ALL')"
-                    >
-                      All
-                    </button>
-                    <button
-                      type="button"
-                      class="mini-action-btn"
-                      [class.accent]="inventoryFilter() === 'Verified Drop'"
-                      (click)="inventoryFilter.set('Verified Drop')"
-                    >
-                      Verified Drops
-                    </button>
-                    <button
-                      type="button"
-                      class="mini-action-btn"
-                      [class.accent]="inventoryFilter() === 'Architect Forged'"
-                      (click)="inventoryFilter.set('Architect Forged')"
-                    >
-                      Architect Forged
-                    </button>
+                <div class="inv-header-bar">
+                  <div class="inv-title-group">
+                    <h3>🎒 Inventory Vault ({{ filteredInventory().length }} items)</h3>
+                    @if (selectedPaperdollSlot(); as selSlot) {
+                      <div class="active-slot-filter-chip">
+                        <span
+                          >Showing: <strong>{{ selSlot }}</strong> items</span
+                        >
+                        <button type="button" class="clear-chip-btn" (click)="clearSlotFilter()">
+                          ✕ Clear
+                        </button>
+                      </div>
+                    }
+                  </div>
+
+                  <!-- FILTER & SEARCH BAR -->
+                  <div class="inv-controls-row">
+                    <!-- Category Pills -->
+                    <div class="filter-pills category-pills">
+                      <button
+                        type="button"
+                        class="mini-action-btn"
+                        [class.accent]="inventoryCategoryFilter() === 'ALL'"
+                        (click)="inventoryCategoryFilter.set('ALL')"
+                      >
+                        All
+                      </button>
+                      <button
+                        type="button"
+                        class="mini-action-btn"
+                        [class.accent]="inventoryCategoryFilter() === 'WEAPONS'"
+                        (click)="inventoryCategoryFilter.set('WEAPONS')"
+                      >
+                        ⚔️ Weapons
+                      </button>
+                      <button
+                        type="button"
+                        class="mini-action-btn"
+                        [class.accent]="inventoryCategoryFilter() === 'ARMOR'"
+                        (click)="inventoryCategoryFilter.set('ARMOR')"
+                      >
+                        🛡️ Armor
+                      </button>
+                      <button
+                        type="button"
+                        class="mini-action-btn"
+                        [class.accent]="inventoryCategoryFilter() === 'RELICS'"
+                        (click)="inventoryCategoryFilter.set('RELICS')"
+                      >
+                        🔮 Relics
+                      </button>
+                      <button
+                        type="button"
+                        class="mini-action-btn"
+                        [class.accent]="inventoryCategoryFilter() === 'CORES'"
+                        (click)="inventoryCategoryFilter.set('CORES')"
+                      >
+                        🔮 Cores
+                      </button>
+                    </div>
+
+                    <!-- Sort Dropdown -->
+                    <div class="sort-selector-cluster">
+                      <label for="inv-sort-select">Sort:</label>
+                      <select
+                        id="inv-sort-select"
+                        [ngModel]="inventorySortBy()"
+                        (ngModelChange)="inventorySortBy.set($event)"
+                      >
+                        <option value="POWER_DESC">Highest Power</option>
+                        <option value="POWER_ASC">Lowest Power</option>
+                        <option value="RARITY">Rarity</option>
+                        <option value="WEIGHT">Weight</option>
+                        <option value="NAME">Name</option>
+                      </select>
+                    </div>
+
+                    <!-- Search Input -->
+                    <div class="search-input-cluster">
+                      <input
+                        type="search"
+                        placeholder="Search items..."
+                        aria-label="Search Inventory"
+                        [ngModel]="inventorySearchQuery()"
+                        (ngModelChange)="inventorySearchQuery.set($event)"
+                      />
+                    </div>
                   </div>
                 </div>
 
+                <!-- INVENTORY ITEMS GRID -->
                 <div class="inventory-grid">
                   @for (item of filteredInventory(); track item.id) {
+                    @let diff = getItemStatDiff(item);
                     <div
                       class="inv-item-card"
+                      [class.is-upgrade]="diff.isUpgrade"
+                      [class.is-locked]="item.isLocked"
+                      [attr.data-rarity]="item.rarity"
                       (mouseenter)="hoveredInventoryItem.set(item)"
                       [attr.data-testid]="'inv-item-' + item.id"
                     >
                       <div class="inv-top">
-                        <strong>{{ item.name }}</strong>
-                        <span class="slot-pill">{{ item.slot }}</span>
+                        <div class="inv-name-cluster">
+                          <strong class="item-title" [attr.data-rarity]="item.rarity">{{
+                            item.name
+                          }}</strong>
+                          <span class="slot-pill">{{ item.slot }}</span>
+                        </div>
+                        <div class="item-power-tag">
+                          ⚡{{ item.clampedStatBudget ?? item.totalStatBudget }}
+                        </div>
                       </div>
+
                       <div class="inv-prov">
                         <span
                           class="prov-badge"
                           [class.verified]="item.provenance === 'Verified Drop'"
+                          [class.forged]="item.provenance === 'Architect Forged'"
                         >
-                          {{ item.provenance }}
+                          {{ item.provenance === 'Verified Drop' ? '🛡️ Verified' : '⚒️ Forged' }}
                         </span>
+                        <span class="rarity-badge" [attr.data-rarity]="item.rarity">{{
+                          item.rarity
+                        }}</span>
+                        <span class="weight-badge">{{ item.weight }} Wt</span>
                         @if (item.clampedStatBudget) {
                           <span class="clamp-badge">
                             Customs Clamped ({{ item.clampedStatBudget }}/{{
@@ -1900,231 +2170,315 @@
                           </span>
                         }
                       </div>
+
+                      <!-- STAT DIFF HUD -->
                       <div class="stat-diff-tooltip" data-testid="stat-comparison-tooltip">
-                        {{ computeStatComparisonTooltip(item) }}
+                        <div class="stat-diff-line">
+                          <span class="diff-summary">{{ diff.summary }}</span>
+                          @if (diff.isUpgrade) {
+                            <span class="upgrade-tag">▲ UPGRADE</span>
+                          }
+                        </div>
                       </div>
-                      <button
-                        type="button"
-                        class="mini-action-btn accent"
-                        (click)="engine.equipInventoryItem(item.id)"
-                        [attr.data-testid]="'equip-btn-' + item.id"
-                      >
-                        Equip Item
-                      </button>
-                    </div>
-                  }
-                </div>
-              </div>
-            </div>
-          }
 
-          <!-- 2. COMBAT TELEMETRY & LOG ANALYTICS DRAWER -->
-          @if (engine.activeDrawer() === 'COMBAT_TELEMETRY') {
-            <div class="drawer-split-grid" data-testid="combat-telemetry-drawer-content">
-              <div class="telemetry-card">
-                <h3>DPS, Mitigation & Overkill Breakdown</h3>
-                <div class="stacked-bars-list">
-                  @for (row of skillTelemetryBreakdown(); track row.skillName) {
-                    <div class="telemetry-bar-row">
-                      <div class="bar-label-line">
-                        <strong>{{ row.skillName }} ({{ row.element }})</strong>
-                        <span
-                          >DMG: {{ row.damageDealt }} | Mitigated: {{ row.damageMitigated }} |
-                          Overkill: {{ row.overkill }} | Heal: {{ row.healingDone }}</span
-                        >
-                      </div>
-                      <div class="stacked-bar-track">
-                        <div
-                          class="seg dmg"
-                          [style.width.%]="row.totalWidthPct * 0.65"
-                          title="Damage Dealt"
-                        ></div>
-                        <div
-                          class="seg mit"
-                          [style.width.%]="row.totalWidthPct * 0.2"
-                          title="Mitigated"
-                        ></div>
-                        <div
-                          class="seg ovk"
-                          [style.width.%]="row.totalWidthPct * 0.15"
-                          title="Overkill"
-                        ></div>
-                      </div>
-                    </div>
-                  }
-                </div>
-              </div>
-
-              <div class="telemetry-card">
-                <h3>RNG Roll Distribution Histogram (d100) & Status Uptime</h3>
-                <svg
-                  class="histogram-svg"
-                  viewBox="0 0 320 150"
-                  role="img"
-                  aria-label="RNG Roll Distribution Histogram"
-                  data-testid="roll-histogram-svg"
-                >
-                  @for (b of rollHistogramBuckets(); track b.label; let idx = $index) {
-                    <g [attr.transform]="'translate(' + (18 + idx * 58) + ', 15)'">
-                      <rect
-                        x="0"
-                        [attr.y]="100 - b.heightPct"
-                        width="40"
-                        [attr.height]="b.heightPct"
-                        rx="4"
-                        fill="#38bdf8"
-                      />
-                      <text
-                        x="20"
-                        [attr.y]="94 - b.heightPct"
-                        text-anchor="middle"
-                        class="hist-val"
-                      >
-                        {{ b.count }}
-                      </text>
-                      <text x="20" y="118" text-anchor="middle" class="hist-label">
-                        {{ b.label }}
-                      </text>
-                    </g>
-                  }
-                </svg>
-
-                <div class="status-uptime-chips">
-                  @for (st of trackedStatusTags; track st) {
-                    <span class="uptime-pill">
-                      <strong>{{ st }}:</strong>
-                      {{ ((engine.telemetry().statusUptimeMs[st] || 0) / 1000).toFixed(1) }}s
-                    </span>
-                  }
-                </div>
-              </div>
-            </div>
-          }
-
-          <!-- 3. REALM ANALYTICS & GUESTBOOK GRAVESTONES DRAWER -->
-          @if (engine.activeDrawer() === 'REALM_ANALYTICS') {
-            <div class="drawer-split-grid" data-testid="realm-analytics-drawer-content">
-              <div class="telemetry-card">
-                <h3>Dungeon Heatmap Mode</h3>
-                <div class="filter-pills">
-                  @for (mode of heatmapModes; track mode) {
-                    <button
-                      type="button"
-                      class="mini-action-btn"
-                      [class.accent]="engine.heatmapMode() === mode"
-                      (click)="engine.heatmapMode.set(mode)"
-                      [attr.data-testid]="'heatmap-mode-' + mode"
-                    >
-                      {{ mode }}
-                    </button>
-                  }
-                </div>
-                <table class="metrics-table">
-                  <thead>
-                    <tr>
-                      <th>Room</th>
-                      <th>Visits</th>
-                      <th>Deaths</th>
-                      <th>Avg Time</th>
-                      <th>Loot</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (r of engine.rooms(); track r.id) {
-                      @let m = engine.telemetry().roomMetrics[r.id];
-                      <tr>
-                        <td>{{ r.title }}</td>
-                        <td>{{ m?.visitorCount ?? 0 }}</td>
-                        <td>{{ m?.playerDeaths ?? 0 }}</td>
-                        <td>{{ ((m?.totalTimeSpentMs ?? 0) / 1000).toFixed(0) }}s</td>
-                        <td>{{ m?.lootExtractedCount ?? 0 }}</td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
-
-              <div class="telemetry-card">
-                <h3>Realm Guestbook & Gravestones</h3>
-                <div class="guestbook-list">
-                  @for (gb of engine.telemetry().guestbook; track gb.id) {
-                    <div class="guestbook-card" [attr.data-outcome]="gb.outcome">
-                      <div class="gb-top">
-                        <strong>{{ gb.visitorName }} ({{ gb.archetype }})</strong>
-                        <span class="outcome-badge">{{ gb.outcome }}</span>
-                      </div>
-                      <p class="gb-note">{{ gb.epitaphOrNote }}</p>
-                      <div class="gb-foot">
-                        <span>{{ gb.roomTitle }}</span>
+                      <!-- ITEM ACTIONS: EQUIP | SALVAGE | LOCK -->
+                      <div class="item-actions-row">
                         <button
                           type="button"
-                          class="mini-action-btn"
-                          (click)="selectReplayGuestbook(gb); engine.activeDrawer.set('NONE')"
+                          class="mini-action-btn accent equip-btn"
+                          (click)="engine.equipInventoryItem(item.id)"
+                          [attr.data-testid]="'equip-btn-' + item.id"
                         >
-                          📼 Watch Replay
+                          ⚡ Equip
+                        </button>
+                        <button
+                          type="button"
+                          class="mini-action-btn salvage-btn"
+                          [disabled]="item.isLocked"
+                          (click)="engine.salvageItem(item.id)"
+                          title="Salvage into Resonance Shards"
+                          [attr.data-testid]="'salvage-btn-' + item.id"
+                        >
+                          💎 Salvage
+                        </button>
+                        <button
+                          type="button"
+                          class="mini-action-btn lock-btn"
+                          (click)="engine.toggleItemLock(item.id)"
+                          [title]="
+                            item.isLocked ? 'Unlock item' : 'Lock item (prevent accidental salvage)'
+                          "
+                          [attr.data-testid]="'lock-btn-' + item.id"
+                        >
+                          {{ item.isLocked ? '🔒' : '🔓' }}
                         </button>
                       </div>
                     </div>
                   }
+                  @if (filteredInventory().length === 0) {
+                    <div class="empty-inventory-notice">
+                      <span>No items found matching active filters.</span>
+                      @if (selectedPaperdollSlot()) {
+                        <button type="button" class="mini-action-btn" (click)="clearSlotFilter()">
+                          Show All Items
+                        </button>
+                      }
+                    </div>
+                  }
                 </div>
               </div>
             </div>
           }
 
-          <!-- 4. TRAVELER'S CHRONICLE DRAWER -->
-          @if (engine.activeDrawer() === 'CHRONICLE') {
-            <div class="drawer-split-grid" data-testid="chronicle-drawer-content">
-              <div class="telemetry-card">
-                <h3>Lifetime Wealth & XP Progression Curve</h3>
-                <svg
-                  class="progression-svg"
-                  viewBox="0 0 300 105"
-                  role="img"
-                  aria-label="Lifetime XP and Wealth Line Graph"
-                  data-testid="career-progression-svg"
+          <!-- 2. UNIFIED ANALYTICS, HEATMAP & TELEMETRY DRAWER -->
+          @if (
+            engine.activeDrawer() === 'REALM_ANALYTICS' ||
+            engine.activeDrawer() === 'COMBAT_TELEMETRY' ||
+            engine.activeDrawer() === 'CHRONICLE'
+          ) {
+            <div class="analytics-drawer-container">
+              <!-- SUB-TABS NAVIGATION -->
+              <nav class="analytics-subtabs-nav" role="tablist" aria-label="Analytics Sections">
+                <button
+                  type="button"
+                  class="analytics-tab-btn"
+                  [class.active]="analyticsSubTab() === 'HEATMAP'"
+                  (click)="analyticsSubTab.set('HEATMAP')"
+                  data-testid="analytics-tab-heatmap"
                 >
-                  <polyline
-                    fill="none"
-                    stroke="#38bdf8"
-                    stroke-width="2.5"
-                    [attr.points]="careerProgressionPolyline().xpPoints"
-                  />
-                  <polyline
-                    fill="none"
-                    stroke="#fbbf24"
-                    stroke-width="2.5"
-                    [attr.points]="careerProgressionPolyline().goldPoints"
-                  />
-                </svg>
-                <div class="legend-inline">
-                  <span style="color: #38bdf8">● Cumulative XP ({{ engine.character().xp }})</span>
-                  <span style="color: #fbbf24"
-                    >● Cumulative Gold ({{ engine.character().gold }})</span
-                  >
-                </div>
-              </div>
+                  🔥 Heatmap &amp; Traffic
+                </button>
+                <button
+                  type="button"
+                  class="analytics-tab-btn"
+                  [class.active]="analyticsSubTab() === 'COMBAT'"
+                  (click)="analyticsSubTab.set('COMBAT')"
+                  data-testid="analytics-tab-combat"
+                >
+                  ⚔️ Combat DPS &amp; Rolls
+                </button>
+                <button
+                  type="button"
+                  class="analytics-tab-btn"
+                  [class.active]="analyticsSubTab() === 'CHRONICLE'"
+                  (click)="analyticsSubTab.set('CHRONICLE')"
+                  data-testid="analytics-tab-chronicle"
+                >
+                  📜 Career &amp; Graves
+                </button>
+              </nav>
 
-              <div class="telemetry-card">
-                <div class="inv-header">
-                  <h3>Chaos Gate Career Timeline & Bestiary</h3>
-                  <input
-                    type="search"
-                    aria-label="Search Career Chronicle"
-                    [ngModel]="chronicleSearch()"
-                    (ngModelChange)="chronicleSearch.set($event)"
-                    placeholder="Filter Chaos Gates..."
-                    data-testid="chronicle-search-input"
-                  />
-                </div>
-                <div class="chronicle-timeline">
-                  @for (entry of filteredChronicleEntries(); track entry.id) {
-                    <div class="chron-item">
-                      <strong>{{ entry.gateAddress }}</strong>
-                      <span>{{ entry.eventTitle }} (+{{ entry.xpEarned }} XP)</span>
+              <!-- SUBTAB 1: HEATMAP & GRAVES -->
+              @if (analyticsSubTab() === 'HEATMAP') {
+                <div class="drawer-split-grid" data-testid="realm-analytics-drawer-content">
+                  <div class="telemetry-card">
+                    <h3>Dungeon Heatmap Mode</h3>
+                    <div class="filter-pills">
+                      @for (mode of heatmapModes; track mode) {
+                        <button
+                          type="button"
+                          class="mini-action-btn"
+                          [class.accent]="engine.heatmapMode() === mode"
+                          (click)="engine.heatmapMode.set(mode)"
+                          [attr.data-testid]="'heatmap-mode-' + mode"
+                        >
+                          {{ mode }}
+                        </button>
+                      }
                     </div>
-                  }
+                    <table class="metrics-table">
+                      <thead>
+                        <tr>
+                          <th>Room</th>
+                          <th>Visits</th>
+                          <th>Deaths</th>
+                          <th>Avg Time</th>
+                          <th>Loot</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (r of engine.rooms(); track r.id) {
+                          @let m = engine.telemetry().roomMetrics[r.id];
+                          <tr>
+                            <td>{{ r.title }}</td>
+                            <td>{{ m?.visitorCount ?? 0 }}</td>
+                            <td>{{ m?.playerDeaths ?? 0 }}</td>
+                            <td>{{ ((m?.totalTimeSpentMs ?? 0) / 1000).toFixed(0) }}s</td>
+                            <td>{{ m?.lootExtractedCount ?? 0 }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div class="telemetry-card">
+                    <h3>Realm Guestbook &amp; Gravestones</h3>
+                    <div class="guestbook-list">
+                      @for (gb of engine.telemetry().guestbook; track gb.id) {
+                        <div class="guestbook-card" [attr.data-outcome]="gb.outcome">
+                          <div class="gb-top">
+                            <strong>{{ gb.visitorName }} ({{ gb.archetype }})</strong>
+                            <span class="outcome-badge">{{ gb.outcome }}</span>
+                          </div>
+                          <p class="gb-note">{{ gb.epitaphOrNote }}</p>
+                          <div class="gb-foot">
+                            <span>{{ gb.roomTitle }}</span>
+                            <button
+                              type="button"
+                              class="mini-action-btn"
+                              (click)="selectReplayGuestbook(gb); engine.activeDrawer.set('NONE')"
+                            >
+                              📼 Watch Replay
+                            </button>
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  </div>
                 </div>
-              </div>
+              }
+
+              <!-- SUBTAB 2: COMBAT DPS & ROLLS -->
+              @if (analyticsSubTab() === 'COMBAT') {
+                <div class="drawer-split-grid" data-testid="combat-telemetry-drawer-content">
+                  <div class="telemetry-card">
+                    <h3>DPS, Mitigation &amp; Overkill Breakdown</h3>
+                    <div class="stacked-bars-list">
+                      @for (row of skillTelemetryBreakdown(); track row.skillName) {
+                        <div class="telemetry-bar-row">
+                          <div class="bar-label-line">
+                            <strong>{{ row.skillName }} ({{ row.element }})</strong>
+                            <span>
+                              DMG: {{ row.damageDealt }} | Mitigated: {{ row.damageMitigated }} |
+                              Overkill: {{ row.overkill }} | Heal: {{ row.healingDone }}
+                            </span>
+                          </div>
+                          <div class="stacked-bar-track">
+                            <div
+                              class="seg dmg"
+                              [style.width.%]="row.totalWidthPct * 0.65"
+                              title="Damage Dealt"
+                            ></div>
+                            <div
+                              class="seg mit"
+                              [style.width.%]="row.totalWidthPct * 0.2"
+                              title="Mitigated"
+                            ></div>
+                            <div
+                              class="seg ovk"
+                              [style.width.%]="row.totalWidthPct * 0.15"
+                              title="Overkill"
+                            ></div>
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  </div>
+
+                  <div class="telemetry-card">
+                    <h3>RNG Roll Distribution Histogram (d100) &amp; Status Uptime</h3>
+                    <svg
+                      class="histogram-svg"
+                      viewBox="0 0 320 150"
+                      role="img"
+                      aria-label="RNG Roll Distribution Histogram"
+                      data-testid="roll-histogram-svg"
+                    >
+                      @for (b of rollHistogramBuckets(); track b.label; let idx = $index) {
+                        <g [attr.transform]="'translate(' + (18 + idx * 58) + ', 15)'">
+                          <rect
+                            x="0"
+                            [attr.y]="100 - b.heightPct"
+                            width="40"
+                            [attr.height]="b.heightPct"
+                            rx="4"
+                            fill="#38bdf8"
+                          />
+                          <text
+                            x="20"
+                            [attr.y]="94 - b.heightPct"
+                            text-anchor="middle"
+                            class="hist-val"
+                          >
+                            {{ b.count }}
+                          </text>
+                          <text x="20" y="118" text-anchor="middle" class="hist-label">
+                            {{ b.label }}
+                          </text>
+                        </g>
+                      }
+                    </svg>
+
+                    <div class="status-uptime-chips">
+                      @for (st of trackedStatusTags; track st) {
+                        <span class="uptime-pill">
+                          <strong>{{ st }}:</strong>
+                          {{ ((engine.telemetry().statusUptimeMs[st] || 0) / 1000).toFixed(1) }}s
+                        </span>
+                      }
+                    </div>
+                  </div>
+                </div>
+              }
+
+              <!-- SUBTAB 3: CAREER & GRAVES -->
+              @if (analyticsSubTab() === 'CHRONICLE') {
+                <div class="drawer-split-grid" data-testid="chronicle-drawer-content">
+                  <div class="telemetry-card">
+                    <h3>Lifetime Wealth &amp; XP Progression Curve</h3>
+                    <svg
+                      class="progression-svg"
+                      viewBox="0 0 300 105"
+                      role="img"
+                      aria-label="Lifetime XP and Wealth Line Graph"
+                      data-testid="career-progression-svg"
+                    >
+                      <polyline
+                        fill="none"
+                        stroke="#38bdf8"
+                        stroke-width="2.5"
+                        [attr.points]="careerProgressionPolyline().xpPoints"
+                      />
+                      <polyline
+                        fill="none"
+                        stroke="#fbbf24"
+                        stroke-width="2.5"
+                        [attr.points]="careerProgressionPolyline().goldPoints"
+                      />
+                    </svg>
+                    <div class="legend-inline">
+                      <span style="color: #38bdf8"
+                        >● Cumulative XP ({{ engine.character().xp }})</span
+                      >
+                      <span style="color: #fbbf24"
+                        >● Cumulative Gold ({{ engine.character().gold }})</span
+                      >
+                    </div>
+                  </div>
+
+                  <div class="telemetry-card">
+                    <div class="inv-header">
+                      <h3>Chaos Gate Career Timeline &amp; Bestiary</h3>
+                      <input
+                        type="search"
+                        aria-label="Search Career Chronicle"
+                        [ngModel]="chronicleSearch()"
+                        (ngModelChange)="chronicleSearch.set($event)"
+                        placeholder="Filter Chaos Gates..."
+                        data-testid="chronicle-search-input"
+                      />
+                    </div>
+                    <div class="chronicle-timeline">
+                      @for (entry of filteredChronicleEntries(); track entry.id) {
+                        <div class="chron-item">
+                          <strong>{{ entry.gateAddress }}</strong>
+                          <span>{{ entry.eventTitle }} (+{{ entry.xpEarned }} XP)</span>
+                        </div>
+                      }
+                    </div>
+                  </div>
+                </div>
+              }
             </div>
           }
 

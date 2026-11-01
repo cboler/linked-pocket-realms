@@ -494,6 +494,14 @@ export class MudEngineService implements OnDestroy {
     return eqW + invW;
   });
 
+  readonly gearPowerScore = computed<number>(() => {
+    const char = this.character();
+    return Object.values(char.paperdoll).reduce(
+      (acc, item) => acc + (item ? (item.clampedStatBudget ?? item.totalStatBudget) : 0),
+      0,
+    );
+  });
+
   constructor() {
     this.initializeEngine();
   }
@@ -2171,6 +2179,154 @@ export class MudEngineService implements OnDestroy {
       inventory: [...c.inventory, item],
     }));
     this.appendFeed('SYSTEM', `Unequipped [${item.name}] from [${slot}].`);
+    void this.storage.saveCharacterState(this.character());
+  }
+
+  unequipAll(): void {
+    const char = this.character();
+    const itemsToUnequip: EquipmentItem[] = [];
+    const emptyPaperdoll = { ...char.paperdoll };
+
+    for (const slot of Object.keys(emptyPaperdoll) as PaperdollSlotType[]) {
+      const it = emptyPaperdoll[slot];
+      if (it) {
+        itemsToUnequip.push(it);
+        emptyPaperdoll[slot] = null;
+      }
+    }
+
+    if (itemsToUnequip.length === 0) return;
+
+    this.character.update((c) => ({
+      ...c,
+      paperdoll: emptyPaperdoll,
+      inventory: [...c.inventory, ...itemsToUnequip],
+    }));
+
+    this.appendFeed('SYSTEM', `Unequipped all gear (${itemsToUnequip.length} items moved to bag).`);
+    void this.storage.saveCharacterState(this.character());
+  }
+
+  toggleItemLock(itemId: string): void {
+    let toggledState = false;
+    let itemName = '';
+    this.character.update((c) => {
+      const nextInv = c.inventory.map((it) => {
+        if (it.id === itemId) {
+          toggledState = !it.isLocked;
+          itemName = it.name;
+          return { ...it, isLocked: toggledState };
+        }
+        return it;
+      });
+      return { ...c, inventory: nextInv };
+    });
+    if (itemName) {
+      this.appendFeed(
+        'SYSTEM',
+        toggledState
+          ? `🔒 Locked [${itemName}] (protected from salvage).`
+          : `🔓 Unlocked [${itemName}].`,
+      );
+      void this.storage.saveCharacterState(this.character());
+    }
+  }
+
+  salvageItem(itemId: string): { success: boolean; shardsEarned: number } {
+    const char = this.character();
+    const item = char.inventory.find((i) => i.id === itemId);
+    if (!item) return { success: false, shardsEarned: 0 };
+    if (item.isLocked) {
+      this.appendFeed('SYSTEM', `⚠️ Cannot salvage [${item.name}]: Item is locked.`);
+      return { success: false, shardsEarned: 0 };
+    }
+
+    const baseShards =
+      item.rarity === 'Mythic'
+        ? 100
+        : item.rarity === 'Relic'
+          ? 50
+          : item.rarity === 'Rare'
+            ? 25
+            : 10;
+    const budgetBonus = Math.max(1, Math.round(item.totalStatBudget / 2));
+    const shardsEarned = baseShards + budgetBonus;
+
+    this.character.update((c) => ({
+      ...c,
+      resonanceShards: (c.resonanceShards || 0) + shardsEarned,
+      inventory: c.inventory.filter((i) => i.id !== itemId),
+    }));
+
+    this.appendFeed(
+      'SYSTEM',
+      `💎 [Salvage] Dismantled [${item.name}] (${item.rarity}) into +${shardsEarned} Resonance Shards.`,
+    );
+    void this.storage.saveCharacterState(this.character());
+    return { success: true, shardsEarned };
+  }
+
+  autoEquipBest(): number {
+    const char = this.character();
+    const slots: PaperdollSlotType[] = [
+      'Head',
+      'Chest',
+      'Legs',
+      'Main-Hand',
+      'Off-Hand',
+      'Relic 1',
+      'Relic 2',
+    ];
+    let swappedCount = 0;
+    const nextPaperdoll = { ...char.paperdoll };
+    const availableInventory = [...char.inventory];
+
+    const getItemScore = (it: EquipmentItem): number => it.clampedStatBudget ?? it.totalStatBudget;
+
+    for (const slot of slots) {
+      const current = nextPaperdoll[slot];
+      const isRelicSlot = slot === 'Relic 1' || slot === 'Relic 2';
+
+      const candidateIndices = availableInventory
+        .map((it, idx) => ({ it, idx }))
+        .filter(({ it }) =>
+          isRelicSlot ? it.slot === 'Relic 1' || it.slot === 'Relic 2' : it.slot === slot,
+        )
+        .sort((a, b) => getItemScore(b.it) - getItemScore(a.it));
+
+      if (candidateIndices.length > 0) {
+        const bestCandidate = candidateIndices[0];
+        const currentScore = current ? getItemScore(current) : -1;
+        if (getItemScore(bestCandidate.it) > currentScore) {
+          availableInventory.splice(bestCandidate.idx, 1);
+          if (current) {
+            availableInventory.push(current);
+          }
+          nextPaperdoll[slot] = bestCandidate.it;
+          swappedCount++;
+        }
+      }
+    }
+
+    if (swappedCount > 0) {
+      this.character.update((c) => ({
+        ...c,
+        paperdoll: nextPaperdoll,
+        inventory: availableInventory,
+      }));
+      this.appendFeed(
+        'SYSTEM',
+        `⚡ [Optimize Loadout] Auto-equipped best gear for ${swappedCount} slot(s).`,
+      );
+      void this.storage.saveCharacterState(this.character());
+    } else {
+      this.appendFeed(
+        'SYSTEM',
+        `⚡ [Optimize Loadout] You are already wearing your highest-stat gear.`,
+      );
+    }
+
+    return swappedCount;
   }
 
   restAtCampfire(): void {

@@ -1268,4 +1268,109 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
       expect(graftIntent).toBeDefined();
     });
   });
+
+  describe('Phase 12: Modern Equipment, Auto-Equip, Salvage & Inventory QOL', () => {
+    it('should compute gearPowerScore from equipped items', () => {
+      const score = engine.gearPowerScore();
+      expect(score).toBeGreaterThan(0);
+      const char = engine.character();
+      const expectedScore = Object.values(char.paperdoll).reduce(
+        (sum, it) => sum + (it ? (it.clampedStatBudget ?? it.totalStatBudget) : 0),
+        0,
+      );
+      expect(score).toBe(expectedScore);
+    });
+
+    it('should unequip all items into inventory cleanly via unequipAll()', () => {
+      const initialInvCount = engine.character().inventory.length;
+      const initialEquippedCount = Object.values(engine.character().paperdoll).filter(
+        Boolean,
+      ).length;
+      expect(initialEquippedCount).toBeGreaterThan(0);
+
+      engine.unequipAll();
+
+      const nextEquippedCount = Object.values(engine.character().paperdoll).filter(Boolean).length;
+      expect(nextEquippedCount).toBe(0);
+      expect(engine.character().inventory.length).toBe(initialInvCount + initialEquippedCount);
+      expect(engine.gearPowerScore()).toBe(0);
+    });
+
+    it('should auto-equip the best items for empty or weaker slots via autoEquipBest()', () => {
+      engine.unequipAll();
+      expect(engine.gearPowerScore()).toBe(0);
+
+      const swappedCount = engine.autoEquipBest();
+      expect(swappedCount).toBeGreaterThan(0);
+      expect(engine.gearPowerScore()).toBeGreaterThan(0);
+
+      // Now add a high power weapon to inventory and verify autoEquipBest equips it
+      const highTierSword: EquipmentItem = {
+        id: 'legendary-god-sword',
+        name: 'Apex Celestial Greatsword',
+        slot: 'Main-Hand',
+        rarity: 'Mythic',
+        weight: 8,
+        provenance: 'Verified Drop',
+        originGateAddress: 'Ω: Celestial Astral Apex',
+        statBonuses: { STR: 20, atkBonus: 50 },
+        totalStatBudget: 150,
+      };
+
+      engine.character.update((c) => ({
+        ...c,
+        inventory: [...c.inventory, highTierSword],
+      }));
+
+      const nextSwapped = engine.autoEquipBest();
+      expect(nextSwapped).toBeGreaterThan(0);
+      expect(engine.character().paperdoll['Main-Hand']?.id).toBe('legendary-god-sword');
+    });
+
+    it('should lock items and protect locked items from salvage', () => {
+      const testItem: EquipmentItem = {
+        id: 'test-salvage-armor',
+        name: 'Salvageable Runic Vest',
+        slot: 'Chest',
+        rarity: 'Rare',
+        weight: 5,
+        provenance: 'Verified Drop',
+        originGateAddress: 'Θ: Test',
+        statBonuses: { VIT: 5 },
+        totalStatBudget: 20,
+      };
+
+      engine.character.update((c) => ({
+        ...c,
+        inventory: [...c.inventory, testItem],
+      }));
+
+      // Lock item
+      engine.toggleItemLock('test-salvage-armor');
+      expect(
+        engine.character().inventory.find((i) => i.id === 'test-salvage-armor')?.isLocked,
+      ).toBe(true);
+
+      // Attempt salvage while locked should fail
+      const initialShards = engine.character().resonanceShards || 0;
+      const lockedSalvage = engine.salvageItem('test-salvage-armor');
+      expect(lockedSalvage.success).toBe(false);
+      expect(lockedSalvage.shardsEarned).toBe(0);
+      expect(engine.character().resonanceShards || 0).toBe(initialShards);
+
+      // Unlock and salvage
+      engine.toggleItemLock('test-salvage-armor');
+      expect(
+        engine.character().inventory.find((i) => i.id === 'test-salvage-armor')?.isLocked,
+      ).toBe(false);
+
+      const unlockedSalvage = engine.salvageItem('test-salvage-armor');
+      expect(unlockedSalvage.success).toBe(true);
+      expect(unlockedSalvage.shardsEarned).toBeGreaterThan(0);
+      expect(engine.character().resonanceShards || 0).toBe(
+        initialShards + unlockedSalvage.shardsEarned,
+      );
+      expect(engine.character().inventory.some((i) => i.id === 'test-salvage-armor')).toBe(false);
+    });
+  });
 });

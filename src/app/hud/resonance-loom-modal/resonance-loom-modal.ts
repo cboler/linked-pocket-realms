@@ -41,7 +41,7 @@ export class ResonanceLoomModalComponent {
   readonly chaosGate = inject(ChaosGateService);
   readonly storage = inject(StorageService);
 
-  readonly loomActiveTab = signal<'WEAVER' | 'WEBRTC' | 'THUNDERPASS' | 'OVERGROWTH'>('WEAVER');
+  readonly loomActiveTab = signal<'WEAVER' | 'WEBRTC' | 'THUNDERPASS' | 'OVERGROWTH'>('WEBRTC');
   readonly shareConfirmationMessage = signal<string>('');
   readonly exportedCartridgeText = signal<string>('');
   readonly remoteHandshakeInput = signal<string>('');

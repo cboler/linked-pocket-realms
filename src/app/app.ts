@@ -80,10 +80,13 @@ export class App {
     'Relic 1',
     'Relic 2',
   ];
+  readonly armorSlots: PaperdollSlotType[] = ['Head', 'Chest', 'Legs'];
+  readonly armamentSlots: PaperdollSlotType[] = ['Main-Hand', 'Off-Hand', 'Relic 1', 'Relic 2'];
   readonly directions: ExitDirection[] = ['N', 'S', 'E', 'W', 'U', 'D'];
   readonly cardinalDirections: ExitDirection[] = ['N', 'S', 'E', 'W'];
   readonly trackedStatusTags: StatusTag[] = ['Burn', 'Chill', 'Sunder', 'Overcharge'];
   readonly heatmapModes: HeatmapMode[] = ['LETHALITY', 'TRAFFIC', 'TIME_SPENT', 'LOOT'];
+  readonly Math = Math;
 
   // Approved Herald Greeting Catalog
   readonly heraldTemplates = HERALD_TEMPLATES;
@@ -164,8 +167,20 @@ export class App {
   readonly customLegendLabel = signal<string>('Aether Conduit');
   readonly customLegendColor = signal<string>('#f472b6');
 
-  // Paperdoll & Inventory Filtering
+  // Unified Analytics & Statistics Sub-Tabs
+  readonly analyticsSubTab = signal<'HEATMAP' | 'COMBAT' | 'CHRONICLE'>('HEATMAP');
+
+  // Paperdoll & Inventory Filtering & Sorting
   readonly inventoryFilter = signal<string>('ALL');
+  readonly inventoryCategoryFilter = signal<'ALL' | 'WEAPONS' | 'ARMOR' | 'RELICS' | 'CORES'>(
+    'ALL',
+  );
+  readonly inventoryProvenanceFilter = signal<'ALL' | 'Verified Drop' | 'Architect Forged'>('ALL');
+  readonly inventorySortBy = signal<'POWER_DESC' | 'POWER_ASC' | 'RARITY' | 'WEIGHT' | 'NAME'>(
+    'POWER_DESC',
+  );
+  readonly inventorySearchQuery = signal<string>('');
+  readonly selectedPaperdollSlot = signal<PaperdollSlotType | null>(null);
   readonly hoveredInventoryItem = signal<EquipmentItem | null>(null);
 
   // Bestiary & Compendium Search
@@ -536,10 +551,76 @@ export class App {
   });
 
   readonly filteredInventory = computed<EquipmentItem[]>(() => {
-    const inv = this.engine.character().inventory;
-    const f = this.inventoryFilter();
-    if (f === 'ALL') return inv;
-    return inv.filter((i) => i.slot === f || i.provenance === f);
+    let inv = this.engine.character().inventory;
+
+    // 1. Slot Filter from clicked Paperdoll slot
+    const slotFilter = this.selectedPaperdollSlot();
+    if (slotFilter) {
+      if (slotFilter === 'Relic 1' || slotFilter === 'Relic 2') {
+        inv = inv.filter((i) => i.slot === 'Relic 1' || i.slot === 'Relic 2');
+      } else {
+        inv = inv.filter((i) => i.slot === slotFilter);
+      }
+    }
+
+    // 2. Category Filter
+    const cat = this.inventoryCategoryFilter();
+    if (cat === 'WEAPONS') {
+      inv = inv.filter((i) => i.slot === 'Main-Hand' || i.slot === 'Off-Hand');
+    } else if (cat === 'ARMOR') {
+      inv = inv.filter((i) => i.slot === 'Head' || i.slot === 'Chest' || i.slot === 'Legs');
+    } else if (cat === 'RELICS') {
+      inv = inv.filter((i) => i.slot === 'Relic 1' || i.slot === 'Relic 2');
+    } else if (cat === 'CORES') {
+      inv = inv.filter((i) => !!i.isSphereCore);
+    }
+
+    // 3. Provenance Filter
+    const prov = this.inventoryProvenanceFilter();
+    if (prov !== 'ALL') {
+      inv = inv.filter((i) => i.provenance === prov);
+    }
+
+    // Legacy inventoryFilter compatibility
+    const legacyFilter = this.inventoryFilter();
+    if (legacyFilter !== 'ALL') {
+      inv = inv.filter((i) => i.slot === legacyFilter || i.provenance === legacyFilter);
+    }
+
+    // 4. Search Filter
+    const q = this.inventorySearchQuery().trim().toLowerCase();
+    if (q) {
+      inv = inv.filter(
+        (i) =>
+          i.name.toLowerCase().includes(q) ||
+          i.slot.toLowerCase().includes(q) ||
+          i.rarity.toLowerCase().includes(q) ||
+          (i.description && i.description.toLowerCase().includes(q)),
+      );
+    }
+
+    // 5. Sorting
+    const sort = this.inventorySortBy();
+    const sorted = [...inv];
+    const getScore = (it: EquipmentItem) => it.clampedStatBudget ?? it.totalStatBudget;
+    const rarityRank = (r: string) =>
+      r === 'Mythic' ? 4 : r === 'Relic' ? 3 : r === 'Rare' ? 2 : 1;
+
+    if (sort === 'POWER_DESC') {
+      sorted.sort((a, b) => getScore(b) - getScore(a));
+    } else if (sort === 'POWER_ASC') {
+      sorted.sort((a, b) => getScore(a) - getScore(b));
+    } else if (sort === 'RARITY') {
+      sorted.sort(
+        (a, b) => rarityRank(b.rarity) - rarityRank(a.rarity) || getScore(b) - getScore(a),
+      );
+    } else if (sort === 'WEIGHT') {
+      sorted.sort((a, b) => b.weight - a.weight);
+    } else if (sort === 'NAME') {
+      sorted.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    return sorted;
   });
 
   readonly filteredChronicleEntries = computed(() => {
@@ -650,6 +731,16 @@ export class App {
   }
 
   toggleDrawer(tab: DrawerTab): void {
+    if (tab === 'COMBAT_TELEMETRY') {
+      this.analyticsSubTab.set('COMBAT');
+      this.engine.activeDrawer.set('REALM_ANALYTICS');
+      return;
+    }
+    if (tab === 'CHRONICLE') {
+      this.analyticsSubTab.set('CHRONICLE');
+      this.engine.activeDrawer.set('REALM_ANALYTICS');
+      return;
+    }
     if (this.engine.activeDrawer() === tab) {
       this.engine.activeDrawer.set('NONE');
     } else {
@@ -660,6 +751,18 @@ export class App {
         );
       }
     }
+  }
+
+  selectPaperdollSlot(slot: PaperdollSlotType): void {
+    if (this.selectedPaperdollSlot() === slot) {
+      this.selectedPaperdollSlot.set(null);
+    } else {
+      this.selectedPaperdollSlot.set(slot);
+    }
+  }
+
+  clearSlotFilter(): void {
+    this.selectedPaperdollSlot.set(null);
   }
 
   submitTerminalCommand(): void {
@@ -1007,6 +1110,53 @@ export class App {
     this.engine.activeReplayEntry.set(entry);
     this.engine.replayCursorIndex.set(0);
     this.engine.perspective.set('SPECTATOR');
+  }
+
+  getItemStatDiff(item: EquipmentItem): {
+    powerDiff: number;
+    atkDiff: number;
+    mitDiff: number;
+    speedDiff: number;
+    isUpgrade: boolean;
+    equippedItem: EquipmentItem | null;
+    summary: string;
+  } {
+    const equipped = this.engine.character().paperdoll[item.slot];
+    const itemPower = item.clampedStatBudget ?? item.totalStatBudget;
+    const eqPower = equipped ? (equipped.clampedStatBudget ?? equipped.totalStatBudget) : 0;
+    const powerDiff = itemPower - eqPower;
+
+    const itemAtk = item.statBonuses.atkBonus ?? 0;
+    const eqAtk = equipped?.statBonuses.atkBonus ?? 0;
+    const atkDiff = itemAtk - eqAtk;
+
+    const itemSpeed = item.statBonuses.speedPctBonus ?? 0;
+    const eqSpeed = equipped?.statBonuses.speedPctBonus ?? 0;
+    const speedDiff = itemSpeed - eqSpeed;
+
+    const itemMit = item.statBonuses.mitigationBonus ?? 0;
+    const eqMit = equipped?.statBonuses.mitigationBonus ?? 0;
+    const mitDiff = itemMit - eqMit;
+
+    const isUpgrade = powerDiff > 0 || atkDiff > 0;
+
+    const atkSign = atkDiff >= 0 ? `+${atkDiff}` : `${atkDiff}`;
+    const spdSign = speedDiff >= 0 ? `+${speedDiff}%` : `${speedDiff}%`;
+    const powerSign = powerDiff >= 0 ? `+${powerDiff}` : `${powerDiff}`;
+
+    const summary = equipped
+      ? `${powerSign} Power (${atkSign} ATK / ${spdSign} Speed) vs. equipped`
+      : `+${itemPower} Power (${atkSign} ATK / ${spdSign} Speed) vs Empty`;
+
+    return {
+      powerDiff,
+      atkDiff,
+      mitDiff,
+      speedDiff,
+      isUpgrade,
+      equippedItem: equipped ?? null,
+      summary,
+    };
   }
 
   computeStatComparisonTooltip(item: EquipmentItem): string {

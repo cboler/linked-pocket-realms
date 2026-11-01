@@ -130,19 +130,19 @@ test.describe('Linked Pocket Realms — Tactical HUD, Perspectives & Drawers E2E
     await expect(page.getByTestId('spectator-dock')).toBeVisible();
     await expect(page.getByTestId('replay-frame-readout')).toBeVisible();
 
-    // 8. Verify On-Demand Data & Telemetry Drawers (Paperdoll, Combat DPS, Heatmap, Chronicle, P2P)
+    // 8. Verify On-Demand Data & Telemetry Drawers (Equipment, Consolidated Analytics Sub-Tabs & P2P)
     await page.getByTestId('drawer-paperdoll-btn').click();
     await expect(page.getByTestId('paperdoll-drawer-content')).toBeVisible();
     await expect(page.getByTestId('attribute-radar-svg')).toBeVisible();
 
-    await page.getByTestId('drawer-combat-btn').click();
-    await expect(page.getByTestId('combat-telemetry-drawer-content')).toBeVisible();
-    await expect(page.getByTestId('roll-histogram-svg')).toBeVisible();
-
     await page.getByTestId('drawer-analytics-btn').click();
     await expect(page.getByTestId('realm-analytics-drawer-content')).toBeVisible();
 
-    await page.getByTestId('drawer-chronicle-btn').click();
+    await page.getByTestId('analytics-tab-combat').click();
+    await expect(page.getByTestId('combat-telemetry-drawer-content')).toBeVisible();
+    await expect(page.getByTestId('roll-histogram-svg')).toBeVisible();
+
+    await page.getByTestId('analytics-tab-chronicle').click();
     await expect(page.getByTestId('chronicle-drawer-content')).toBeVisible();
     await expect(page.getByTestId('career-progression-svg')).toBeVisible();
 

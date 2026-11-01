@@ -137,6 +137,7 @@ export interface EquipmentItem {
   isSphereCore?: boolean;
   sphereCoreAddress?: ChaosGateAddress;
   sphereCoreRarity?: string;
+  isLocked?: boolean;
   signatureHex?: string; // ECDSA SubtleCrypto signature for Verified Drops
   signerPublicKeyJwk?: string;
 }

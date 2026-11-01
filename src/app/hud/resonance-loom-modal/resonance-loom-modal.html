@@ -4,20 +4,26 @@
     <button
       type="button"
       class="loom-tab-btn"
-      [class.active]="loomActiveTab() === 'WEAVER'"
-      (click)="setLoomActiveTab('WEAVER')"
-      data-testid="loom-tab-weaver"
-    >
-      🧬 Tri-Chord Weaver
-    </button>
-    <button
-      type="button"
-      class="loom-tab-btn"
       [class.active]="loomActiveTab() === 'WEBRTC'"
       (click)="setLoomActiveTab('WEBRTC')"
       data-testid="loom-tab-webrtc"
     >
-      🌐 WebRTC Collider
+      🌐 Realm Mesh Collider
+      @if (transport.nearbyRealmsCount() > 0) {
+        <span class="tab-count-pill">({{ transport.nearbyRealmsCount() }})</span>
+      }
+    </button>
+    <button
+      type="button"
+      class="loom-tab-btn"
+      [class.active]="loomActiveTab() === 'WEAVER'"
+      (click)="setLoomActiveTab('WEAVER')"
+      data-testid="loom-tab-weaver"
+    >
+      🌀 Wayfinder Loom
+      @if (sphereCores().length > 0) {
+        <span class="tab-count-pill cores">({{ sphereCores().length }})</span>
+      }
     </button>
     <button
       type="button"
@@ -27,6 +33,9 @@
       data-testid="loom-tab-thunderpass"
     >
       📡 Thunderpass Radar
+      @if (thunderpass.isWalkModeActive()) {
+        <span class="tab-pulse-dot" title="Walk Mode Active">●</span>
+      }
     </button>
     <button
       type="button"
