@@ -7,6 +7,7 @@
  * - Request payload cap (32KB max) to prevent memory exhaustion
  * - Client Cache-Control headers to minimize duplicate network round-trips
  * - Zero stdout logging spam to preserve 50GB/mo Cloud Logging quota
+ * - Active de-duplication: senderId single-session guarantee & 60s stale heartbeat TTL
  */
 
 const functions = require('@google-cloud/functions-framework');
@@ -14,12 +15,12 @@ const functions = require('@google-cloud/functions-framework');
 // ============================================================================
 // FREE-TIER CAPACITY BOUNDS & IN-MEMORY CACHES
 // ============================================================================
-const SESSION_TTL_MS = 5 * 60 * 1000; // 5-minute TTL for WebRTC rendezvous
+const SESSION_TTL_MS = 60 * 1000; // 60-second TTL (clients heartbeat every 15s)
 const SPORE_TTL_MS = 6 * 60 * 60 * 1000; // 6-hour TTL for Thunderpass proximity spores
-const MAX_SESSIONS = 500; // Cap active sessions in RAM (FIFO / LRU bound)
-const MAX_ZONE_BUCKETS = 500; // Cap proximity geohash buckets in RAM (FIFO bound)
+const MAX_SESSIONS = 200; // Cap active sessions in RAM
+const MAX_ZONE_BUCKETS = 400; // Cap proximity geohash buckets in RAM
 const MAX_SPORES_PER_ZONE = 8; // Cap density per geohash cell
-const MAX_SIGNALS_PER_SESSION = 30; // Cap pending SDP/ICE signals
+const MAX_SIGNALS_PER_SESSION = 20; // Cap pending SDP/ICE signals
 const MAX_PAYLOAD_BYTES = 32 * 1024; // 32 KB payload limit
 
 // In-memory data stores
@@ -32,7 +33,7 @@ const sporeBuckets = new Map(); // zoneHash -> SporeEntry[]
 function purgeExpiredRecords() {
   const now = Date.now();
 
-  // 1. Evict expired WebRTC sessions
+  // 1. Evict expired WebRTC sessions (no heartbeat within 60s)
   for (const [code, sess] of sessions.entries()) {
     if (now - sess.lastSeenMs > SESSION_TTL_MS) {
       sessions.delete(code);
@@ -179,7 +180,7 @@ functions.http('broker', (req, res) => {
     return;
   }
 
-  // ROUTE: POST /signal — Exchange WebRTC SDP Offers/Answers and ICE candidates
+  // ROUTE: POST /signal — Exchange WebRTC SDP Offers/Answers, ICE candidates, and session lifecycle
   if (pathname === '/signal' && req.method === 'POST') {
     setSecurityHeaders(res, 'no-store');
     const body = req.body || {};
@@ -188,6 +189,29 @@ functions.http('broker', (req, res) => {
     if (!roomCode) {
       res.status(400).json({ error: 'Missing required field: roomCode' });
       return;
+    }
+
+    // 1. Explicit Session Leave / Departure
+    if (type === 'LEAVE') {
+      sessions.delete(roomCode);
+      if (senderId) {
+        for (const [code, sess] of sessions.entries()) {
+          if (sess.senderId === senderId) {
+            sessions.delete(code);
+          }
+        }
+      }
+      res.status(200).json({ status: 'SESSION_REMOVED', roomCode });
+      return;
+    }
+
+    // 2. Sender De-duplication: Purge any older session with the same senderId under a different room code
+    if (senderId) {
+      for (const [code, sess] of sessions.entries()) {
+        if (code !== roomCode && sess.senderId === senderId) {
+          sessions.delete(code);
+        }
+      }
     }
 
     const now = Date.now();

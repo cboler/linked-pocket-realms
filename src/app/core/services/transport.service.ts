@@ -15,6 +15,24 @@ import {
 
 const CHANNEL_NAME = 'linked_pocket_realms_chaos_gate_bus_v1';
 const SAVED_BROKER_URL_KEY = 'linked_pocket_realms_broker_url';
+const PEER_ID_SESSION_KEY = 'linked_pocket_realms_tab_peer_id';
+
+function initTabPeerId(): string {
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      const stored = sessionStorage.getItem(PEER_ID_SESSION_KEY);
+      if (stored && stored.startsWith('peer-')) {
+        return stored;
+      }
+      const newId = `peer-${Math.random().toString(36).substring(2, 9)}`;
+      sessionStorage.setItem(PEER_ID_SESSION_KEY, newId);
+      return newId;
+    }
+  } catch {
+    // fallback
+  }
+  return `peer-${Math.random().toString(36).substring(2, 9)}`;
+}
 
 export interface PeerChannelSession {
   peerId: string;
@@ -27,7 +45,7 @@ export interface PeerChannelSession {
   providedIn: 'root',
 })
 export class TransportService implements OnDestroy {
-  readonly localPeerId = `peer-${Math.random().toString(36).substring(2, 9)}`;
+  readonly localPeerId = initTabPeerId();
 
   private broadcastChannel: BroadcastChannel | null = null;
   private rtcPeerConnection: RTCPeerConnection | null = null;
@@ -101,6 +119,11 @@ export class TransportService implements OnDestroy {
     if (initialUrl) {
       this.brokerUrl.set(initialUrl);
       void this.refreshBrokerSessions();
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', () => {
+        this.leaveBrokerSession();
+      });
     }
   }
 
@@ -574,7 +597,17 @@ export class TransportService implements OnDestroy {
       const res = await fetch(`${url}/sessions`);
       if (res.ok) {
         const data = await res.json();
-        this.brokerSessions.set(data.sessions || []);
+        const rawSessions: BrokerSessionInfo[] = data.sessions || [];
+        const seenKeys = new Set<string>();
+        const deduplicated: BrokerSessionInfo[] = [];
+        for (const s of rawSessions) {
+          const key = s.senderId || s.roomCode;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            deduplicated.push(s);
+          }
+        }
+        this.brokerSessions.set(deduplicated);
         this.brokerMeshStatus.set('CONNECTED');
       } else {
         this.brokerMeshStatus.set('OFFLINE');
@@ -743,7 +776,29 @@ export class TransportService implements OnDestroy {
     this.rtcConnectionState.set('DISCONNECTED');
   }
 
+  leaveBrokerSession(): void {
+    const url = this.brokerUrl().trim();
+    if (!url) return;
+    const body = JSON.stringify({
+      roomCode: this.myLobbyRoomCode(),
+      type: 'LEAVE',
+      senderId: this.localPeerId,
+    });
+    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+      const blob = new Blob([body], { type: 'application/json' });
+      navigator.sendBeacon(`${url}/signal`, blob);
+    } else {
+      void fetch(`${url}/signal`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: true,
+      }).catch(() => {});
+    }
+  }
+
   ngOnDestroy(): void {
+    this.leaveBrokerSession();
     this.clearBrokerPoll();
     if (this.broadcastChannel) {
       this.broadcastChannel.close();

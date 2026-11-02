@@ -11,6 +11,7 @@
     "lint": "ng lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "test:broker": "node scripts/test-broker-live.mjs",
     "e2e": "playwright test"
   },
   "private": true,
