@@ -793,7 +793,9 @@ export class TransportService implements OnDestroy {
         headers: { 'Content-Type': 'application/json' },
         body,
         keepalive: true,
-      }).catch(() => {});
+      }).catch(() => {
+        // Discard background network error during page unload
+      });
     }
   }
 
