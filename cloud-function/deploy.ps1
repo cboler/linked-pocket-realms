@@ -19,7 +19,8 @@ Write-Host " Runtime:       nodejs22 (Gen 2)"
 Write-Host " Min Instances: 0 (Scale-to-zero, $0.00 idle cost)"
 Write-Host " Max Instances: 1 (DoS / Runaway cost ceiling)"
 Write-Host " Concurrency:   80 requests/instance"
-Write-Host " Memory:        256Mi (1.44M free compute seconds/mo)"
+Write-Host " CPU:           1 vCPU (180k free compute seconds/mo)"
+Write-Host " Memory:        512Mi (720k free compute seconds/mo)"
 Write-Host " Timeout:       10s (Fast hung-connection termination)"
 Write-Host "==========================================================" -ForegroundColor Cyan
 
@@ -45,7 +46,8 @@ gcloud functions deploy $FUNCTION_NAME `
   --min-instances=0 `
   --max-instances=1 `
   --concurrency=80 `
-  --memory=256Mi `
+  --cpu=1 `
+  --memory=512Mi `
   --timeout=10s `
   --quiet
 

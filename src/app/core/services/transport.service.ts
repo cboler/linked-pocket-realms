@@ -87,7 +87,11 @@ export class TransportService implements OnDestroy {
     try {
       if (typeof localStorage !== 'undefined') {
         const saved = localStorage.getItem(SAVED_BROKER_URL_KEY);
-        if (saved !== null && saved.trim() !== '') {
+        if (
+          saved !== null &&
+          saved.trim() !== '' &&
+          !saved.includes('linked-pocket-realms-broker-uc.a.run.app')
+        ) {
           initialUrl = saved.trim();
         }
       }

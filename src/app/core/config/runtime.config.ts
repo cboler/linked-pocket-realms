@@ -10,7 +10,7 @@ export interface RuntimeConfig {
 }
 
 export const RUNTIME_CONFIG: RuntimeConfig = {
-  defaultBrokerUrl: 'https://linked-pocket-realms-broker-uc.a.run.app',
+  defaultBrokerUrl: 'https://pocket-realms-broker-j26ghnm2tq-uc.a.run.app',
   autoConnectBroker: true,
   heartbeatIntervalMs: 15000,
 };
