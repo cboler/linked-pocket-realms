@@ -4,6 +4,7 @@ import {
   ActiveStatusEffect,
   ArchetypeClass,
   AtmospherePrefix,
+  BazaarListing,
   BiomeNoun,
   ChalkInscription,
   ChaosGateAddress,
@@ -24,11 +25,13 @@ import {
   LinkedMechanismData,
   MonsterEntity,
   NetworkPacket,
+  NetworkPeerVisitor,
   P2PChatMessage,
   PaperdollSlotType,
   PassiveTrait,
   PerspectiveRole,
   PhantomBreadcrumb,
+  ProvenanceRecord,
   RealmDelta,
   ReplayFrame,
   RoomNode,
@@ -464,6 +467,24 @@ export class MudEngineService implements OnDestroy {
     return allRooms.find((r) => r.id === curId) ?? allRooms[0];
   });
 
+  // Sanctum Vault Revenue (Dungeon Economy)
+  readonly sanctumVaultShards = signal<number>(0);
+
+  // Peer Live Co-Adventurers in Current Room
+  readonly peersInCurrentRoom = computed<NetworkPeerVisitor[]>(() => {
+    const curId = this.character().currentRoomId;
+    if (!curId) return [];
+    const now = Date.now();
+    return this.transport
+      .activeVisitorsList()
+      .filter((v) => v.currentRoomId === curId && now - v.lastSeenMs < 45000);
+  });
+
+  // Floating peer chat messages for speech bubbles in 2.5D viewport
+  readonly peerChatMessages = signal<
+    Record<string, { senderName: string; text: string; timestamp: number }>
+  >({});
+
   readonly effectiveAttributes = computed<CoreAttributes>(() => {
     const char = this.character();
     const totals: CoreAttributes = { ...char.baseAttributes };
@@ -624,6 +645,7 @@ export class MudEngineService implements OnDestroy {
         savedChar.heraldGreeting = formatHeraldGreeting(0, 'Radiant', 'Beacon', 'triumph');
       }
       this.character.set(savedChar);
+      this.sanctumVaultShards.set(savedChar.sanctumVaultShards || 0);
       this.needsOnboarding.set(false);
     } else {
       this.needsOnboarding.set(true);
@@ -1216,6 +1238,61 @@ export class MudEngineService implements OnDestroy {
       return { type: 'INSPECT', rawInput: trimmed, source: 'TERMINAL' };
     }
 
+    if (verb === '@bazaar' || verb === 'bazaar') {
+      const sub = parts[1]?.toLowerCase();
+      if (sub === 'sell') {
+        const price = parseInt(parts[parts.length - 1], 10);
+        if (isNaN(price)) {
+          this.appendFeed('SYSTEM', 'Usage: @bazaar sell <item_name_or_id> <shard_price>');
+        } else {
+          const itemQuery = parts.slice(2, parts.length - 1).join(' ');
+          this.sellBazaarItem(itemQuery, price);
+        }
+        return { type: 'INSPECT', rawInput: trimmed, source: 'TERMINAL' };
+      }
+      if (sub === 'buy') {
+        const itemQuery = parts.slice(2).join(' ');
+        this.buyBazaarItem(itemQuery);
+        return { type: 'INSPECT', rawInput: trimmed, source: 'TERMINAL' };
+      }
+      if (sub === 'claim') {
+        this.claimSanctumVaultRevenue();
+        return { type: 'INSPECT', rawInput: trimmed, source: 'TERMINAL' };
+      }
+      const bazaar = this.currentRoom().bazaar || [];
+      if (bazaar.length === 0) {
+        this.appendFeed(
+          'SYSTEM',
+          "No items listed in this chamber's shadow stall. Type '@bazaar sell <item> <price>' to list goods.",
+        );
+      } else {
+        this.appendFeed('SYSTEM', `🏪 [Shadow Bazaar Stall] (${bazaar.length} Wares Available):`);
+        for (const b of bazaar) {
+          const prov = b.item.provenanceChain?.length
+            ? ` [Provenance: ${b.item.provenanceChain.length} events]`
+            : '';
+          this.appendFeed(
+            'SYSTEM',
+            ` • [${b.item.name}] (${b.item.rarity} ${b.item.slot}) — ${b.shardPrice} Shards (Seller: ${b.sellerName})${prov}`,
+          );
+        }
+      }
+      return { type: 'INSPECT', rawInput: trimmed, source: 'TERMINAL' };
+    }
+
+    if (verb === '@vault' || verb === 'vault') {
+      const sub = parts[1]?.toLowerCase();
+      if (sub === 'claim' || sub === 'harvest') {
+        this.claimSanctumVaultRevenue();
+      } else {
+        this.appendFeed(
+          'SYSTEM',
+          `💰 [Sanctum Vault Balance]: ${this.sanctumVaultShards()} Resonance Shards. Commands: @vault claim (or @bazaar claim).`,
+        );
+      }
+      return { type: 'INSPECT', rawInput: trimmed, source: 'TERMINAL' };
+    }
+
     if (
       lower === 'enter rift' ||
       lower === '@enter rift' ||
@@ -1298,7 +1375,7 @@ export class MudEngineService implements OnDestroy {
     }
 
     // P2P Broadcast Chat: say / ' (room) and shout / chat / broadcast (realm-wide)
-    if (verb === 'say' || verb === '@say' || lower.startsWith("'")) {
+    if (verb === 'say' || verb === '@say' || verb === '@party' || lower.startsWith("'")) {
       const msg = lower.startsWith("'")
         ? trimmed.substring(1).trim()
         : parts.slice(1).join(' ').trim();
@@ -2279,6 +2356,29 @@ export class MudEngineService implements OnDestroy {
       (targetId === room.linkedMechanism.id || targetId === 'mechanism' || targetId === 'lever')
     ) {
       this.pullLinkedMechanism();
+      return;
+    }
+
+    // Check bazaar stall listings
+    const listing = room.bazaar?.find((b) => b.id === targetId || b.item.id === targetId);
+    if (listing) {
+      const provStr = listing.item.provenanceChain?.length
+        ? ` • Provenance Events: ${listing.item.provenanceChain.length}`
+        : '';
+      this.appendFeed(
+        'LORE',
+        `🏪 [Shadow Bazaar Ware] [${listing.item.name}] (${listing.item.rarity} ${listing.item.slot}) offered by ${listing.sellerName} for ${listing.shardPrice} Shards${provStr}. Click [Buy] or type '@bazaar buy ${listing.item.name}'.`,
+      );
+      return;
+    }
+
+    // Check co-adventurers present
+    const peer = this.peersInCurrentRoom().find((p) => p.peerId === targetId);
+    if (peer) {
+      this.appendFeed(
+        'NETWORK',
+        `👤 [Co-Adventurer] ${peer.playerName} (Lv.${peer.level} ${peer.archetype}) from ${peer.gateAddress}. Status: ${peer.inCombat ? 'Engaged in combat' : 'Exploring'}.`,
+      );
       return;
     }
 
@@ -3722,6 +3822,14 @@ export class MudEngineService implements OnDestroy {
     this.chatLog.update((prev) => [chatMsg, ...prev].slice(0, 50));
 
     if (channel === 'ROOM') {
+      this.peerChatMessages.update((all) => ({
+        ...all,
+        [this.transport.localPeerId]: {
+          senderName: char.name,
+          text: cleanText,
+          timestamp: Date.now(),
+        },
+      }));
       this.appendFeed('CHAT', `💬 [Say] You: "${cleanText}"`, undefined, `[cmd: say ${cleanText}]`);
     } else {
       this.appendFeed(
@@ -3904,10 +4012,24 @@ export class MudEngineService implements OnDestroy {
       );
     } else if (pkt.type === 'MECHANISM_PULLED' && pkt.linkedMechanism && pkt.roomId) {
       this.handleRemoteMechanismPulled(pkt.roomId, pkt.linkedMechanism);
+    } else if (pkt.type === 'BAZAAR_LISTED' && pkt.bazaarListing && pkt.roomId) {
+      this.handleIncomingBazaarListing(pkt.bazaarListing, pkt.roomId);
+    } else if (pkt.type === 'BAZAAR_PURCHASED' && pkt.bazaarPurchase && pkt.roomId) {
+      this.handleIncomingBazaarPurchase(pkt.bazaarPurchase, pkt.roomId);
+    } else if (pkt.type === 'PEER_CHAT' && pkt.peerChat) {
+      this.handleIncomingPeerChat(pkt.senderPeerId, pkt.senderName, pkt.peerChat.text, pkt.roomId);
     } else if (pkt.type === 'CHAT_MESSAGE' && pkt.chat) {
       const chat = pkt.chat;
       this.chatLog.update((prev) => [chat, ...prev].slice(0, 50));
       if (chat.channel === 'ROOM') {
+        this.peerChatMessages.update((all) => ({
+          ...all,
+          [pkt.senderPeerId]: {
+            senderName: pkt.senderName,
+            text: chat.text,
+            timestamp: Date.now(),
+          },
+        }));
         if (pkt.roomId === this.currentRoom().id) {
           this.appendFeed('CHAT', `💬 [Say] ${pkt.senderName}: "${chat.text}"`);
         } else {
@@ -4340,6 +4462,27 @@ export class MudEngineService implements OnDestroy {
         colorHex: '#f59e0b',
       });
     }
+    if (room.bazaar && room.bazaar.length > 0) {
+      for (const b of room.bazaar) {
+        badges.push({
+          label: `🏪 Buy [${b.item.name}] (${b.shardPrice} Shards)`,
+          targetId: b.id,
+          actionType: 'INSPECT',
+          colorHex: '#38bdf8',
+        });
+      }
+    }
+    const presentPeers = this.peersInCurrentRoom();
+    if (presentPeers.length > 0) {
+      for (const peer of presentPeers) {
+        badges.push({
+          label: `👋 ${peer.playerName} (${peer.archetype} Lv.${peer.level})`,
+          targetId: peer.peerId,
+          actionType: 'INSPECT',
+          colorHex: '#34d399',
+        });
+      }
+    }
     if (room.legendType === 'anchor-portal') {
       for (const peer of this.transport.activeVisitorsList()) {
         badges.push({
@@ -4366,12 +4509,293 @@ export class MudEngineService implements OnDestroy {
     if (room.linkedMechanism) {
       extraFlavor += ` ⚙️ Heavy synchronized levers connect to the planar floorplates [${room.linkedMechanism.state}].`;
     }
+    if (room.bazaar && room.bazaar.length > 0) {
+      extraFlavor += ` 🏪 A shadowy merchant stall offers ${room.bazaar.length} wares under dim blue lanternlight.`;
+    }
+    if (presentPeers.length > 0) {
+      extraFlavor += ` 👤 Co-adventurers present: ${presentPeers.map((p) => `${p.playerName} (Lv.${p.level})`).join(', ')}.`;
+    }
 
     this.appendFeed(
       'NARRATIVE',
       `${legend.glyph} [${room.title}] — ${room.description}${extraFlavor} (Exits: ${exitsStr || 'None'})`,
       badges,
     );
+  }
+
+  handleIncomingBazaarListing(listing: BazaarListing, roomId: string): void {
+    this.rooms.update((all) =>
+      all.map((r) => {
+        if (r.id !== roomId) return r;
+        const prev = r.bazaar || [];
+        if (prev.some((b) => b.id === listing.id)) return r;
+        return {
+          ...r,
+          bazaar: [...prev, listing],
+        };
+      }),
+    );
+    if (this.currentRoom().id === roomId) {
+      this.soundFx.playMechanismClank();
+      this.appendFeed(
+        'NETWORK',
+        `🏪 [Shadow Bazaar Stocked] ${listing.sellerName} placed [${listing.item.name}] in the stall for ${listing.shardPrice} Shards!`,
+      );
+    }
+  }
+
+  handleIncomingBazaarPurchase(
+    purchase: {
+      listingId: string;
+      buyerName: string;
+      buyerPeerId: string;
+      shardPrice: number;
+      itemId: string;
+      itemName: string;
+    },
+    roomId: string,
+  ): void {
+    this.rooms.update((all) =>
+      all.map((r) => {
+        if (r.id !== roomId || !r.bazaar) return r;
+        return {
+          ...r,
+          bazaar: r.bazaar.filter((b) => b.id !== purchase.listingId),
+        };
+      }),
+    );
+
+    if (!this.isVisitingExternalRealm()) {
+      this.sanctumVaultShards.update((s) => s + purchase.shardPrice);
+      this.character.update((c) => ({
+        ...c,
+        sanctumVaultShards: this.sanctumVaultShards(),
+      }));
+      void this.storage.saveCharacterState(this.character());
+      this.soundFx.playHarvestShards();
+      this.soundFx.triggerHaptic('CONVERGENCE');
+      this.appendFeed(
+        'LORE',
+        `💰 [Sanctum Vault Revenue] ${purchase.buyerName} purchased [${purchase.itemName}] from your stall! Deposited +${purchase.shardPrice} Resonance Shards into your Sanctum Vault.`,
+      );
+    } else if (this.currentRoom().id === roomId) {
+      this.appendFeed(
+        'NETWORK',
+        `🏪 [Bazaar Sale] ${purchase.buyerName} acquired [${purchase.itemName}] from the chamber stall.`,
+      );
+    }
+  }
+
+  handleIncomingPeerChat(
+    senderPeerId: string,
+    senderName: string,
+    text: string,
+    roomId?: string,
+  ): void {
+    this.peerChatMessages.update((all) => ({
+      ...all,
+      [senderPeerId]: {
+        senderName,
+        text,
+        timestamp: Date.now(),
+      },
+    }));
+    if (roomId === this.currentRoom().id) {
+      this.appendFeed('CHAT', `💬 [Room] ${senderName}: "${text}"`);
+      this.soundFx.playPhantomWhisper(0);
+    } else {
+      this.appendFeed('CHAT', `💬 [Distant Echo] ${senderName}: "${text}"`);
+    }
+  }
+
+  sellBazaarItem(itemQuery: string, shardPrice: number, targetRoomId?: string): boolean {
+    const roomId = targetRoomId || this.currentRoom().id;
+    const char = this.character();
+    const itemIndex = char.inventory.findIndex(
+      (it) => it.id === itemQuery || it.name.toLowerCase().includes(itemQuery.toLowerCase()),
+    );
+    if (itemIndex === -1) {
+      this.appendFeed('SYSTEM', `❌ Item "${itemQuery}" not found in your inventory.`);
+      return false;
+    }
+    if (shardPrice <= 0 || !Number.isFinite(shardPrice)) {
+      this.appendFeed('SYSTEM', `❌ Price must be a positive integer number of Resonance Shards.`);
+      return false;
+    }
+
+    const item = { ...char.inventory[itemIndex] };
+    const nextInv = char.inventory.filter((_, idx) => idx !== itemIndex);
+
+    const provenanceEntry: ProvenanceRecord = {
+      action: item.provenanceChain?.length ? 'Spliced' : 'Forged',
+      architect: char.name,
+      realm: this.activeGateAddress().formatted,
+      timestamp: Date.now(),
+      price: shardPrice,
+    };
+    item.provenanceChain = [...(item.provenanceChain || []), provenanceEntry];
+
+    const listing: BazaarListing = {
+      id: `bazaar-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      sellerName: char.name,
+      sellerAddress: this.activeGateAddress().formatted,
+      item,
+      shardPrice,
+      listedAt: Date.now(),
+    };
+
+    this.rooms.update((all) =>
+      all.map((r) => {
+        if (r.id !== roomId) return r;
+        return {
+          ...r,
+          bazaar: [...(r.bazaar || []), listing],
+        };
+      }),
+    );
+
+    this.character.update((c) => ({
+      ...c,
+      inventory: nextInv,
+    }));
+    void this.storage.saveCharacterState(this.character());
+
+    this.transport.broadcastBazaarListed(listing, this.activeGateAddress().formatted, roomId);
+
+    this.soundFx.playMechanismClank();
+    this.soundFx.triggerHaptic('MECHANISM');
+    this.appendFeed(
+      'SYSTEM',
+      `🏪 [Shadow Bazaar Listing] Placed [${item.name}] in the chamber stall for ${shardPrice} Resonance Shards.`,
+    );
+    return true;
+  }
+
+  buyBazaarItem(listingOrItemQuery: string, targetRoomId?: string): boolean {
+    const roomId = targetRoomId || this.currentRoom().id;
+    const room = this.rooms().find((r) => r.id === roomId);
+    if (!room || !room.bazaar || room.bazaar.length === 0) {
+      this.appendFeed(
+        'SYSTEM',
+        `❌ There are no shadow bazaar stalls with goods for sale in this chamber.`,
+      );
+      return false;
+    }
+
+    const listing = room.bazaar.find(
+      (b) =>
+        b.id === listingOrItemQuery ||
+        b.item.id === listingOrItemQuery ||
+        b.item.name.toLowerCase().includes(listingOrItemQuery.toLowerCase()),
+    );
+    if (!listing) {
+      this.appendFeed(
+        'SYSTEM',
+        `❌ Listing "${listingOrItemQuery}" not found in this chamber's stall.`,
+      );
+      return false;
+    }
+
+    const char = this.character();
+    if (char.resonanceShards < listing.shardPrice) {
+      this.appendFeed(
+        'SYSTEM',
+        `❌ Insufficient Resonance Shards! Required: ${listing.shardPrice}, Current: ${char.resonanceShards}.`,
+      );
+      return false;
+    }
+
+    const boughtItem: EquipmentItem = {
+      ...listing.item,
+      provenanceChain: [
+        ...(listing.item.provenanceChain || []),
+        {
+          action: 'Bartered',
+          architect: char.name,
+          realm: this.activeGateAddress().formatted,
+          timestamp: Date.now(),
+          price: listing.shardPrice,
+        },
+      ],
+    };
+
+    this.rooms.update((all) =>
+      all.map((r) => {
+        if (r.id !== roomId || !r.bazaar) return r;
+        return {
+          ...r,
+          bazaar: r.bazaar.filter((b) => b.id !== listing.id),
+        };
+      }),
+    );
+
+    this.character.update((c) => ({
+      ...c,
+      resonanceShards: c.resonanceShards - listing.shardPrice,
+      inventory: [...c.inventory, boughtItem],
+    }));
+    void this.storage.saveCharacterState(this.character());
+
+    this.transport.broadcastBazaarPurchased(
+      char.name,
+      listing.id,
+      boughtItem.id,
+      boughtItem.name,
+      listing.shardPrice,
+      this.activeGateAddress().formatted,
+      roomId,
+    );
+
+    if (listing.sellerName === char.name || !this.isVisitingExternalRealm()) {
+      this.sanctumVaultShards.update((s) => s + listing.shardPrice);
+      this.character.update((c) => ({
+        ...c,
+        sanctumVaultShards: this.sanctumVaultShards(),
+      }));
+      void this.storage.saveCharacterState(this.character());
+    }
+
+    this.soundFx.playHarvestShards();
+    this.soundFx.triggerHaptic('CONVERGENCE');
+    this.appendFeed(
+      'LORE',
+      `💰 [Bazaar Acquisition] Bartered ${listing.shardPrice} Resonance Shards for [${boughtItem.name}]! Added to inventory.`,
+    );
+    return true;
+  }
+
+  claimSanctumVaultRevenue(): number {
+    const revenue = this.sanctumVaultShards();
+    if (revenue <= 0) {
+      this.appendFeed(
+        'SYSTEM',
+        `ℹ️ Your Sanctum Vault is empty (0 Shards). List items in your chambers with '@bazaar sell' for visitors to purchase!`,
+      );
+      return 0;
+    }
+
+    this.sanctumVaultShards.set(0);
+    this.character.update((c) => ({
+      ...c,
+      resonanceShards: c.resonanceShards + revenue,
+      sanctumVaultShards: 0,
+    }));
+    void this.storage.saveCharacterState(this.character());
+
+    this.soundFx.playConvergenceChime();
+    this.soundFx.triggerHaptic('CONVERGENCE');
+    this.appendFeed(
+      'LORE',
+      `🌟 [Sanctum Vault Harvest] Claimed +${revenue} Resonance Shards from your dungeon stalls!`,
+    );
+    return revenue;
+  }
+
+  sendPeerChat(text: string): boolean {
+    const clean = text.trim();
+    if (!clean) return false;
+    this.broadcastChatMessage('ROOM', clean);
+    return true;
   }
 
   appendFeed(

@@ -18,6 +18,7 @@ Each record outlines the context, rationale, consequences, and trade-offs of sig
 - [ADR-008: Modern MUD UI/UX Polish — Interactive Narrative Hypertext, Synthesized Web Audio, Mutual Peer Splicing, and Traveler Inscriptions](#adr-008-modern-mud-uiux-polish--interactive-narrative-hypertext-synthesized-web-audio-mutual-peer-splicing-and-traveler-inscriptions)
 - [ADR-009: Targetable Monster Anatomy, Environmental Spell Reactions, Phantom Trails & Zero-Dependency SVG QR Codes](#adr-009-targetable-monster-anatomy-environmental-spell-reactions-phantom-trails--zero-dependency-svg-qr-codes)
 - [ADR-010: Directional Spatial Audio Panning, Bloodstain Lore Memorials, Delver Grimoires & Synchronized Conjunction Mechanisms](#adr-010-directional-spatial-audio-panning-bloodstain-lore-memorials-delver-grimoires--synchronized-conjunction-mechanisms)
+- [ADR-011: Shadow Bazaar Dungeon Economy, Item Provenance Chains, and Multi-Peer WebRTC DataChannel Mesh](#adr-011-shadow-bazaar-dungeon-economy-item-provenance-chains-and-multi-peer-webrtc-datachannel-mesh)
 
 ---
 
@@ -293,6 +294,45 @@ To further realize the multi-decade MUD theorycrafting backlog and deep sensory/
 
 - **Positive**: Rich directional soundscape using standard browser APIs with 0 KB assets; deep emergent lore and asynchronous player interaction; cooperative tactile mechanics that bridge isolated single-player dungeons into a shared multiverse.
 - **Trade-offs**: `StereoPannerNode` is standard in modern desktop and mobile browsers, with fallback to centered mono output in legacy audio contexts.
+
+---
+
+## ADR-011: Shadow Bazaar Dungeon Economy, Item Provenance Chains, and Multi-Peer WebRTC DataChannel Mesh
+
+### Status
+
+Accepted
+
+### Context
+
+Traditional MUDs and MMOs rely on centralized servers and global auction houses to power player trade and co-op exploration. In Linked Pocket Realms, the core lore is that each player carries their own pocket dungeon, affecting and trading with other realms passively (via StreetPass/Thunderpass) or actively when multiple players connect to explore a dungeon together.
+
+To fulfill this vision without introducing central servers or external databases, we needed:
+
+1. **Decentralized Chamber Economy**: Player-owned merchant stalls / dead-drops in individual dungeon rooms where architects can sell surplus relics to visiting players, collecting proceeds in a persistent Sanctum Vault.
+2. **Item Provenance Tracking**: Tangible item lore recording who forged the item, what realm it spliced through, and who purchased or plundered it.
+3. **Multi-Peer P2P2P WebRTC Mesh**: Upgrading the 1-to-1 WebRTC transport into an arbitrary multi-client DataChannel mesh (`p2p2p2p ad nauseum`), allowing multiple adventurers to co-inhabit a host's dungeon.
+4. **Visual Co-Delver Presence**: Rendering live adventurers in the 2.5D viewport with archetype silhouettes, health bars, and popping speech bubbles for room chat (`@say` / `@party`).
+
+### Decision
+
+1. **Shadow Bazaar & Sanctum Vault Economy**:
+   - Modeled `BazaarListing` on chambers (`RoomNode.bazaar`), enabling `@bazaar sell <item> <price>`, `@bazaar buy <item>`, and `@bazaar` inspection.
+   - Modeled `CharacterState.sanctumVaultShards` persisted in IndexedDB via `StorageService`. When a visitor buys an item, a `BAZAAR_PURCHASED` packet credits the seller's vault.
+   - Added `@vault` and `@vault claim` / `@bazaar claim` with real-time UI pill indicator in the HUD header.
+   - Stamped `ProvenanceRecord[]` on `EquipmentItem`, tracking the genesis forge, inter-realm splicing, and delver barter trades.
+2. **Multi-Peer WebRTC Transport Mesh**:
+   - Upgraded `TransportService` with `peerMesh = new Map<string, PeerChannelSession>()` to manage arbitrary concurrent `RTCDataChannel` connections simultaneously.
+   - Broadcasts packets (`GATE_BEACON`, `BAZAAR_LISTED`, `BAZAAR_PURCHASED`, `PEER_CHAT`, combat events) across `BroadcastChannel` and all open mesh DataChannels.
+3. **Live Co-Adventurer Presence & Speech Bubbles**:
+   - Computed `peersInCurrentRoom` filtering active visitors in the same chamber.
+   - Rendered interactive 2.5D SVG adventurer figures with archetype class silhouettes, level badges, dynamic health bars, and animated pop-in speech bubbles for `@say` / `@party` room chat.
+   - Rendered 2.5D SVG Shadow Bazaar stall in chambers with goods for sale, complete with one-tap inspection and purchasing cards.
+
+### Consequences
+
+- **Positive**: 100% serverless peer-to-peer economy and party exploration; rich visual feedback for co-delvers in the 2.5D perspective viewport; immutable historical item provenance creates personal value for traded equipment.
+- **Trade-offs**: WebRTC mesh scale is bounded by client bandwidth and NAT traversal topology (ideal for 2-8 co-delvers per realm, which matches party dungeon crawling).
 
 ---
 

@@ -580,6 +580,35 @@ export class ChaosGateService {
           action: 'FORGE_ITEM',
           solved: false,
         },
+        bazaar: [
+          {
+            id: 'bazaar-starter-relic',
+            sellerName: 'Warden_Althea',
+            sellerAddress: `${era}: Aetherial Astral Sanctuary`,
+            shardPrice: 15,
+            listedAt: Date.now() - 7200000,
+            item: {
+              id: 'item-shadow-pauldrons',
+              name: 'Shadow-Woven Pauldrons',
+              slot: 'Chest',
+              rarity: 'Relic',
+              weight: 4,
+              provenance: 'Verified Drop',
+              originGateAddress: `${era}: Aetherial Astral Sanctuary`,
+              statBonuses: { mitigationBonus: 7, speedPctBonus: 8, DEX: 3 },
+              totalStatBudget: 18,
+              provenanceChain: [
+                {
+                  action: 'Forged',
+                  architect: 'Warden_Althea',
+                  realm: `${era}: Aetherial Astral Sanctuary`,
+                  timestamp: Date.now() - 7200000,
+                  price: 15,
+                },
+              ],
+            },
+          },
+        ],
       },
       {
         id: 'room-3',

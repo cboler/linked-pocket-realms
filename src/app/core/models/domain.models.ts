@@ -116,6 +116,23 @@ export type PaperdollSlotType =
 
 export type ItemProvenance = 'Verified Drop' | 'Architect Forged';
 
+export interface ProvenanceRecord {
+  action: 'Forged' | 'Spliced' | 'Bartered' | 'Plundered';
+  architect: string;
+  realm: string;
+  timestamp: number;
+  price?: number;
+}
+
+export interface BazaarListing {
+  id: string;
+  sellerName: string;
+  sellerAddress: string;
+  item: EquipmentItem;
+  shardPrice: number;
+  listedAt: number;
+}
+
 export interface EquipmentItem {
   id: string;
   name: string;
@@ -140,6 +157,7 @@ export interface EquipmentItem {
   isLocked?: boolean;
   signatureHex?: string; // ECDSA SubtleCrypto signature for Verified Drops
   signerPublicKeyJwk?: string;
+  provenanceChain?: ProvenanceRecord[];
 }
 
 export type PaperdollSlots = Record<PaperdollSlotType, EquipmentItem | null>;
@@ -349,6 +367,7 @@ export interface CharacterState {
   visitedRoomIds: string[];
   bestiaryUnlocked: Record<string, { kills: number; inspectedLevel: number }>;
   resonanceShards: number;
+  sanctumVaultShards?: number;
   heraldGreeting: HeraldGreeting;
 }
 
@@ -541,6 +560,7 @@ export interface RoomNode {
   tombstones?: TombstoneRecord[];
   grimoire?: GrimoireData;
   linkedMechanism?: LinkedMechanismData;
+  bazaar?: BazaarListing[];
 }
 
 export interface RulesetManifest {
@@ -585,6 +605,7 @@ export interface RoomDeltaOverride {
   tombstones?: TombstoneRecord[];
   grimoire?: GrimoireData;
   linkedMechanism?: LinkedMechanismData;
+  bazaar?: BazaarListing[];
 }
 
 export interface ChalkInscription {
@@ -767,7 +788,10 @@ export type NetworkPacketType =
   | 'CHALK_INSCRIPTION'
   | 'TOMBSTONE_COMMITTED'
   | 'GRIMOIRE_SHARED'
-  | 'MECHANISM_PULLED';
+  | 'MECHANISM_PULLED'
+  | 'BAZAAR_LISTED'
+  | 'BAZAAR_PURCHASED'
+  | 'PEER_CHAT';
 
 export interface NetworkPeerVisitor {
   peerId: string;
@@ -780,6 +804,8 @@ export interface NetworkPeerVisitor {
   lastSeenMs: number;
   transport: 'BroadcastChannel' | 'WebRTC';
   heraldGreeting?: string;
+  currentHp?: number;
+  maxHp?: number;
 }
 
 export interface NetworkPacket {
@@ -803,10 +829,25 @@ export interface NetworkPacket {
   grimoire?: GrimoireData;
   linkedMechanism?: LinkedMechanismData;
   heraldGreeting?: string;
+  bazaarListing?: BazaarListing;
+  bazaarPurchase?: {
+    listingId: string;
+    buyerName: string;
+    buyerPeerId: string;
+    shardPrice: number;
+    itemId: string;
+    itemName: string;
+  };
+  peerChat?: {
+    senderName: string;
+    text: string;
+  };
   visitorState?: {
     level: number;
     archetype: ArchetypeClass;
     inCombat: boolean;
+    currentHp?: number;
+    maxHp?: number;
   };
 }
 

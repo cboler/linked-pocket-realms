@@ -83,6 +83,7 @@ When creating a new project from this template, complete the following customiza
 - [x] **Milestone 3.6: Targetable Monster Anatomy & Elemental Alchemy**: Breakable boss/elite anatomy parts with targeted severance debuffs and elemental chamber spell reactions (Burn, Cryo-Fracture, Overload, Entropy Syphon, Symbiotic Bloom).
 - [x] **Milestone 3.7: Asynchronous Phantom Trails & Zero-Dependency SVG QR Codes**: Translucent phantom wanderer trails in 2.5D viewport and GF(256) pure TypeScript QR code generation for camera-scannable Thunderpass spores.
 - [x] **Milestone 3.8: Directional Spatial Audio, Bloodstain Memorials, Grimoires & Synchronized Mechanisms**: Web Audio `StereoPannerNode` directional panning relative to player facing, fallen explorer tombstone lore (`@tribute`), multi-page player grimoires (`@book write`/`read`) with parchment modal, and twin resonance levers (`@lever pull`/`harmonize`).
+- [x] **Milestone 3.9: Shadow Bazaar Economy, Item Provenance & Multi-Peer P2P2P Mesh**: Chamber merchant stalls, Sanctum Vault revenue collection, item forge/splice/barter provenance chains, multi-peer DataChannel transport, and 2.5D live co-delvers with health bars and popping speech bubbles.
 
 ### Phase 4: Production Hardening & Auditing (In Progress)
 

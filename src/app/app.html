@@ -137,6 +137,17 @@
         <span class="meter-item shards-item">
           💎 Shards: <strong>{{ engine.character().resonanceShards || 0 }}</strong>
         </span>
+        @if (engine.sanctumVaultShards() > 0) {
+          <button
+            type="button"
+            class="meter-item vault-item"
+            (click)="engine.claimSanctumVaultRevenue()"
+            title="Sanctum Vault: Click to claim accumulated shard revenue from dungeon stalls!"
+            data-testid="vault-claim-pill"
+          >
+            💰 Vault: <strong>+{{ engine.sanctumVaultShards() }} Shards (Claim)</strong>
+          </button>
+        }
         <button
           type="button"
           class="meter-item presence-item"
@@ -1410,6 +1421,196 @@
                   </div>
                 </div>
               }
+
+              <!-- Fallen Explorer Memorial (Bloodstain History) -->
+              @if (engine.currentRoom().tombstones; as tombstones) {
+                @if (tombstones.length > 0) {
+                  <div class="stage-entity-card tombstone-card" data-testid="stage-tombstone-card">
+                    <div class="entity-card-header">
+                      <span class="entity-sigil" aria-hidden="true">🪦</span>
+                      <div class="entity-name-cluster">
+                        <strong class="entity-name">Fallen Explorer Memorial</strong>
+                        <span class="entity-provenance"
+                          >Honoring {{ tombstones[0].slainPlayerName }}</span
+                        >
+                      </div>
+                      <span class="element-badge text-muted"
+                        >🕯 {{ tombstones[0].tributeCount }}</span
+                      >
+                    </div>
+                    <p class="entity-subtext">"{{ tombstones[0].epitaph }}"</p>
+                    <div class="entity-actions-row">
+                      <button
+                        type="button"
+                        class="entity-btn accent"
+                        (click)="engine.tributeFallenExplorer(tombstones[0].id)"
+                        data-testid="tribute-btn"
+                      >
+                        🕯 Offer Tribute (1 Shard)
+                      </button>
+                    </div>
+                  </div>
+                }
+              }
+
+              <!-- Ancient Lectern & Grimoire Tome -->
+              @if (engine.currentRoom().grimoire; as grimoire) {
+                <div class="stage-entity-card grimoire-card" data-testid="stage-grimoire-card">
+                  <div class="entity-card-header">
+                    <span class="entity-sigil" aria-hidden="true">📖</span>
+                    <div class="entity-name-cluster">
+                      <strong class="entity-name">{{ grimoire.title }}</strong>
+                      <span class="entity-provenance"
+                        >Penned by {{ grimoire.authorName }} ({{
+                          grimoire.pages.length
+                        }}
+                        Pages)</span
+                      >
+                    </div>
+                    <span class="element-badge text-muted">Sanctum Tome</span>
+                  </div>
+                  <p class="entity-subtext">
+                    An open grimoire sits upon the lectern, inscribed with traveler lore and arcane
+                    notes.
+                  </p>
+                  <div class="entity-actions-row">
+                    <button
+                      type="button"
+                      class="entity-btn accent"
+                      (click)="engine.openGrimoire(grimoire)"
+                      data-testid="read-grimoire-btn"
+                    >
+                      📖 Read Tome
+                    </button>
+                  </div>
+                </div>
+              }
+
+              <!-- Synchronized Multi-Dungeon Mechanism -->
+              @if (engine.currentRoom().linkedMechanism; as mech) {
+                <div
+                  class="stage-entity-card mechanism-card"
+                  data-testid="stage-linked-mechanism-card"
+                >
+                  <div class="entity-card-header">
+                    <span class="entity-sigil" aria-hidden="true">⚙️</span>
+                    <div class="entity-name-cluster">
+                      <strong class="entity-name">{{ mech.name }}</strong>
+                      <span class="entity-provenance"
+                        >State: {{ mech.state }} · Local:
+                        {{ mech.activatedByLocal ? 'Engaged' : 'Ready' }}</span
+                      >
+                    </div>
+                    <span class="element-badge" [class.accent]="mech.state === 'HARMONIZED'">{{
+                      mech.state
+                    }}</span>
+                  </div>
+                  <p class="entity-subtext">
+                    {{
+                      mech.state === 'HARMONIZED'
+                        ? 'Harmonized! The titan vault gate is open.'
+                        : 'A heavy synchronized planar lever. Pull together with a peer or infuse 10 shards to harmonize.'
+                    }}
+                  </p>
+                  <div class="entity-actions-row">
+                    <button
+                      type="button"
+                      class="entity-btn accent"
+                      [disabled]="mech.state === 'HARMONIZED'"
+                      (click)="engine.pullLinkedMechanism()"
+                      data-testid="pull-lever-btn"
+                    >
+                      ⚙️ Pull Lever
+                    </button>
+                    @if (mech.state !== 'HARMONIZED') {
+                      <button
+                        type="button"
+                        class="entity-btn success"
+                        (click)="engine.harmonizeLinkedMechanism()"
+                        data-testid="harmonize-mechanism-btn"
+                      >
+                        ✨ Harmonize (10 Shards)
+                      </button>
+                    }
+                  </div>
+                </div>
+              }
+
+              <!-- Shadow Bazaar Stall Card -->
+              @if (engine.currentRoom().bazaar; as stall) {
+                @if (stall.length > 0) {
+                  <div class="stage-entity-card bazaar-card" data-testid="stage-bazaar-card">
+                    <div class="entity-card-header">
+                      <span class="entity-sigil" aria-hidden="true">🏪</span>
+                      <div class="entity-name-cluster">
+                        <strong class="entity-name">Shadow Bazaar Stall</strong>
+                        <span class="entity-provenance"
+                          >{{ stall.length }} Relics on Display · Seller:
+                          {{ stall[0].sellerName }}</span
+                        >
+                      </div>
+                      <span class="element-badge info">Active Market</span>
+                    </div>
+                    <p class="entity-subtext">
+                      Featured: <strong>{{ stall[0].item.name }}</strong> ({{
+                        stall[0].item.rarity
+                      }}
+                      {{ stall[0].item.slot }}) for {{ stall[0].shardPrice }} Resonance Shards.
+                    </p>
+                    <div class="entity-actions-row">
+                      <button
+                        type="button"
+                        class="entity-btn success"
+                        (click)="engine.buyBazaarItem(stall[0].id)"
+                        data-testid="buy-bazaar-btn"
+                      >
+                        💎 Buy ({{ stall[0].shardPrice }} Shards)
+                      </button>
+                      <button
+                        type="button"
+                        class="entity-btn accent"
+                        (click)="engine.inspectTarget(stall[0].id)"
+                      >
+                        🔍 Inspect
+                      </button>
+                    </div>
+                  </div>
+                }
+              }
+
+              <!-- Live Co-Adventurers Card -->
+              @for (peer of engine.peersInCurrentRoom(); track peer.peerId) {
+                <div class="stage-entity-card peer-card" data-testid="stage-peer-card">
+                  <div class="entity-card-header">
+                    <span class="entity-sigil" aria-hidden="true">👤</span>
+                    <div class="entity-name-cluster">
+                      <strong class="entity-name">{{ peer.playerName }}</strong>
+                      <span class="entity-provenance"
+                        >{{ peer.archetype }} Lv.{{ peer.level }} · From
+                        {{ peer.gateAddress }}</span
+                      >
+                    </div>
+                    <span class="element-badge success">Co-Delver</span>
+                  </div>
+                  <p class="entity-subtext">
+                    {{
+                      peer.heraldGreeting
+                        ? '“' + peer.heraldGreeting + '”'
+                        : 'Exploring this chamber beside you across the P2P mesh.'
+                    }}
+                  </p>
+                  <div class="entity-actions-row">
+                    <button
+                      type="button"
+                      class="entity-btn accent"
+                      (click)="engine.sendPeerChat('Hail, ' + peer.playerName + '!')"
+                      data-testid="greet-peer-btn"
+                    >
+                      👋 Greet Delver
+                    </button>
+                  </div>
+                </div>
+              }
             </div>
 
             <!-- 1D. DIRECT EXIT & PORTAL BAR (SINGLE-CLICK TRAVEL + ARCHITECT `[+ Dig Room]` GHOST BUTTONS) -->
@@ -1815,6 +2016,81 @@
           </button>
           <button type="button" class="mini-action-btn" (click)="isWritingInscription.set(false)">
             Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- ========================================================================= -->
+  <!-- GRIMOIRE READER MODAL (PARCHMENT LORE READER)                             -->
+  <!-- ========================================================================= -->
+  @if (engine.activeGrimoire(); as grimoire) {
+    <div
+      class="onboarding-modal-backdrop grimoire-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      [attr.aria-label]="'Reading Grimoire: ' + grimoire.title"
+      data-testid="grimoire-reader-modal"
+    >
+      <div class="onboarding-modal-card grimoire-modal-card">
+        <div class="onboarding-header">
+          <div>
+            <span class="era-badge">📖 SANCTUM TOME</span>
+            <h2>{{ grimoire.title }}</h2>
+            <p>
+              Authored by <strong>{{ grimoire.authorName }}</strong> · Page
+              {{ engine.activeGrimoirePage() + 1 }} of {{ grimoire.pages.length }}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="close-drawer-btn"
+            (click)="engine.closeGrimoire()"
+            aria-label="Close Grimoire"
+            data-testid="close-grimoire-btn"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="grimoire-page-content" data-testid="grimoire-page-content">
+          <p class="parchment-prose">{{ grimoire.pages[engine.activeGrimoirePage()] }}</p>
+        </div>
+
+        <div
+          class="grimoire-page-nav"
+          style="
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1rem;
+            border-top: 1px solid var(--border-subtle);
+          "
+        >
+          <button
+            type="button"
+            class="mini-action-btn"
+            [disabled]="engine.activeGrimoirePage() === 0"
+            (click)="engine.prevGrimoirePage()"
+            data-testid="prev-grimoire-page-btn"
+          >
+            ◀ Prev Page
+          </button>
+          <span
+            class="grimoire-page-counter"
+            style="font-family: var(--font-mono); font-size: 0.8rem; color: #cbd5e1"
+          >
+            {{ engine.activeGrimoirePage() + 1 }} / {{ grimoire.pages.length }}
+          </span>
+          <button
+            type="button"
+            class="mini-action-btn accent"
+            [disabled]="engine.activeGrimoirePage() >= grimoire.pages.length - 1"
+            (click)="engine.nextGrimoirePage()"
+            data-testid="next-grimoire-page-btn"
+          >
+            Next Page ▶
           </button>
         </div>
       </div>
@@ -2932,6 +3208,82 @@
                         </div>
                       }
                     </div>
+                  </div>
+                </div>
+              }
+
+              <!-- Shadow Bazaar Stall Card -->
+              @if (engine.currentRoom().bazaar; as stall) {
+                @if (stall.length > 0) {
+                  <div class="stage-entity-card bazaar-card" data-testid="stage-bazaar-card">
+                    <div class="entity-card-header">
+                      <span class="entity-sigil" aria-hidden="true">🏪</span>
+                      <div class="entity-name-cluster">
+                        <strong class="entity-name">Shadow Bazaar Stall</strong>
+                        <span class="entity-provenance"
+                          >{{ stall.length }} Relics on Display · Seller:
+                          {{ stall[0].sellerName }}</span
+                        >
+                      </div>
+                      <span class="element-badge info">Active Market</span>
+                    </div>
+                    <p class="entity-subtext">
+                      Featured: <strong>{{ stall[0].item.name }}</strong> ({{
+                        stall[0].item.rarity
+                      }}
+                      {{ stall[0].item.slot }}) for {{ stall[0].shardPrice }} Resonance Shards.
+                    </p>
+                    <div class="entity-actions-row">
+                      <button
+                        type="button"
+                        class="entity-btn success"
+                        (click)="engine.buyBazaarItem(stall[0].id)"
+                        data-testid="buy-bazaar-btn"
+                      >
+                        💎 Buy ({{ stall[0].shardPrice }} Shards)
+                      </button>
+                      <button
+                        type="button"
+                        class="entity-btn accent"
+                        (click)="engine.inspectTarget(stall[0].id)"
+                      >
+                        🔍 Inspect
+                      </button>
+                    </div>
+                  </div>
+                }
+              }
+
+              <!-- Live Co-Adventurers Card -->
+              @for (peer of engine.peersInCurrentRoom(); track peer.peerId) {
+                <div class="stage-entity-card peer-card" data-testid="stage-peer-card">
+                  <div class="entity-card-header">
+                    <span class="entity-sigil" aria-hidden="true">👤</span>
+                    <div class="entity-name-cluster">
+                      <strong class="entity-name">{{ peer.playerName }}</strong>
+                      <span class="entity-provenance"
+                        >{{ peer.archetype }} Lv.{{ peer.level }} · From
+                        {{ peer.gateAddress }}</span
+                      >
+                    </div>
+                    <span class="element-badge success">Co-Delver</span>
+                  </div>
+                  <p class="entity-subtext">
+                    {{
+                      peer.heraldGreeting
+                        ? '“' + peer.heraldGreeting + '”'
+                        : 'Exploring this chamber beside you across the P2P mesh.'
+                    }}
+                  </p>
+                  <div class="entity-actions-row">
+                    <button
+                      type="button"
+                      class="entity-btn accent"
+                      (click)="engine.sendPeerChat('Hail, ' + peer.playerName + '!')"
+                      data-testid="greet-peer-btn"
+                    >
+                      👋 Greet Delver
+                    </button>
                   </div>
                 </div>
               }

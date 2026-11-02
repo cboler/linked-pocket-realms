@@ -107,6 +107,15 @@ test.describe('Linked Pocket Realms — Tactical HUD, Perspectives & Drawers E2E
     await page.getByTestId('terminal-submit-btn').click();
     await expect(page.getByTestId('terminal-log')).toContainText('🎲 [Herald Greeting Rolled]');
 
+    // 4c. Shadow Bazaar & Sanctum Vault Terminal Economy
+    await cmdInput.fill('@vault');
+    await page.getByTestId('terminal-submit-btn').click();
+    await expect(page.getByTestId('terminal-log')).toContainText('Sanctum Vault Balance');
+
+    await cmdInput.fill('@bazaar');
+    await page.getByTestId('terminal-submit-btn').click();
+    await expect(page.getByTestId('terminal-log')).toContainText('shadow stall');
+
     await page.getByTestId('quick-chip-who').click();
     await expect(page.getByTestId('terminal-log')).toContainText('Chat & Herald:');
 

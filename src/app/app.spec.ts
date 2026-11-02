@@ -1817,4 +1817,167 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
       expect(engine.character().resonanceShards).toBe(65);
     });
   });
+
+  describe('Feature Evolution: Shadow Bazaar Dungeon Economy & Multi-Client P2P Mesh', () => {
+    let engine: MudEngineService;
+    let transport: TransportService;
+
+    beforeEach(() => {
+      engine = TestBed.inject(MudEngineService);
+      transport = TestBed.inject(TransportService);
+    });
+
+    it('should list items in chamber bazaar stall with provenance records and broadcast BAZAAR_LISTED', () => {
+      const char = engine.character();
+      const firstItem = char.inventory[0];
+      expect(firstItem).toBeDefined();
+
+      const sold = engine.sellBazaarItem(firstItem.id, 20);
+      expect(sold).toBe(true);
+
+      const room = engine.currentRoom();
+      expect(room.bazaar).toBeDefined();
+      expect(room.bazaar!.length).toBeGreaterThan(0);
+
+      const listing = room.bazaar!.find((b) => b.item.id === firstItem.id);
+      expect(listing).toBeDefined();
+      expect(listing!.shardPrice).toBe(20);
+      expect(listing!.sellerName).toBe(char.name);
+
+      // Verify provenance chain stamped
+      expect(listing!.item.provenanceChain).toBeDefined();
+      expect(listing!.item.provenanceChain!.length).toBeGreaterThanOrEqual(1);
+      const prov = listing!.item.provenanceChain![listing!.item.provenanceChain!.length - 1];
+      expect(prov.action).toBe('Forged');
+      expect(prov.price).toBe(20);
+      expect(prov.architect).toBe(char.name);
+
+      // Item removed from inventory
+      expect(engine.character().inventory.some((i) => i.id === firstItem.id)).toBe(false);
+    });
+
+    it('should purchase items from bazaar stalls, transfer shards, update provenance chain, and credit Sanctum Vault', () => {
+      // Move to room-2 which has the seeded starter stall relic
+      engine.moveToRoom('room-2');
+      const room = engine.currentRoom();
+      expect(room.bazaar).toBeDefined();
+      expect(room.bazaar!.length).toBeGreaterThan(0);
+
+      const listing = room.bazaar![0];
+      const initialShards = 50;
+      engine.character.update((c) => ({ ...c, resonanceShards: initialShards }));
+
+      const bought = engine.buyBazaarItem(listing.id);
+      expect(bought).toBe(true);
+
+      // Shards deducted
+      expect(engine.character().resonanceShards).toBe(initialShards - listing.shardPrice);
+
+      // Item added to inventory with 'Bartered' provenance entry
+      const boughtItem = engine.character().inventory.find((i) => i.id === listing.item.id);
+      expect(boughtItem).toBeDefined();
+      expect(boughtItem!.provenanceChain).toBeDefined();
+      const lastProv = boughtItem!.provenanceChain![boughtItem!.provenanceChain!.length - 1];
+      expect(lastProv.action).toBe('Bartered');
+      expect(lastProv.price).toBe(listing.shardPrice);
+
+      // Sanctum vault was credited
+      expect(engine.sanctumVaultShards()).toBe(listing.shardPrice);
+    });
+
+    it('should claim collected Sanctum Vault revenue into character resonance shards', () => {
+      engine.sanctumVaultShards.set(35);
+      const shardsBefore = engine.character().resonanceShards;
+
+      const claimed = engine.claimSanctumVaultRevenue();
+      expect(claimed).toBe(35);
+      expect(engine.sanctumVaultShards()).toBe(0);
+      expect(engine.character().resonanceShards).toBe(shardsBefore + 35);
+    });
+
+    it('should compute peersInCurrentRoom and render live speech bubbles on room chat across P2P mesh', () => {
+      // Simulate remote peer in current room
+      const currentRoomId = engine.currentRoom().id;
+      transport.injectSimulatedPeerBeacon({
+        peerId: 'peer-delver-99',
+        playerName: 'Aria_Swift',
+        archetype: 'Hexblade',
+        level: 5,
+        gateAddress: 'Ψ: Astral Clockwork Spire',
+        currentRoomId: currentRoomId,
+        inCombat: false,
+        lastSeenMs: Date.now(),
+        transport: 'BroadcastChannel',
+        currentHp: 180,
+        maxHp: 200,
+      });
+
+      const peersInRoom = engine.peersInCurrentRoom();
+      expect(peersInRoom.length).toBe(1);
+      expect(peersInRoom[0].playerName).toBe('Aria_Swift');
+      expect(peersInRoom[0].currentHp).toBe(180);
+
+      // Send room chat
+      engine.broadcastChatMessage('ROOM', 'Welcome to the Sanctum!');
+      const localBubbles = engine.peerChatMessages();
+      expect(localBubbles[transport.localPeerId]).toBeDefined();
+      expect(localBubbles[transport.localPeerId].text).toBe('Welcome to the Sanctum!');
+
+      // Simulate remote peer chat packet
+      transport.injectSimulatedPacket({
+        type: 'CHAT_MESSAGE',
+        senderPeerId: 'peer-delver-99',
+        senderName: 'Aria_Swift',
+        roomId: currentRoomId,
+        chat: {
+          id: 'chat-99',
+          senderPeerId: 'peer-delver-99',
+          senderName: 'Aria_Swift',
+          channel: 'ROOM',
+          text: 'Greetings, Architect!',
+          roomId: currentRoomId,
+          roomTitle: engine.currentRoom().title,
+          timestampIso: new Date().toISOString(),
+        },
+      });
+
+      const updatedBubbles = engine.peerChatMessages();
+      expect(updatedBubbles['peer-delver-99']).toBeDefined();
+      expect(updatedBubbles['peer-delver-99'].text).toBe('Greetings, Architect!');
+    });
+
+    it('should broadcast packets to multiple concurrent data channels in peerMesh', () => {
+      const mockDc1 = {
+        readyState: 'open',
+        send: vi.fn(),
+        close: vi.fn(),
+      } as unknown as RTCDataChannel;
+      const mockDc2 = {
+        readyState: 'open',
+        send: vi.fn(),
+        close: vi.fn(),
+      } as unknown as RTCDataChannel;
+
+      // Register mock data channels in transport
+      (
+        transport as unknown as { setupDataChannel: (dc: RTCDataChannel, id: string) => void }
+      ).setupDataChannel(mockDc1, 'peer-remote-1');
+      (
+        transport as unknown as { setupDataChannel: (dc: RTCDataChannel, id: string) => void }
+      ).setupDataChannel(mockDc2, 'peer-remote-2');
+
+      expect(transport.activePeerMeshCount()).toBe(2);
+
+      // Send packet
+      transport.sendPacket({
+        senderName: 'Vanguard_01',
+        type: 'GATE_BEACON',
+        gateAddress: 'Θ: Scorching Clockwork Catacombs',
+        roomId: 'room-0',
+      });
+
+      expect(mockDc1.send).toHaveBeenCalledTimes(1);
+      expect(mockDc2.send).toHaveBeenCalledTimes(1);
+    });
+  });
 });

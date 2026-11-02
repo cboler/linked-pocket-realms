@@ -1,10 +1,12 @@
 import { CommonModule } from '@angular/common';
 import { Component, HostListener, computed, inject, signal } from '@angular/core';
 import {
+  BazaarListing,
   CompassDirection,
   EquipmentItem,
   MonsterBodyPart,
   MonsterEntity,
+  NetworkPeerVisitor,
   RoomExit,
   TravelerEcho,
 } from '../core/models/domain.models';
@@ -27,6 +29,36 @@ export class FirstPersonStageComponent {
   readonly selectedMonster = signal<MonsterEntity | null>(null);
   readonly selectedItem = signal<EquipmentItem | null>(null);
   readonly selectedEcho = signal<TravelerEcho | null>(null);
+  readonly selectedBazaarListing = signal<BazaarListing | null>(null);
+  readonly selectedPeer = signal<NetworkPeerVisitor | null>(null);
+
+  selectBazaarListing(listing: BazaarListing): void {
+    this.selectedBazaarListing.set(listing);
+    this.selectedMonster.set(null);
+    this.selectedItem.set(null);
+    this.selectedEcho.set(null);
+    this.selectedPeer.set(null);
+  }
+
+  buySelectedListing(): void {
+    const listing = this.selectedBazaarListing();
+    if (listing) {
+      this.engine.buyBazaarItem(listing.id);
+      this.selectedBazaarListing.set(null);
+    }
+  }
+
+  selectPeer(peer: NetworkPeerVisitor): void {
+    this.selectedPeer.set(peer);
+    this.selectedMonster.set(null);
+    this.selectedItem.set(null);
+    this.selectedEcho.set(null);
+    this.selectedBazaarListing.set(null);
+  }
+
+  sayHelloToPeer(peer: NetworkPeerVisitor): void {
+    this.engine.sendPeerChat(`Hail, ${peer.playerName}! May the gate guide us.`);
+  }
 
   getMonsterTransform(index: number, total: number): string {
     const count = Math.max(1, total);

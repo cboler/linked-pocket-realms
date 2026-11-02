@@ -3,6 +3,7 @@ import { Subject, Observable } from 'rxjs';
 import { RUNTIME_CONFIG } from '../config/runtime.config';
 import {
   ArchetypeClass,
+  BazaarListing,
   BrokerSessionInfo,
   CommandIntent,
   EquipmentItem,
@@ -15,6 +16,13 @@ import {
 const CHANNEL_NAME = 'linked_pocket_realms_chaos_gate_bus_v1';
 const SAVED_BROKER_URL_KEY = 'linked_pocket_realms_broker_url';
 
+export interface PeerChannelSession {
+  peerId: string;
+  pc: RTCPeerConnection | null;
+  dc: RTCDataChannel | null;
+  state: 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED';
+}
+
 @Injectable({
   providedIn: 'root',
 })
@@ -24,6 +32,7 @@ export class TransportService implements OnDestroy {
   private broadcastChannel: BroadcastChannel | null = null;
   private rtcPeerConnection: RTCPeerConnection | null = null;
   private rtcDataChannel: RTCDataChannel | null = null;
+  private readonly peerMesh = new Map<string, PeerChannelSession>();
 
   private readonly incomingPacketSubject = new Subject<NetworkPacket>();
   readonly packets$: Observable<NetworkPacket> = this.incomingPacketSubject.asObservable();
@@ -32,6 +41,16 @@ export class TransportService implements OnDestroy {
   readonly activeVisitorsList = computed<NetworkPeerVisitor[]>(() =>
     Object.values(this.discoveredPeers()),
   );
+
+  readonly activePeerMeshCount = computed<number>(() => {
+    let count = 0;
+    for (const session of this.peerMesh.values()) {
+      if (session.dc && session.dc.readyState === 'open') {
+        count++;
+      }
+    }
+    return count;
+  });
 
   readonly rtcConnectionState = signal<'DISCONNECTED' | 'AWAITING_ANSWER' | 'CONNECTED'>(
     'DISCONNECTED',
@@ -116,6 +135,8 @@ export class TransportService implements OnDestroy {
             lastSeenMs: Date.now(),
             transport,
             heraldGreeting: packet.heraldGreeting || existing?.heraldGreeting,
+            currentHp: packet.visitorState?.currentHp ?? existing?.currentHp,
+            maxHp: packet.visitorState?.maxHp ?? existing?.maxHp,
           },
         };
       });
@@ -142,9 +163,26 @@ export class TransportService implements OnDestroy {
       }
     }
 
-    if (this.rtcDataChannel && this.rtcDataChannel.readyState === 'open') {
+    const payloadStr = JSON.stringify(packet);
+
+    let legacyAlreadySent = false;
+    // Multi-peer mesh broadcast: send to all active connected peer DataChannels
+    for (const session of this.peerMesh.values()) {
+      if (session.dc === this.rtcDataChannel) {
+        legacyAlreadySent = true;
+      }
+      if (session.dc && session.dc.readyState === 'open') {
+        try {
+          session.dc.send(payloadStr);
+        } catch {
+          // Ignore closed RTC channel on mesh peer
+        }
+      }
+    }
+
+    if (this.rtcDataChannel && this.rtcDataChannel.readyState === 'open' && !legacyAlreadySent) {
       try {
-        this.rtcDataChannel.send(JSON.stringify(packet));
+        this.rtcDataChannel.send(payloadStr);
       } catch {
         // Ignore closed RTC channel
       }
@@ -238,6 +276,63 @@ export class TransportService implements OnDestroy {
     });
   }
 
+  broadcastBazaarListed(
+    listing: BazaarListing,
+    gateAddress: string,
+    roomId: string,
+  ): NetworkPacket {
+    return this.sendPacket({
+      senderName: listing.sellerName,
+      type: 'BAZAAR_LISTED',
+      gateAddress,
+      roomId,
+      bazaarListing: listing,
+    });
+  }
+
+  broadcastBazaarPurchased(
+    buyerName: string,
+    listingId: string,
+    itemId: string,
+    itemName: string,
+    shardPrice: number,
+    gateAddress: string,
+    roomId: string,
+  ): NetworkPacket {
+    return this.sendPacket({
+      senderName: buyerName,
+      type: 'BAZAAR_PURCHASED',
+      gateAddress,
+      roomId,
+      bazaarPurchase: {
+        listingId,
+        buyerName,
+        buyerPeerId: this.localPeerId,
+        itemId,
+        itemName,
+        shardPrice,
+      },
+    });
+  }
+
+  broadcastPeerChat(
+    senderName: string,
+    text: string,
+    gateAddress: string,
+    roomId: string,
+  ): NetworkPacket {
+    return this.sendPacket({
+      senderName,
+      type: 'PEER_CHAT',
+      gateAddress,
+      roomId,
+      peerChat: {
+        senderName,
+        text,
+      },
+    });
+  }
+
   /**
    * Inject a packet directly into the local transport stream for testing or simulation
    */
@@ -276,6 +371,8 @@ export class TransportService implements OnDestroy {
           archetype: peer.archetype,
           level: peer.level,
           inCombat: peer.inCombat,
+          currentHp: peer.currentHp,
+          maxHp: peer.maxHp,
         },
       },
       peer.transport,
@@ -341,21 +438,32 @@ export class TransportService implements OnDestroy {
       }
 
       if (decoded.sdp.type === 'offer') {
-        this.closeRtc();
-        this.rtcPeerConnection = new RTCPeerConnection({
+        const remotePeerId = decoded.peerId || `peer-${Math.random().toString(36).substring(2, 6)}`;
+        const existing = this.peerMesh.get(remotePeerId);
+        if (existing) {
+          try {
+            existing.dc?.close();
+            existing.pc?.close();
+          } catch {
+            // ignore
+          }
+          this.peerMesh.delete(remotePeerId);
+        }
+        const pc = new RTCPeerConnection({
           iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
         });
-        this.rtcPeerConnection.ondatachannel = (event) => {
-          this.setupDataChannel(event.channel);
+        this.rtcPeerConnection = pc;
+        pc.ondatachannel = (event) => {
+          this.setupDataChannel(event.channel, remotePeerId);
         };
-        await this.rtcPeerConnection.setRemoteDescription(new RTCSessionDescription(decoded.sdp));
-        const answer = await this.rtcPeerConnection.createAnswer();
-        await this.rtcPeerConnection.setLocalDescription(answer);
+        await pc.setRemoteDescription(new RTCSessionDescription(decoded.sdp));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
         const encodedAnswer = btoa(
           JSON.stringify({
             roomCode: decoded.roomCode ?? 'GATE-LINK',
             peerId: this.localPeerId,
-            sdp: this.rtcPeerConnection.localDescription,
+            sdp: pc.localDescription,
           }),
         );
         this.localSdpPayload.set(encodedAnswer);
@@ -374,13 +482,26 @@ export class TransportService implements OnDestroy {
     }
   }
 
-  private setupDataChannel(channel: RTCDataChannel): void {
+  private setupDataChannel(channel: RTCDataChannel, peerId = 'legacy'): void {
     this.rtcDataChannel = channel;
+    const session: PeerChannelSession = {
+      peerId,
+      pc: this.rtcPeerConnection,
+      dc: channel,
+      state: channel.readyState === 'open' ? 'CONNECTED' : 'CONNECTING',
+    };
+    this.peerMesh.set(peerId, session);
+
     channel.onopen = () => {
+      session.state = 'CONNECTED';
       this.rtcConnectionState.set('CONNECTED');
     };
     channel.onclose = () => {
-      this.rtcConnectionState.set('DISCONNECTED');
+      session.state = 'DISCONNECTED';
+      this.peerMesh.delete(peerId);
+      if (this.peerMesh.size === 0) {
+        this.rtcConnectionState.set('DISCONNECTED');
+      }
     };
     channel.onmessage = (event) => {
       try {
@@ -590,14 +711,32 @@ export class TransportService implements OnDestroy {
 
   private closeRtc(): void {
     this.clearBrokerPoll();
+    for (const session of this.peerMesh.values()) {
+      try {
+        session.dc?.close();
+        session.pc?.close();
+      } catch {
+        // ignore
+      }
+    }
+    this.peerMesh.clear();
     if (this.rtcDataChannel) {
-      this.rtcDataChannel.close();
+      try {
+        this.rtcDataChannel.close();
+      } catch {
+        // ignore
+      }
       this.rtcDataChannel = null;
     }
     if (this.rtcPeerConnection) {
-      this.rtcPeerConnection.close();
+      try {
+        this.rtcPeerConnection.close();
+      } catch {
+        // ignore
+      }
       this.rtcPeerConnection = null;
     }
+    this.rtcConnectionState.set('DISCONNECTED');
   }
 
   ngOnDestroy(): void {
