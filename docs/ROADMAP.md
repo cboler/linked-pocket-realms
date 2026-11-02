@@ -69,7 +69,7 @@ When creating a new project from this template, complete the following customiza
 ### Phase 2: First-Person Lens, Overgrowth Splicing & Thunderpass (In Progress)
 
 - [x] **Milestone 2.1: Spliced Lore & Terminology**: Resonance Loom, Tri-Chord Lexicon, Overgrowth incursion rooms, and Pruning (`@prune`) for Resonance Shards.
-- [ ] **Milestone 2.2: First-Person Dungeon Viewport (`FirstPersonStageComponent`)**: 2.5D perspective room renderer, spatial doorways, entity silhouettes, and directional movement (`playerFacing`).
+- [x] **Milestone 2.2: First-Person Dungeon Viewport (`FirstPersonStageComponent`)**: 2.5D perspective room renderer, spatial doorways, unique Etrian Odyssey-style animated SVG enemy representations with adjective mutators, and directional movement (`playerFacing`).
 - [ ] **Milestone 2.3: Persistent Overgrowth Grafting & Pruning**: Deterministic incursion generation on collision, IndexedDB persistence across disconnects, and shard harvesting.
 - [ ] **Milestone 2.4: Serverless gcloud Broker & Thunderpass**: Gen 2 Cloud Function signaling broker, zero-knowledge geohash proximity relay, screen WakeLock, BLE scan, and Traveler's Echo encounters.
 

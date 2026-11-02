@@ -442,6 +442,7 @@ export interface MonsterEntity {
   element: ElementalAffinity;
   weakness: ElementalAffinity;
   statuses: ActiveStatusEffect[];
+  adjectives?: string[];
   loreSnippet: string;
   secretWeaknessHint: string;
   lootTable: EquipmentItem[];

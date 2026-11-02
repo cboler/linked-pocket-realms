@@ -2544,7 +2544,7 @@ export class MudEngineService implements OnDestroy {
       customMonsters.push({
         id: `mob-${newRoomId}`,
         templateId: spawnMonsterName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-        name: `${this.activeGateAddress().era}-Rank ${spawnMonsterName}`,
+        name: `${this.activeGateAddress().atmosphere} ${spawnMonsterName}`,
         level: this.character().level,
         isBoss: legendType === 'elite-boss',
         hp: legendType === 'elite-boss' ? 160 : 75,
@@ -2556,6 +2556,7 @@ export class MudEngineService implements OnDestroy {
         element: fromRoom.elementalMutator,
         weakness: 'Fire',
         statuses: [],
+        adjectives: [this.activeGateAddress().atmosphere],
         loreSnippet: `Architect-placed ${spawnMonsterName} guarding ${title}.`,
         secretWeaknessHint: 'Vulnerable to Sunder + Elemental burst combos.',
         lootTable: [],

@@ -14,6 +14,7 @@ Each record outlines the context, rationale, consequences, and trade-offs of sig
 - [ADR-004: Vanilla SCSS Design Tokens over External CSS Frameworks](#adr-004-vanilla-scss-design-tokens-over-external-css-frameworks)
 - [ADR-005: Built-in Angular Service Worker for Offline PWA Support](#adr-005-built-in-angular-service-worker-for-offline-pwa-support)
 - [ADR-006: 1st-Person Perspective Viewport, Overgrowth Grafting, gcloud WebRTC Broker, and Privacy-Preserving Thunderpass](#adr-006-1st-person-perspective-viewport-overgrowth-grafting-gcloud-webrtc-broker-and-privacy-preserving-thunderpass)
+- [ADR-007: Etrian Odyssey-Style Vector SVG Enemy Representations with Dynamic Adjective Mutators](#adr-007-etrian-odyssey-style-vector-svg-enemy-representations-with-dynamic-adjective-mutators)
 
 ---
 
@@ -160,6 +161,33 @@ Linked Pocket Realms was originally explored through a pure 2D topological carto
 
 - **Positive**: Rich first-person dungeon crawler immersion while preserving the core lightweight MUD engine; permanent playable world-blending upon collisions; effortless WebRTC lobby discovery and passive proximity gameplay.
 - **Trade-offs**: Geolocation requires user permission for active walk mode; WakeLock requires active foreground browser tab (mitigated with battery-saver pocket overlay).
+
+---
+
+## ADR-007: Etrian Odyssey-Style Vector SVG Enemy Representations with Dynamic Adjective Mutators
+
+### Status
+
+Accepted
+
+### Context
+
+Previously, enemies in the 2.5D perspective dungeon viewport (`FirstPersonStageComponent`) were depicted as a single generic dark polygon silhouette with a red center dot, regardless of theme, creature family, or atmospheric adjectives. This lacked visual variety and tactical readability characteristic of dungeon crawlers like Etrian Odyssey. Heavy bitmap sprites or canvas libraries would bloat the bundle and compromise the zero-dependency, static PWA hosting model.
+
+### Decision
+
+1. **Modular Vector SVG Silhouettes**:
+   - Implemented `EnemySpriteComponent` rendering 43 distinct anatomical vector silhouettes spanning all 8 structural themes (32 regular creature species), 8 biome boss titans, Conjunction incursions, and Overgrowth guardians.
+2. **Dynamic Adjective Mutators & Particle Systems**:
+   - Implemented `EnemyVisualResolver` mapping atmospheric adjectives (`Scorching`, `Crystalline`, `Tempestuous`, `Abyssal`, `Blighted`, `Aetherial`, `Gilded`, `Silent`), anomaly prefixes (`Void-Warped`, `Chrono-Fractured`, `Cataclysmic`, `Prismatic`, `Sub-Zero`, `Magnetic`), and active combat statuses (`Burn`, `Chill`, `Sunder`, `Overcharge`, `Silenced`) directly into dynamic color palettes, threat auras, and animated SVG overlays (rising embers, frost shards, lightning arcs, void tendrils, spore vesicles, spinning cogs, and celestial halos).
+3. **Tactile Readability & Reduced-Motion Baseline**:
+   - Added color-coded tactical adjective pills below health/ATB bars for instant combo planning.
+   - All CSS/SVG keyframe animations (idle breathing, cog spins, particle drift) gracefully disable under `@media (prefers-reduced-motion: reduce)` while preserving distinct visual colors and shapes.
+
+### Consequences
+
+- **Positive**: Each enemy type is visually unique and instantly recognizable; procedural adjectives directly transform creature appearances; zero raster asset footprint (< 20KB total); native SVG hardware acceleration across mobile, tablet, and desktop viewports.
+- **Trade-offs**: Complex SVG paths require careful coordinate budgeting within the 140x180 viewBox cell; mitigated through modular templates and unit tests.
 
 ---
 

@@ -397,94 +397,31 @@
       <!-- 1. Monsters / Guardians -->
       @for (monster of currentRoom().monsters; track monster.id; let idx = $index) {
         @if (monster.hp > 0) {
-          <!-- Centered / Offset Monster Silhouette -->
+          <!-- Centered / Offset Monster Silhouette with Adjective Visual Mutations -->
           <g
-            class="monster-silhouette"
-            [class.selected]="selectedMonster()?.id === monster.id"
+            app-enemy-sprite
+            [monster]="monster"
+            [roomTheme]="roomTheme()"
+            [isSelected]="selectedMonster()?.id === monster.id"
             (click)="selectMonster(monster)"
             role="button"
             tabindex="0"
             [attr.aria-label]="'Monster: ' + monster.name"
             [attr.data-testid]="'fp-monster-' + monster.id"
-            [attr.transform]="'translate(' + (260 + idx * 140) + ', 180)'"
-          >
-            <!-- Threat Aura Glow -->
-            <ellipse
-              cx="70"
-              cy="165"
-              rx="60"
-              ry="18"
-              fill="rgba(244, 63, 94, 0.25)"
-              filter="url(#auraGlow)"
-            />
-
-            <!-- Monster Body Silhouette (Automaton / Beast / Guardian) -->
-            @if (monster.isBoss) {
-              <!-- Boss / Guardian Colossus Silhouette -->
-              <polygon
-                points="70,25 30,70 45,150 95,150 110,70"
-                fill="#881337"
-                stroke="#f43f5e"
-                stroke-width="2.5"
-              />
-              <circle cx="70" cy="65" r="14" fill="#f43f5e" filter="url(#auraGlow)" />
-            } @else {
-              <!-- Standard Mob Silhouette -->
-              <polygon
-                points="70,45 40,85 50,150 90,150 100,85"
-                fill="#1e293b"
-                stroke="#ef4444"
-                stroke-width="2"
-              />
-              <circle cx="70" cy="75" r="9" fill="#ef4444" />
-            }
-
-            <!-- Floating Monster HP Gauge -->
-            <rect x="15" y="0" width="110" height="10" rx="3" fill="#0f172a" stroke="#334155" />
-            <rect
-              x="15"
-              y="0"
-              [attr.width]="Math.max(0, (monster.hp / monster.maxHp) * 110)"
-              height="10"
-              rx="3"
-              fill="#22c55e"
-            />
-
-            <!-- Floating Monster ATB Gauge -->
-            <rect x="25" y="12" width="90" height="4" rx="2" fill="#0f172a" />
-            <rect
-              x="25"
-              y="12"
-              [attr.width]="Math.max(0, (monster.atbGauge / 100) * 90)"
-              height="4"
-              rx="2"
-              fill="#38bdf8"
-            />
-
-            <!-- Name and Level Pill -->
-            <text
-              x="70"
-              y="-6"
-              text-anchor="middle"
-              fill="#ffffff"
-              font-size="11"
-              font-weight="bold"
-            >
-              {{ monster.name }} (Lv.{{ monster.level }})
-            </text>
-          </g>
+            [attr.transform]="getMonsterTransform(idx, currentRoom().monsters.length)"
+          ></g>
         } @else {
           <!-- Defeated Slain Remains Marker -->
           <g
             class="slain-marker"
-            [attr.transform]="'translate(' + (280 + idx * 120) + ', 330)'"
+            [attr.transform]="getMonsterTransform(idx, currentRoom().monsters.length)"
             (click)="inspectTarget(monster.id)"
             role="button"
             tabindex="0"
             title="Slain entity remains"
           >
-            <ellipse cx="40" cy="20" rx="30" ry="10" fill="#334155" opacity="0.6" />
-            <text x="40" y="24" text-anchor="middle" fill="#94a3b8" font-size="12">💀 Slain</text>
+            <ellipse cx="70" cy="155" rx="35" ry="10" fill="#334155" opacity="0.6" />
+            <text x="70" y="159" text-anchor="middle" fill="#94a3b8" font-size="12">💀 Slain</text>
           </g>
         }
       }

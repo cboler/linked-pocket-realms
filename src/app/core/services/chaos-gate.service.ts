@@ -825,6 +825,7 @@ export class ChaosGateService {
             biomeMeta.bossWeakness,
             address.formatted,
             prng,
+            address.atmosphere,
           ),
         );
       }
@@ -1202,13 +1203,15 @@ export class ChaosGateService {
     weakness: ElementalAffinity,
     gateAddress: string,
     prng: () => number,
+    atmospherePrefix?: AtmospherePrefix | string,
   ): MonsterEntity {
     const baseHp = Math.round((55 + Math.floor(prng() * 25)) * eraMeta.statMultiplier);
     const atk = Math.round((11 + Math.floor(prng() * 5)) * eraMeta.statMultiplier);
+    const adj = atmospherePrefix || 'Scorching';
     return {
       id,
       templateId: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      name: `${eraMeta.letter}-Rank ${name}`,
+      name: `${adj} ${name}`,
       level: eraMeta.levelTier + Math.floor(prng() * 2),
       isBoss: false,
       hp: baseHp,
@@ -1220,7 +1223,8 @@ export class ChaosGateService {
       element,
       weakness,
       statuses: [],
-      loreSnippet: `A native ${name} adapted to ${gateAddress}.`,
+      adjectives: [adj],
+      loreSnippet: `A native ${adj.toLowerCase()} ${name} adapted to ${gateAddress}.`,
       secretWeaknessHint: `Structural joints destabilize when struck by ${weakness} or Sunder combos.`,
       lootTable: [],
     };
@@ -1257,6 +1261,7 @@ export class ChaosGateService {
       element,
       weakness: biomeMeta.bossWeakness,
       statuses: [],
+      adjectives: [address.atmosphere],
       loreSnippet: `Supreme guardian of ${address.formatted}, bound to the Chaos Gate core.`,
       secretWeaknessHint: `Core shielding collapses under ${biomeMeta.bossWeakness} elemental bursts while Sundered.`,
       lootTable: [bossDrop],
@@ -1479,6 +1484,7 @@ export class ChaosGateService {
           element: mobElement,
           weakness,
           statuses: [],
+          adjectives: [anomaly.prefix],
           loreSnippet: `A Conjunction harmonic manifestation seeded by realm collision with ${remoteAddress.formatted}. Infused with ${anomaly.mobModifier}.`,
           secretWeaknessHint: `Foreign roots unravel under ${weakness} elemental attacks. Watch for ${anomaly.hazard}!`,
           lootTable: [
@@ -1503,6 +1509,7 @@ export class ChaosGateService {
           element: mobElement,
           weakness,
           statuses: [],
+          adjectives: [anomaly.prefix],
           loreSnippet: `Invasive biological growth encroaching from ${remoteAddress.formatted} with ${anomaly.mobModifier}.`,
           secretWeaknessHint: `Vulnerable to ${weakness} damage.`,
           lootTable: [
@@ -1642,6 +1649,7 @@ export class ChaosGateService {
       element: atmoMeta.element,
       weakness: biomeMeta.bossWeakness,
       statuses: [],
+      adjectives: [address.atmosphere, address.theme],
       loreSnippet: `The apex guardian of the unstable ${address.formatted} delve, condensing the planar essence into a pristine Sphere Core.`,
       secretWeaknessHint: `Sovereign armor cracks under ${biomeMeta.bossWeakness} strikes.`,
       lootTable: [sphereCoreItem],
@@ -1699,6 +1707,7 @@ export class ChaosGateService {
             biomeMeta.bossWeakness,
             address.formatted,
             prng,
+            address.atmosphere,
           ),
         ],
         items: [],
@@ -1756,6 +1765,7 @@ export class ChaosGateService {
             biomeMeta.bossWeakness,
             address.formatted,
             prng,
+            address.atmosphere,
           ),
         ],
         items: [],
@@ -2105,6 +2115,7 @@ export class ChaosGateService {
               biomeMeta.bossWeakness,
               address.formatted,
               stagePrng,
+              address.atmosphere,
             ),
           );
         }

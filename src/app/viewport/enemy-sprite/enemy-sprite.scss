@@ -1,0 +1,331 @@
+:host {
+  display: contents;
+}
+
+.enemy-sprite-root {
+  cursor: pointer;
+  transform-origin: 70px 140px;
+  animation: enemy-idle-breathing 3s ease-in-out infinite alternate;
+  transition: filter 0.2s ease;
+
+  &:hover,
+  &:focus-visible {
+    filter: drop-shadow(0 0 8px #38bdf8);
+    outline: none;
+  }
+
+  &.selected {
+    filter: drop-shadow(0 0 14px #f43f5e);
+  }
+
+  &.is-boss {
+    animation-duration: 3.5s;
+  }
+}
+
+.boss-threat-ring {
+  transform-origin: 70px 165px;
+  animation: boss-ring-spin 12s linear infinite;
+}
+
+.ember-flame-tongue {
+  animation: flame-flicker 1.5s ease-in-out infinite alternate;
+}
+
+.ember-spark-1 {
+  animation: ember-float 2s ease-in-out infinite;
+}
+
+.ember-spark-2 {
+  animation: ember-float 2.5s ease-in-out infinite 0.5s;
+}
+
+.ember-spark-3 {
+  animation: ember-float 1.8s ease-in-out infinite 1s;
+}
+
+.frost-shard {
+  transform-origin: 70px 80px;
+  animation: frost-glimmer 2s ease-in-out infinite alternate;
+}
+
+.lightning-arc {
+  animation: lightning-flicker 1.8s steps(2, start) infinite;
+}
+
+.void-tendril-left {
+  transform-origin: 30px 150px;
+  animation: tendril-sway-left 3s ease-in-out infinite alternate;
+}
+
+.void-tendril-right {
+  transform-origin: 110px 150px;
+  animation: tendril-sway-right 3.2s ease-in-out infinite alternate 0.3s;
+}
+
+.spore-vesicle {
+  animation: spore-pulse 2.2s ease-in-out infinite alternate;
+}
+
+.spore-mote-1 {
+  animation: spore-drift 3s ease-in-out infinite;
+}
+
+.spore-mote-2 {
+  animation: spore-drift 3.5s ease-in-out infinite 0.8s;
+}
+
+.spore-mote-3 {
+  animation: spore-drift 2.8s ease-in-out infinite 1.5s;
+}
+
+.halo-ring {
+  transform-origin: 70px 42px;
+  animation: halo-float 2.5s ease-in-out infinite alternate;
+}
+
+.spinning-cog {
+  transform-origin: 70px 100px;
+  animation: cog-spin 10s linear infinite;
+}
+
+.floating-block-left {
+  animation: block-hover 2.5s ease-in-out infinite alternate;
+}
+
+.floating-block-right {
+  animation: block-hover 2.8s ease-in-out infinite alternate 0.5s;
+}
+
+.floating-tome-left {
+  animation: tome-hover 3s ease-in-out infinite alternate;
+}
+
+.floating-tome-right {
+  animation: tome-hover 3.2s ease-in-out infinite alternate 0.6s;
+}
+
+.pendulum-blade {
+  transform-origin: 28px 65px;
+  animation: pendulum-swing 2.4s ease-in-out infinite alternate;
+}
+
+.phantom-wisp {
+  animation: phantom-dissolve 3.5s ease-in-out infinite alternate;
+}
+
+.ingot-fiend-blob {
+  animation: blob-wobble 2s ease-in-out infinite alternate;
+}
+
+.hp-bar-fill,
+.atb-bar-fill {
+  transition: width 0.15s ease-out;
+}
+
+// Keyframe Animations
+@keyframes enemy-idle-breathing {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    transform: translateY(-3px) scale(1.015);
+  }
+}
+
+@keyframes boss-ring-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes flame-flicker {
+  0% {
+    opacity: 0.5;
+    transform: scaleY(0.95);
+  }
+  100% {
+    opacity: 0.9;
+    transform: scaleY(1.05);
+  }
+}
+
+@keyframes ember-float {
+  0% {
+    transform: translateY(0);
+    opacity: 0.8;
+  }
+  50% {
+    transform: translateY(-12px);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-24px);
+    opacity: 0;
+  }
+}
+
+@keyframes frost-glimmer {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes lightning-flicker {
+  0%,
+  80% {
+    opacity: 0.1;
+  }
+  85%,
+  95% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0.1;
+  }
+}
+
+@keyframes tendril-sway-left {
+  0% {
+    transform: rotate(-3deg);
+  }
+  100% {
+    transform: rotate(5deg);
+  }
+}
+
+@keyframes tendril-sway-right {
+  0% {
+    transform: rotate(3deg);
+  }
+  100% {
+    transform: rotate(-5deg);
+  }
+}
+
+@keyframes spore-pulse {
+  0% {
+    transform: scale(0.9);
+  }
+  100% {
+    transform: scale(1.15);
+  }
+}
+
+@keyframes spore-drift {
+  0% {
+    transform: translateY(0);
+    opacity: 0.7;
+  }
+  50% {
+    transform: translateY(-10px);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+}
+
+@keyframes halo-float {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes cog-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes block-hover {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes tome-hover {
+  0% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  100% {
+    transform: translateY(-6px) rotate(3deg);
+  }
+}
+
+@keyframes pendulum-swing {
+  0% {
+    transform: rotate(-8deg);
+  }
+  100% {
+    transform: rotate(12deg);
+  }
+}
+
+@keyframes phantom-dissolve {
+  0% {
+    opacity: 0.75;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0.95;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes blob-wobble {
+  0% {
+    transform: scaleX(1) scaleY(1);
+  }
+  100% {
+    transform: scaleX(1.04) scaleY(0.96);
+  }
+}
+
+// Prefers-Reduced-Motion accessibility safeguard
+@media (prefers-reduced-motion: reduce) {
+  .enemy-sprite-root,
+  .boss-threat-ring,
+  .ember-flame-tongue,
+  .ember-spark-1,
+  .ember-spark-2,
+  .ember-spark-3,
+  .frost-shard,
+  .lightning-arc,
+  .void-tendril-left,
+  .void-tendril-right,
+  .spore-vesicle,
+  .spore-mote-1,
+  .spore-mote-2,
+  .spore-mote-3,
+  .halo-ring,
+  .spinning-cog,
+  .floating-block-left,
+  .floating-block-right,
+  .floating-tome-left,
+  .floating-tome-right,
+  .pendulum-blade,
+  .phantom-wisp,
+  .ingot-fiend-blob {
+    animation: none !important;
+  }
+}
+

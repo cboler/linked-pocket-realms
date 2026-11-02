@@ -9,11 +9,12 @@ import {
 } from '../core/models/domain.models';
 import { LegendRegistryService } from '../core/services/legend-registry.service';
 import { MudEngineService } from '../core/services/mud-engine.service';
+import { EnemySpriteComponent } from './enemy-sprite/enemy-sprite';
 
 @Component({
   selector: 'app-first-person-stage',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, EnemySpriteComponent],
   templateUrl: './first-person-stage.html',
   styleUrl: './first-person-stage.scss',
 })
@@ -25,6 +26,14 @@ export class FirstPersonStageComponent {
   readonly selectedMonster = signal<MonsterEntity | null>(null);
   readonly selectedItem = signal<EquipmentItem | null>(null);
   readonly selectedEcho = signal<TravelerEcho | null>(null);
+
+  getMonsterTransform(index: number, total: number): string {
+    const count = Math.max(1, total);
+    const spacing = 150;
+    const startX = 400 - (count * spacing) / 2 + 5;
+    const posX = startX + index * spacing;
+    return `translate(${posX}, 180)`;
+  }
 
   // Directional Compass & Relative Exits
   readonly playerFacing = computed<CompassDirection>(() => this.engine.playerFacing());

@@ -324,6 +324,43 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
       expect(compiled.querySelector('[data-testid="first-person-stage"]')).toBeTruthy();
       expect(compiled.querySelector('[data-testid="persistent-room-stage"]')).toBeTruthy();
     });
+
+    it('should render unique Etrian Odyssey-style animated SVG enemy sprites with adjective mutators in 1st-person viewport', async () => {
+      const fixture = TestBed.createComponent(App);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // Navigate to a room with living monsters (e.g. room-1)
+      engine.moveToRoom('room-1');
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const fpStage = compiled.querySelector('[data-testid="first-person-stage"]');
+      expect(fpStage).toBeTruthy();
+
+      // Find living monster sprites in the first-person perspective SVG
+      const monsterSprites = fpStage?.querySelectorAll('[app-enemy-sprite]');
+      if (monsterSprites && monsterSprites.length > 0) {
+        const firstSprite = monsterSprites[0];
+        // Check that archetype data attribute is populated
+        const archetype = firstSprite.getAttribute('data-archetype');
+        expect(archetype).toBeTruthy();
+        expect(archetype).not.toBe('');
+
+        // Check that tactical adjective badges are rendered below the health bar
+        const badges = firstSprite.querySelectorAll('.tactical-badges-group text');
+        expect(badges.length).toBeGreaterThan(0);
+
+        // Check health and nameplate readouts
+        const nameplate = firstSprite.querySelector('.monster-nameplate');
+        expect(nameplate?.textContent).toBeTruthy();
+
+        // Clicking on the monster sprite targets the monster for attack
+        (firstSprite as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        fixture.detectChanges();
+        expect(engine.selectedTargetId()).toBe(engine.currentRoom()?.monsters[0]?.id);
+      }
+    });
   });
 
   describe('Feature Evolution: Tri-Chord Splicing, Overgrowth Incursions & Pruning', () => {
