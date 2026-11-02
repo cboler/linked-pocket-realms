@@ -15,6 +15,9 @@ Each record outlines the context, rationale, consequences, and trade-offs of sig
 - [ADR-005: Built-in Angular Service Worker for Offline PWA Support](#adr-005-built-in-angular-service-worker-for-offline-pwa-support)
 - [ADR-006: 1st-Person Perspective Viewport, Overgrowth Grafting, gcloud WebRTC Broker, and Privacy-Preserving Thunderpass](#adr-006-1st-person-perspective-viewport-overgrowth-grafting-gcloud-webrtc-broker-and-privacy-preserving-thunderpass)
 - [ADR-007: Etrian Odyssey-Style Vector SVG Enemy Representations with Dynamic Adjective Mutators](#adr-007-etrian-odyssey-style-vector-svg-enemy-representations-with-dynamic-adjective-mutators)
+- [ADR-008: Modern MUD UI/UX Polish — Interactive Narrative Hypertext, Synthesized Web Audio, Mutual Peer Splicing, and Traveler Inscriptions](#adr-008-modern-mud-uiux-polish--interactive-narrative-hypertext-synthesized-web-audio-mutual-peer-splicing-and-traveler-inscriptions)
+- [ADR-009: Targetable Monster Anatomy, Environmental Spell Reactions, Phantom Trails & Zero-Dependency SVG QR Codes](#adr-009-targetable-monster-anatomy-environmental-spell-reactions-phantom-trails--zero-dependency-svg-qr-codes)
+- [ADR-010: Directional Spatial Audio Panning, Bloodstain Lore Memorials, Delver Grimoires & Synchronized Conjunction Mechanisms](#adr-010-directional-spatial-audio-panning-bloodstain-lore-memorials-delver-grimoires--synchronized-conjunction-mechanisms)
 
 ---
 
@@ -188,6 +191,108 @@ Previously, enemies in the 2.5D perspective dungeon viewport (`FirstPersonStageC
 
 - **Positive**: Each enemy type is visually unique and instantly recognizable; procedural adjectives directly transform creature appearances; zero raster asset footprint (< 20KB total); native SVG hardware acceleration across mobile, tablet, and desktop viewports.
 - **Trade-offs**: Complex SVG paths require careful coordinate budgeting within the 140x180 viewBox cell; mitigated through modular templates and unit tests.
+
+---
+
+## ADR-008: Modern MUD UI/UX Polish — Interactive Narrative Hypertext, Synthesized Web Audio, Mutual Peer Splicing, and Traveler Inscriptions
+
+### Status
+
+Accepted
+
+### Context
+
+Decades of MUD theorycrafting on Usenet, MudDev, and Reddit have identified persistent design barriers in traditional text-based games:
+
+1. **Wall-of-Text Fatigue**: Dense narrative text requires cognitive parsing before players can decide on actions, creating friction between reading and doing.
+2. **Sensory Disconnection**: Pure silent interfaces lack tactile feedback for footsteps, combat hits, or mystical occurrences.
+3. **Passive Multiplayer**: In traditional MUDs, players must be online simultaneously in the same room. Asynchronous presence (leaving chalk marks, gravestones, and automatic dungeon cross-pollination on physical passes) bridges solo and multiplayer play.
+
+### Decision
+
+1. **Interactive Narrative Hypertext Chips**:
+   - Integrated dynamic affordance chips directly inside the persistent room narrative card. Any monster, ground loot item, mechanism, or traveler inscription mentioned in the prose is presented as an actionable chip (`[⚔️ Mob]`, `[❖ Item]`, `[✍ Note]`, `[♨ Campfire]`, `[⚙ Mechanism]`).
+2. **Synthesized Web Audio Soundscape (`SoundFxService`)**:
+   - Implemented zero-dependency procedural audio synthesis using the standard browser `AudioContext`.
+   - Generates tactile wooden/stone footsteps, ethereal harmonic convergence chimes (C5-E5-G5-C6), crisp combat strike impacts, magical skill energy whooshes, ascending shard harvest arpeggios, and warm campfire restoration chords.
+   - Includes a persistent mute toggle in the top tactical header (`localStorage` backed).
+3. **Bidirectional Mutual Splicing & Convergence Banner**:
+   - Enhanced `MudEngineService` to automatically trigger reciprocal feature exchange when encountering live peer beacons (`GATE_BEACON`, WebRTC, or Thunderpass spores).
+   - Dungeons deterministically graft hybrid incursion rooms combining both players' Tri-Chord features and display an accessible `ConvergenceEncounterBanner` with a direct `[🧭 Delve Spliced Wing]` shortcut.
+4. **Traveler's Inscriptions (Floor Graffiti)**:
+   - Added `@inscribe <note>` command and `[✍ Inscribe Note]` UI prompt, allowing adventurers to leave persistent chalk messages on chamber flagstones.
+   - Inscriptions replicate over P2P mesh and render as glowing SVG floor runes in the 1st-person viewport.
+5. **Power-User Keyboard Hotkeys**:
+   - Added hotkeys `1-4` for active skill slots, `Space` for basic attack / auto-combat, `Tab` for monster target cycling, `I`/`P` for equipment paperdoll, `N` for network gate, and `M` for observatory map, complete with visual hotkey hints in the UI.
+
+### Consequences
+
+- **Positive**: Blends the tactical clarity of modern dungeon crawlers with the prose richness of classic MUDs; provides rich tactile feedback with zero audio asset footprint (0 KB downloads); realizes the vision of living pocket dungeons that organically cross-pollinate when players cross paths.
+- **Trade-offs**: Autoplay policies require user interaction before the AudioContext resumes; handled smoothly by lazy initialization on first user gesture.
+
+---
+
+## ADR-009: Targetable Monster Anatomy, Environmental Spell Reactions, Phantom Trails & Zero-Dependency SVG QR Codes
+
+### Status
+
+Accepted
+
+### Context
+
+To deliver on decades of internet MUD theorycrafting and our core premise (living player dungeons that cross-pollinate when players visit or cross paths), combat needed greater tactical depth than simple monolithic HP depletion, and multiplayer presence needed to be tangible asynchronously without heavy backend servers. Furthermore, mobile and convention interactions needed instant camera-scannable spore link generation without bringing in bloated third-party QR libraries.
+
+### Decision
+
+1. **Targetable Monster Anatomy**: Added breakable sub-components (`MonsterBodyPart`: `id`, `name`, `hp`, `maxHp`, `isSevered`, `debuffAppliedOnBreak`, `partEffectDescription`) to Bosses, Elites, and high-tier mobs. Players can target sub-parts; breaking a part permanently applies severe debuffs (-35% Atk, -50% Mitigation, Stun/Silence), plays visceral audio snaps/crunches, triggers haptic severance vibrations, and awards +15 Resonance Shards.
+2. **Environmental Elemental Alchemy**: Integrated skill elements with chamber atmospheric traits. Fire in Fungal/Blighted rooms triggers _Spore Conflagration_ (+35% AoE + Burn); Frost in Crystalline/Sunken triggers _Cryo-Fracture_ (+30% + Chill); Lightning in Clockwork/Tempestuous triggers _Overload Induction_; Void in Silent/Ossuary triggers _Entropy Collapse_ (HP Syphon); Bio in Labyrinthine triggers _Symbiotic Bloom_ (Stamina Surge).
+3. **Phantom Wanderer Ghost Trails**: Traversal breadcrumbs are recorded into a 50-item ring buffer and exchanged across P2P beacons. Entering a chamber recently traversed by a peer displays an animated, translucent SVG wanderer silhouette in the 2.5D viewport with subtle audio whisper and narrative lore.
+4. **Zero-Dependency Pure-TypeScript SVG QR Code Generator**: Implemented QR Code Model 2 with GF(256) Reed-Solomon error correction in `qr-code.util.ts`, generating instant crisp SVG QR codes and `#spore=...` URLs right in the Chaos Gate drawer.
+5. **Mobile Haptics**: Integrated standard `navigator.vibrate` for kinetic strikes, sub-part severances, footsteps, and realm convergences.
+
+### Consequences
+
+- **Positive**: Elevated tactical combat and narrative variety; made offline/asynchronous player presence visceral in the 2.5D viewport; enabled instant zero-server camera sharing with 0 KB npm package additions.
+- **Trade-offs**: QR code generator focuses on standard byte-mode encoding suitable for compact spore payloads; complex custom cartridges still use base64 text export.
+
+---
+
+## ADR-010: Directional Spatial Audio Panning, Bloodstain Lore Memorials, Delver Grimoires & Synchronized Conjunction Mechanisms
+
+### Status
+
+Accepted
+
+### Context
+
+To further realize the multi-decade MUD theorycrafting backlog and deep sensory/asynchronous immersion without adding any external server infrastructure or binary asset bloat:
+
+1. **Sensory Immersion**: Traditional MUDs were text-only; adding synthesized sound was step one, but players still couldn't tell which direction phantom footsteps, whispers, or mechanical thuds were coming from in 2.5D space.
+2. **Environmental Chamber Lore & Bloodstains**: When explorers fall in classic MUDs or Souls-like games, their deaths become part of the world's tapestry. We needed permanent, replicated fallen explorer memorials with commemorative epitaphs and tribute blessings.
+3. **Player-Authored Lore**: Sanctums and deep chambers needed written history authored by delvers and architects (multi-page tomes and grimoires) that can be read on altars or in dedicated parchment modals.
+4. **Synchronized Multi-Dungeon Mechanisms**: Conjunction and expedition chambers needed cooperative physical puzzles that can be solved across the P2P mesh or via solo resonance shard harmonization.
+
+### Decision
+
+1. **Directional Spatial Audio Panning**:
+   - Integrated native Web Audio `StereoPannerNode` with a sinusoidal bearing formula (`calculateBearingPan(targetDir, playerFacing)`).
+   - Generates realistic left/right stereo pans (-0.85 to +0.85) for footsteps through doorways, phantom whispers, combat strikes, and mechanism activations based on the player's 2.5D facing angle.
+2. **Bloodstain Lore Memorials**:
+   - Implemented `TombstoneRecord` committed to the chamber upon player defeat (recording slayer, timestamp, epitaph, and tribute count).
+   - Replicated over P2P mesh (`TOMBSTONE_COMMITTED`) and Thunderpass spores.
+   - Weaves tombstone lore into room narrative and renders interactive weathered stone markers in the 2.5D viewport.
+   - Added `@tribute` command and UI chips allowing delvers to spend 1 Resonance Shard to honor the fallen, granting a +15% Ward blessing.
+3. **Delver Grimoires & Altar Lecterns**:
+   - Implemented `GrimoireData` to store multi-page tomes authored via `@book write <title> | <p1> | <p2>` and shared via `GRIMOIRE_SHARED`.
+   - Renders 2.5D glowing lectern/tome pedestals in chambers hosting a grimoire and an interactive parchment reader modal with page-turning audio and haptics.
+4. **Synchronized Conjunction Mechanisms**:
+   - Added `LinkedMechanismData` representing twin chrono-resonance levers spawned in spliced chambers.
+   - Requires cooperative activation by both dungeon architects via `@lever pull` / `MECHANISM_PULLED` mesh packets or solo harmonization using 10 Resonance Shards (`@lever harmonize`), unlocking a guaranteed Legendary Relic (`[Resonance Conduit Matrix]`) and +50 Shards.
+
+### Consequences
+
+- **Positive**: Rich directional soundscape using standard browser APIs with 0 KB assets; deep emergent lore and asynchronous player interaction; cooperative tactile mechanics that bridge isolated single-player dungeons into a shared multiverse.
+- **Trade-offs**: `StereoPannerNode` is standard in modern desktop and mobile browsers, with fallback to centered mono output in legacy audio contexts.
 
 ---
 

@@ -46,6 +46,15 @@
     >
       🌿 Overgrowth ({{ engine.overgrowthCount() }})
     </button>
+    <button
+      type="button"
+      class="loom-tab-btn"
+      [class.active]="loomActiveTab() === 'SPORE'"
+      (click)="setLoomActiveTab('SPORE')"
+      data-testid="loom-tab-spore"
+    >
+      🌱 Spore QR Beacon
+    </button>
   </nav>
 
   <!-- TAB 1: TRI-CHORD WEAVER / WAYFINDER LOOM -->
@@ -761,6 +770,81 @@
               simulate a walk to seed one!
             </div>
           }
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- TAB 5: SPORE QR BEACON & DIRECT SEED TRANSFER -->
+  @if (loomActiveTab() === 'SPORE') {
+    <div class="loom-tab-content spore-beacon-tab" data-testid="loom-spore-content">
+      <div class="telemetry-card">
+        <h3>🌱 Pure-SVG Planar Spore QR Beacon</h3>
+        <p class="card-help">
+          Show this QR code to another player or share your Spore URL. When scanned or grafted, your
+          realm DNA deterministically cross-pollinates 3 hybrid chambers into their dungeon without
+          any central servers.
+        </p>
+
+        <div class="spore-qr-display-box">
+          @if (sporeQrSvgPath()) {
+            <div class="qr-svg-wrapper">
+              <svg
+                [attr.viewBox]="'0 0 ' + sporeQrSize() + ' ' + sporeQrSize()"
+                class="spore-qr-svg"
+                role="img"
+                aria-label="Planar Spore QR Code"
+              >
+                <rect width="100%" height="100%" fill="#ffffff" rx="1" />
+                <path [attr.d]="sporeQrSvgPath()" fill="#020617" />
+              </svg>
+            </div>
+          }
+          <div class="spore-meta">
+            <span class="spore-address-tag">{{ engine.activeGateAddress().formatted }}</span>
+            <span class="spore-seed-badge"
+              >Mulberry32 Seed: {{ engine.activeGateAddress().seed }}</span
+            >
+          </div>
+
+          <div class="spore-actions-row">
+            <button
+              type="button"
+              class="loom-action-btn copy-spore-btn"
+              (click)="copySporeUrl()"
+              data-testid="copy-spore-btn"
+            >
+              {{ copiedSporeSuccess() ? '✓ Copied Spore URL!' : '📋 Copy Shareable Spore URL' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="telemetry-card">
+        <h3>📥 Graft Foreign Spore Seed</h3>
+        <p class="card-help">
+          Paste a fellow traveler's spore link or Tri-Chord address (e.g.
+          <code>Θ: Scorching Clockwork Catacombs</code>) to splice a hybrid wing immediately into
+          your local dungeon.
+        </p>
+        <div class="spore-import-row">
+          <input
+            type="text"
+            class="spore-input-field"
+            placeholder="Paste spore URL or address (e.g. Θ: Scorching Clockwork Catacombs)..."
+            [ngModel]="sporeInput()"
+            (ngModelChange)="sporeInput.set($event)"
+            data-testid="spore-import-input"
+          />
+          <button
+            type="button"
+            class="loom-action-btn graft-spore-btn"
+            [disabled]="!sporeInput().trim()"
+            (click)="graftForeignSpore()"
+            data-testid="graft-spore-btn"
+          >
+            🌿 Graft Wing
+          </button>
         </div>
       </div>
     </div>

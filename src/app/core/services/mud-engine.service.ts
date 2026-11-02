@@ -5,10 +5,12 @@ import {
   ArchetypeClass,
   AtmospherePrefix,
   BiomeNoun,
+  ChalkInscription,
   ChaosGateAddress,
   CharacterState,
   CommandIntent,
   CompassDirection,
+  ConvergenceEncounterBanner,
   CoreAttributes,
   CoreLegendType,
   DeclarativeTrigger,
@@ -16,14 +18,17 @@ import {
   DrawerTab,
   EquipmentItem,
   ExitDirection,
+  GrimoireData,
   GuestbookGravestoneEntry,
   HeatmapMode,
+  LinkedMechanismData,
   MonsterEntity,
   NetworkPacket,
   P2PChatMessage,
   PaperdollSlotType,
   PassiveTrait,
   PerspectiveRole,
+  PhantomBreadcrumb,
   RealmDelta,
   ReplayFrame,
   RoomNode,
@@ -32,6 +37,7 @@ import {
   StructuralTheme,
   TelemetryLog,
   TerminalFeedLine,
+  TombstoneRecord,
   TraitProfile,
   TravelerEcho,
   HeraldGreeting,
@@ -43,6 +49,7 @@ import {
 } from '../models/domain.models';
 import { ChaosGateService, createMulberry32 } from './chaos-gate.service';
 import { LegendRegistryService } from './legend-registry.service';
+import { SoundFxService } from './sound-fx.service';
 import { StorageService } from './storage.service';
 import { TransportService } from './transport.service';
 
@@ -346,6 +353,7 @@ export const ARCHETYPE_CATALOG: Record<
 export class MudEngineService implements OnDestroy {
   private readonly chaosGate = inject(ChaosGateService);
   private readonly legendRegistry = inject(LegendRegistryService);
+  private readonly soundFx = inject(SoundFxService);
   private readonly storage = inject(StorageService);
   private readonly transport = inject(TransportService);
 
@@ -356,6 +364,10 @@ export class MudEngineService implements OnDestroy {
   private tickCounter = 0;
   private roomEnteredAtMs = Date.now();
   private currentRunReplayFrames: ReplayFrame[] = [];
+  private readonly splicedPeerAddresses = new Set<string>();
+
+  // Convergence Encounter Banner & Audio
+  readonly activeConvergenceBanner = signal<ConvergenceEncounterBanner | null>(null);
 
   // UI Perspective & Active Drawer State
   readonly perspective = signal<PerspectiveRole>('EXPLORER');
@@ -363,6 +375,36 @@ export class MudEngineService implements OnDestroy {
   readonly heatmapMode = signal<HeatmapMode>('LETHALITY');
   readonly selectedArchitectRoomId = signal<string>('room-0');
   readonly selectedTargetId = signal<string | null>(null);
+  readonly selectedTargetPartId = signal<string | null>(null);
+
+  selectTargetMonster(mobId: string | null): void {
+    this.selectedTargetId.set(mobId);
+    this.selectedTargetPartId.set(null);
+  }
+
+  selectTargetPart(partId: string | null): void {
+    this.selectedTargetPartId.set(partId);
+  }
+
+  // Asynchronous Phantom Trails & Ethereal Presence
+  readonly phantomTrails = signal<PhantomBreadcrumb[]>([]);
+  readonly activeRoomPhantom = computed<PhantomBreadcrumb | null>(() => {
+    const currentId = this.currentRoom().id;
+    const trails = this.phantomTrails();
+    const now = Date.now();
+    return (
+      trails.find(
+        (t) =>
+          t.roomId === currentId &&
+          t.peerId !== this.transport.localPeerId &&
+          now - t.timestampMs < 1800000,
+      ) ?? null
+    );
+  });
+
+  // Grimoire Reader Modal State
+  readonly activeGrimoire = signal<GrimoireData | null>(null);
+  readonly activeGrimoirePage = signal<number>(0);
   readonly needsOnboarding = signal<boolean>(false);
   readonly tickerCollapsed = signal<boolean>(false);
   private pendingSyntaxEcho: string | undefined;
@@ -1117,6 +1159,63 @@ export class MudEngineService implements OnDestroy {
       return intent;
     }
 
+    if (verb === '@inscribe' || verb === 'inscribe') {
+      const note = parts.slice(1).join(' ') || 'A mysterious traveler chalk rune lingers here.';
+      this.leaveChalkInscription(note);
+      return {
+        type: 'INSPECT',
+        rawInput: trimmed,
+        source: 'TERMINAL',
+      };
+    }
+
+    if (verb === '@tribute' || verb === 'tribute') {
+      this.tributeFallenExplorer();
+      return {
+        type: 'INSPECT',
+        rawInput: trimmed,
+        source: 'TERMINAL',
+      };
+    }
+
+    if (verb === '@book' || verb === 'book') {
+      const sub = parts[1]?.toLowerCase();
+      if (sub === 'read') {
+        if (this.currentRoom().grimoire) {
+          this.openGrimoire(this.currentRoom().grimoire!);
+        } else {
+          this.appendFeed('SYSTEM', 'No grimoire or book rests upon a lectern here.');
+        }
+        return { type: 'INSPECT', rawInput: trimmed, source: 'TERMINAL' };
+      }
+      if (sub === 'write') {
+        const rest = parts.slice(2).join(' ');
+        const segments = rest
+          .split('|')
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const title = segments[0] || 'Traveler Chronicles';
+        const pages = segments.slice(1);
+        this.writeGrimoire(title, pages);
+        return { type: 'INSPECT', rawInput: trimmed, source: 'TERMINAL' };
+      }
+      this.appendFeed(
+        'SYSTEM',
+        'Grimoire commands: @book read, or @book write <Title> | <Page 1> | <Page 2>',
+      );
+      return { type: 'INSPECT', rawInput: trimmed, source: 'TERMINAL' };
+    }
+
+    if (verb === '@lever' || verb === 'lever' || verb === 'pull' || verb === '@pull') {
+      const sub = parts[1]?.toLowerCase();
+      if (sub === 'harmonize') {
+        this.harmonizeLinkedMechanism();
+        return { type: 'INSPECT', rawInput: trimmed, source: 'TERMINAL' };
+      }
+      this.pullLinkedMechanism();
+      return { type: 'INSPECT', rawInput: trimmed, source: 'TERMINAL' };
+    }
+
     if (
       lower === 'enter rift' ||
       lower === '@enter rift' ||
@@ -1401,6 +1500,78 @@ export class MudEngineService implements OnDestroy {
       comboMult *= 1.2;
       comboText += ` [Volt-Charge Surge +20%]`;
     }
+
+    // Environmental Elemental Reaction Matrix (Elemental Alchemy)
+    const atmoStr = `${room.atmospherePrefix ?? ''} ${room.atmosphereEffect} ${room.structuralTheme ?? ''}`;
+    let envReactionTriggered = false;
+    let envReactionName = '';
+
+    if (
+      element === 'Fire' &&
+      (atmoStr.includes('Fungal') || atmoStr.includes('Blighted') || atmoStr.includes('Scorching'))
+    ) {
+      comboMult *= 1.35;
+      envReactionTriggered = true;
+      envReactionName = '🔥 Spore Conflagration (+35% AoE Ignition & Burn)';
+      if (!target.statuses.some((s) => s.tag === 'Burn')) {
+        target.statuses.push({ tag: 'Burn', remainingMs: 8000, stacks: 1, sourceId: char.id });
+      }
+    } else if (
+      element === 'Frost' &&
+      (atmoStr.includes('Crystalline') || atmoStr.includes('Abyssal') || atmoStr.includes('Sunken'))
+    ) {
+      comboMult *= 1.3;
+      envReactionTriggered = true;
+      envReactionName = '❄️ Cryo-Fracture (+30% Brittle Armor Shatter)';
+      if (!target.statuses.some((s) => s.tag === 'Chill')) {
+        target.statuses.push({ tag: 'Chill', remainingMs: 8000, stacks: 1, sourceId: char.id });
+      }
+    } else if (
+      element === 'Lightning' &&
+      (atmoStr.includes('Clockwork') ||
+        atmoStr.includes('Tempestuous') ||
+        atmoStr.includes('Forge'))
+    ) {
+      comboMult *= 1.3;
+      envReactionTriggered = true;
+      envReactionName = '⚡ Overload Induction (+30% Galvanic Shockwave)';
+      if (!target.statuses.some((s) => s.tag === 'Overcharge')) {
+        target.statuses.push({
+          tag: 'Overcharge',
+          remainingMs: 8000,
+          stacks: 1,
+          sourceId: char.id,
+        });
+      }
+    } else if (
+      element === 'Void' &&
+      (atmoStr.includes('Silent') || atmoStr.includes('Ossuary') || atmoStr.includes('Astral'))
+    ) {
+      comboMult *= 1.3;
+      envReactionTriggered = true;
+      envReactionName = '🌌 Entropy Collapse (+30% Void Syphon)';
+      this.character.update((c) => ({ ...c, hp: Math.min(stats.maxHp, c.hp + 12) }));
+    } else if (
+      element === 'Bio' &&
+      (atmoStr.includes('Labyrinthine') ||
+        atmoStr.includes('Monolithic') ||
+        atmoStr.includes('Aetherial'))
+    ) {
+      comboMult *= 1.25;
+      envReactionTriggered = true;
+      envReactionName = '🌿 Symbiotic Bloom (+25% Botanical Surge)';
+      this.character.update((c) => ({
+        ...c,
+        stamina: Math.min(stats.maxStamina, c.stamina + 15),
+      }));
+    }
+
+    if (envReactionTriggered) {
+      comboText += ` [RESONANCE: ${envReactionName}]`;
+      this.soundFx.playResonanceReaction();
+      this.soundFx.triggerHaptic('RESONANCE');
+    }
+
     if (element === target.weakness) {
       comboMult *= 1.25;
       comboText += ` [Weakness Exploited: ${element} +25%]`;
@@ -1418,6 +1589,24 @@ export class MudEngineService implements OnDestroy {
     const healingDone =
       usedSkill?.id === 'sk-aegis-pulse' || usedSkill?.id === 'sk-soul-reap' ? 15 : 0;
 
+    // Targetable Anatomy Sub-Part Focus
+    const targetPartId = intent.payload?.['targetPartId'] || this.selectedTargetPartId();
+    const targetPart = target.targetableParts?.find((p) => p.id === targetPartId && !p.isSevered);
+    let partSeveredThisHit = false;
+    let partSeveredName = '';
+    let partSeveredDebuff = '';
+
+    if (targetPart && !isMiss) {
+      targetPart.hp = Math.max(0, targetPart.hp - finalDmg);
+      if (targetPart.hp === 0 && !targetPart.isSevered) {
+        targetPart.isSevered = true;
+        partSeveredThisHit = true;
+        partSeveredName = targetPart.name;
+        partSeveredDebuff = targetPart.debuffAppliedOnBreak;
+        this.selectedTargetPartId.set(null);
+      }
+    }
+
     // Consume ATB, stamina, and set skill cooldown
     this.character.update((c) => ({
       ...c,
@@ -1429,7 +1618,13 @@ export class MudEngineService implements OnDestroy {
       ),
     }));
 
-    // Update Monster HP & Statuses
+    if (usedSkill) {
+      this.soundFx.playCastSkill();
+    } else {
+      this.soundFx.playCombatHit();
+    }
+
+    // Update Monster HP, Statuses, and Anatomy
     let monsterDefeated = false;
     this.rooms.update((all) =>
       all.map((r) => {
@@ -1458,16 +1653,59 @@ export class MudEngineService implements OnDestroy {
               });
             }
           }
-          return { ...m, hp: nextHp, statuses: nextStatuses };
+
+          const updatedParts = (m.targetableParts || []).map((p) => {
+            if (p.id === targetPart?.id) {
+              const nextPartHp = Math.max(0, p.hp - finalDmg);
+              return { ...p, hp: nextPartHp, isSevered: nextPartHp === 0 || p.isSevered };
+            }
+            return p;
+          });
+
+          let updatedAtk = m.atk;
+          let updatedMit = m.mitigationPct;
+          let updatedSpeed = m.speed;
+          if (partSeveredThisHit) {
+            if (partSeveredDebuff.includes('Atk')) {
+              updatedAtk = Math.max(1, Math.round(m.atk * 0.65));
+            }
+            if (partSeveredDebuff.includes('Mitigation')) {
+              updatedMit = Math.max(0, m.mitigationPct - 15);
+            }
+            if (partSeveredDebuff.includes('Speed')) {
+              updatedSpeed = Math.max(4, m.speed - 4);
+            }
+          }
+
+          return {
+            ...m,
+            hp: nextHp,
+            atk: updatedAtk,
+            mitigationPct: updatedMit,
+            speed: updatedSpeed,
+            statuses: nextStatuses,
+            targetableParts: updatedParts,
+          };
         });
         return { ...r, monsters: nextMonsters };
       }),
     );
 
+    if (partSeveredThisHit) {
+      this.soundFx.playAnatomicalSeverance();
+      this.soundFx.triggerHaptic('SEVERANCE');
+      this.character.update((c) => ({ ...c, resonanceShards: c.resonanceShards + 15 }));
+      const severanceMsg = `💥 [ANATOMY SEVERED] ${char.name} severed ${target.name}'s [${partSeveredName}]! ${partSeveredDebuff} applied! (+15 Shards)`;
+      this.appendFeed('COMBAT', severanceMsg);
+    } else if (!isMiss) {
+      this.soundFx.triggerHaptic('STRIKE');
+    }
+
     const outcome = isMiss ? 'MISS' : isCrit ? 'CRIT' : 'HIT';
+    const targetSuffix = targetPart ? ` (targeting ${targetPart.name})` : '';
     const line = isMiss
-      ? `${char.name}'s ${skillName} missed ${target.name} (Roll ${roll}).`
-      : `${char.name} executes [${skillName}] on ${target.name} for ${finalDmg} ${element} DMG (${outcome} Roll ${roll}, ${mitigated} mitigated)${comboText}!`;
+      ? `${char.name}'s ${skillName} missed ${target.name}${targetSuffix} (Roll ${roll}).`
+      : `${char.name} executes [${skillName}] on ${target.name}${targetSuffix} for ${finalDmg} ${element} DMG (${outcome} Roll ${roll}, ${mitigated} mitigated)${comboText}!`;
 
     this.appendFeed('COMBAT', line);
     this.recordReplayFrame(char.name, line);
@@ -1699,6 +1937,33 @@ export class MudEngineService implements OnDestroy {
 
     this.transport.broadcastGravestone(char.name, addr.formatted, room.id, gravestone);
 
+    // Commit dynamic TombstoneRecord for asynchronous memorial & bloodstain history
+    const tombstone: TombstoneRecord = {
+      id: `tomb-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      slainPlayerName: char.name,
+      slainBy: killer.name,
+      epitaph: `Here fell ${char.name}, overwhelmed by ${killer.name}.`,
+      timestamp: Date.now(),
+      tributeCount: 0,
+    };
+    this.rooms.update((all) =>
+      all.map((r) => {
+        if (r.id !== room.id) return r;
+        const prev = r.tombstones || [];
+        return {
+          ...r,
+          tombstones: [tombstone, ...prev].slice(0, 10),
+        };
+      }),
+    );
+    this.transport.sendPacket({
+      senderName: char.name,
+      type: 'TOMBSTONE_COMMITTED',
+      gateAddress: addr.formatted,
+      roomId: room.id,
+      tombstone,
+    });
+
     // Respawn player at Anchor Portal (room-0)
     this.character.update((c) => ({
       ...c,
@@ -1820,10 +2085,10 @@ export class MudEngineService implements OnDestroy {
         `✨ [Synthesis Seam] You cross a harmonic boundary (${exit.synthesisAtmosphere || 'Elemental Convergence'}) between native and foreign overgrowth!`,
       );
     }
-    this.moveToRoom(exit.targetRoomId);
+    this.moveToRoom(exit.targetRoomId, direction);
   }
 
-  moveToRoom(targetRoomId: string): void {
+  moveToRoom(targetRoomId: string, direction?: ExitDirection): void {
     const prevRoomId = this.character().currentRoomId;
     const elapsedMs = Math.max(500, Date.now() - this.roomEnteredAtMs);
     this.roomEnteredAtMs = Date.now();
@@ -1869,6 +2134,35 @@ export class MudEngineService implements OnDestroy {
     }));
 
     this.selectedArchitectRoomId.set(targetRoomId);
+    this.selectedTargetPartId.set(null);
+    const pan = this.soundFx.calculateBearingPan(direction, this.playerFacing());
+    this.soundFx.playFootstep(pan);
+    this.soundFx.triggerHaptic('STEP');
+
+    // Record local movement breadcrumb for asynchronous peer presence
+    const targetRoom = this.rooms().find((r) => r.id === targetRoomId);
+    const localCrumb: PhantomBreadcrumb = {
+      id: `crumb-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      peerId: this.transport.localPeerId || 'local',
+      playerName: this.character().name,
+      archetype: this.character().archetype,
+      roomId: targetRoomId,
+      roomTitle: targetRoom?.title || targetRoomId,
+      timestampMs: Date.now(),
+      heraldGreeting: this.character().heraldGreeting?.formatted,
+    };
+    this.phantomTrails.update((crumbs) => [localCrumb, ...crumbs].slice(0, 50));
+
+    // Check for foreign phantom wanderer presence in target chamber
+    const phantom = this.activeRoomPhantom();
+    if (phantom) {
+      this.soundFx.playPhantomWhisper(0.25);
+      this.appendFeed(
+        'LORE',
+        `👻 [Phantom Echo] A shimmering afterimage of Wanderer ${phantom.playerName} (${phantom.archetype}) glides through the archway...`,
+      );
+    }
+
     this.evaluateDeclarativeTriggers('ON_ENTER');
     this.emitCurrentRoomNarrative();
     void this.storage.saveCharacterState(this.character());
@@ -1957,6 +2251,37 @@ export class MudEngineService implements OnDestroy {
       );
     }
 
+    // Check tombstones
+    const tomb = room.tombstones?.find((t) => t.id === targetId);
+    if (tomb) {
+      this.appendFeed(
+        'LORE',
+        `🪦 [Fallen Explorer Memorial] "${tomb.epitaph}" (Slain by: ${tomb.slainBy} | Tributes: ${tomb.tributeCount}). Type '@tribute' or click [🕯 Offer Tribute] to honor with a shard (+15% Ward).`,
+      );
+      return;
+    }
+
+    // Check grimoire
+    if (
+      room.grimoire &&
+      (targetId === room.grimoire.id ||
+        targetId === 'grimoire' ||
+        targetId === 'book' ||
+        targetId === 'tome')
+    ) {
+      this.openGrimoire(room.grimoire);
+      return;
+    }
+
+    // Check linked mechanism
+    if (
+      room.linkedMechanism &&
+      (targetId === room.linkedMechanism.id || targetId === 'mechanism' || targetId === 'lever')
+    ) {
+      this.pullLinkedMechanism();
+      return;
+    }
+
     const mob = room.monsters.find((m) => m.id === targetId) ?? room.monsters[0];
     if (mob && (!targetId || targetId === mob.id)) {
       const bestiaryRecord = char.bestiaryUnlocked[mob.templateId] ?? {
@@ -2004,6 +2329,30 @@ export class MudEngineService implements OnDestroy {
         requiredPer: 8,
       });
       this.appendFeed('LORE', `[Inspector Lens: ${item.name}] ${details.join(' | ')}`);
+      return;
+    }
+
+    const inscription = room.inscriptions?.find(
+      (ins) => ins.id === targetId || targetId?.includes('inscr'),
+    );
+    if (inscription) {
+      const details = [
+        `Author: ${inscription.authorName} (${inscription.authorTriChord})`,
+        `Timestamp: ${new Date(inscription.timestampIso).toLocaleString()}`,
+        `Message: "${inscription.text}"`,
+      ];
+      this.inspectedEntity.set({
+        type: 'ROOM',
+        title: `Chalk Rune by ${inscription.authorName}`,
+        subtitle: "Traveler's Inscription",
+        details,
+        secretRevealed: true,
+        requiredPer: 1,
+      });
+      this.appendFeed(
+        'LORE',
+        `[Traveler's Inscription] ${inscription.authorName}: "${inscription.text}"`,
+      );
       return;
     }
 
@@ -2337,6 +2686,7 @@ export class MudEngineService implements OnDestroy {
       stamina: stats.maxStamina,
       statuses: [],
     }));
+    this.soundFx.playCampfireRest();
     this.appendFeed(
       'NARRATIVE',
       '♨ You rest beside the sanctuary embers. HP and Stamina fully restored.',
@@ -3302,6 +3652,7 @@ export class MudEngineService implements OnDestroy {
       `✂️ [Pruned] Severed foreign overgrowth chamber '${targetRoom.title}'. Harvested +${shardsEarned} Resonance Shards (Balance: ${this.character().resonanceShards}).`,
     );
 
+    this.soundFx.playHarvestShards();
     this.addVitalityXP(30, 'Pruned foreign overgrowth');
 
     return true;
@@ -3461,16 +3812,98 @@ export class MudEngineService implements OnDestroy {
   }
 
   private onNetworkPacket(pkt: NetworkPacket): void {
-    if (pkt.type === 'GATE_BEACON' && pkt.realmCartridgeBase64) {
-      const imported = this.storage.importCartridgeBase64(pkt.realmCartridgeBase64);
-      if (imported?.customLegendEntries?.length) {
-        this.legendRegistry.mergeHostCustomLegends(imported.customLegendEntries);
+    if (pkt.breadcrumbs && pkt.breadcrumbs.length > 0) {
+      this.phantomTrails.update((curr) => {
+        const existingIds = new Set(curr.map((c) => c.id));
+        const incoming = pkt.breadcrumbs!.filter((c) => !existingIds.has(c.id));
+        return [...incoming, ...curr].slice(0, 50);
+      });
+    }
+
+    if (pkt.type === 'GATE_BEACON') {
+      if (pkt.realmCartridgeBase64) {
+        const imported = this.storage.importCartridgeBase64(pkt.realmCartridgeBase64);
+        if (imported?.customLegendEntries?.length) {
+          this.legendRegistry.mergeHostCustomLegends(imported.customLegendEntries);
+        }
+      }
+
+      // Mutual realm convergence: when passing by another player or encountering their beacon
+      const localAddr = this.activeGateAddress();
+      const peerAddr = this.chaosGate.parseAddressString(pkt.gateAddress);
+      if (
+        peerAddr &&
+        pkt.gateAddress !== localAddr.formatted &&
+        pkt.senderPeerId !== 'peer-astral-echo' &&
+        !this.splicedPeerAddresses.has(pkt.gateAddress)
+      ) {
+        this.splicedPeerAddresses.add(pkt.gateAddress);
+        const grafted = this.graftOvergrowthIncursion(peerAddr, pkt.senderName, pkt.echo);
+        if (grafted.length > 0) {
+          this.activeConvergenceBanner.set({
+            peerName: pkt.senderName,
+            peerTriChord: pkt.gateAddress,
+            localTheme: localAddr.theme,
+            remoteTheme: peerAddr.theme,
+            roomsGraftedCount: grafted.length,
+            timestampMs: Date.now(),
+          });
+          this.soundFx.playConvergenceChime();
+          this.soundFx.triggerHaptic('CONVERGENCE');
+          this.appendFeed(
+            'NETWORK',
+            `🌌 [Realm Convergence] Crossed paths with ${pkt.senderName} (${pkt.gateAddress})! Spliced ${grafted.length} hybrid incursion rooms into your realm.`,
+          );
+        }
       }
     } else if (pkt.type === 'THUNDERPASS_SPORE' && pkt.spore) {
       const remoteAddr = this.chaosGate.parseAddressString(pkt.spore.triChord);
       if (remoteAddr) {
-        this.graftOvergrowthIncursion(remoteAddr, pkt.spore.playerName, pkt.spore.echo);
+        const localAddr = this.activeGateAddress();
+        const grafted = this.graftOvergrowthIncursion(
+          remoteAddr,
+          pkt.spore.playerName,
+          pkt.spore.echo,
+        );
+        if (grafted.length > 0) {
+          this.activeConvergenceBanner.set({
+            peerName: pkt.spore.playerName,
+            peerTriChord: pkt.spore.triChord,
+            localTheme: localAddr.theme,
+            remoteTheme: remoteAddr.theme,
+            roomsGraftedCount: grafted.length,
+            timestampMs: Date.now(),
+          });
+          this.soundFx.playConvergenceChime();
+          this.soundFx.triggerHaptic('CONVERGENCE');
+        }
       }
+    } else if (pkt.type === 'CHALK_INSCRIPTION' && pkt.chalkInscription) {
+      this.applyIncomingChalkInscription(pkt.chalkInscription, pkt.roomId);
+    } else if (pkt.type === 'TOMBSTONE_COMMITTED' && pkt.tombstone && pkt.roomId) {
+      this.rooms.update((all) =>
+        all.map((r) => {
+          if (r.id !== pkt.roomId) return r;
+          const prev = r.tombstones || [];
+          if (prev.some((t) => t.id === pkt.tombstone!.id)) return r;
+          return {
+            ...r,
+            tombstones: [pkt.tombstone!, ...prev].slice(0, 10),
+          };
+        }),
+      );
+    } else if (pkt.type === 'GRIMOIRE_SHARED' && pkt.grimoire && pkt.roomId) {
+      this.rooms.update((all) =>
+        all.map((r) => {
+          if (r.id !== pkt.roomId) return r;
+          return {
+            ...r,
+            grimoire: pkt.grimoire,
+          };
+        }),
+      );
+    } else if (pkt.type === 'MECHANISM_PULLED' && pkt.linkedMechanism && pkt.roomId) {
+      this.handleRemoteMechanismPulled(pkt.roomId, pkt.linkedMechanism);
     } else if (pkt.type === 'CHAT_MESSAGE' && pkt.chat) {
       const chat = pkt.chat;
       this.chatLog.update((prev) => [chat, ...prev].slice(0, 50));
@@ -3514,6 +3947,335 @@ export class MudEngineService implements OnDestroy {
     }
   }
 
+  dismissConvergenceBanner(): void {
+    this.activeConvergenceBanner.set(null);
+  }
+
+  leaveChalkInscription(note: string): void {
+    const text = note.trim();
+    if (!text) return;
+    const room = this.currentRoom();
+    const char = this.character();
+    const localAddr = this.activeGateAddress();
+    const inscription: ChalkInscription = {
+      id: `inscr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      authorName: char.name,
+      authorTriChord: localAddr.formatted,
+      text,
+      timestampIso: new Date().toISOString(),
+      glyph: '✍',
+    };
+
+    const nextInscr = [...(room.inscriptions || []), inscription];
+    this.rooms.update((rooms) =>
+      rooms.map((r) => (r.id === room.id ? { ...r, inscriptions: nextInscr } : r)),
+    );
+
+    // Save to RealmDelta overrides
+    this.activeRealmDelta.update((delta) => {
+      const prevOverride = delta.roomOverrides[room.id] || { roomId: room.id };
+      return {
+        ...delta,
+        roomOverrides: {
+          ...delta.roomOverrides,
+          [room.id]: {
+            ...prevOverride,
+            inscriptions: nextInscr,
+          },
+        },
+      };
+    });
+    void this.storage.saveRealmDelta(this.activeRealmDelta());
+
+    this.soundFx.playInscription();
+    this.appendFeed('LORE', `✍ You inscribed chalk message onto the stone floor: "${text}"`);
+
+    // Broadcast inscription to peers in the mesh
+    this.transport.sendPacket({
+      senderName: char.name,
+      type: 'CHALK_INSCRIPTION',
+      gateAddress: localAddr.formatted,
+      roomId: room.id,
+      chalkInscription: inscription,
+    });
+  }
+
+  applyIncomingChalkInscription(inscription: ChalkInscription, roomId?: string): void {
+    const targetRoomId = roomId || this.currentRoom().id;
+    this.rooms.update((rooms) =>
+      rooms.map((r) => {
+        if (r.id !== targetRoomId) return r;
+        const existing = r.inscriptions || [];
+        if (existing.some((i) => i.id === inscription.id)) return r;
+        return {
+          ...r,
+          inscriptions: [...existing, inscription],
+        };
+      }),
+    );
+    this.soundFx.playInscription();
+    this.appendFeed(
+      'LORE',
+      `✍ [Chalk Inscription] ${inscription.authorName} left a mark: "${inscription.text}"`,
+    );
+  }
+
+  openGrimoire(grimoire: GrimoireData): void {
+    this.activeGrimoire.set(grimoire);
+    this.activeGrimoirePage.set(0);
+    this.soundFx.playGrimoireTurn();
+    this.soundFx.triggerHaptic('TOME');
+  }
+
+  nextGrimoirePage(): void {
+    const grim = this.activeGrimoire();
+    if (!grim) return;
+    const current = this.activeGrimoirePage();
+    if (current < grim.pages.length - 1) {
+      this.activeGrimoirePage.set(current + 1);
+      this.soundFx.playGrimoireTurn();
+    }
+  }
+
+  prevGrimoirePage(): void {
+    const current = this.activeGrimoirePage();
+    if (current > 0) {
+      this.activeGrimoirePage.set(current - 1);
+      this.soundFx.playGrimoireTurn();
+    }
+  }
+
+  closeGrimoire(): void {
+    this.activeGrimoire.set(null);
+  }
+
+  writeGrimoire(title: string, pages: string[]): boolean {
+    const cleanTitle = title.trim() || 'Chronicles of the Realm';
+    const cleanPages =
+      pages.length > 0 ? pages : ["(The pages remain blank, awaiting the traveler's quill.)"];
+    const grimoire: GrimoireData = {
+      id: `grim-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      title: cleanTitle,
+      authorName: this.character().name,
+      pages: cleanPages,
+      createdAt: Date.now(),
+    };
+
+    const roomId = this.character().currentRoomId;
+    this.rooms.update((all) => all.map((r) => (r.id === roomId ? { ...r, grimoire } : r)));
+
+    this.soundFx.playGrimoireTurn();
+    this.soundFx.triggerHaptic('TOME');
+    this.appendFeed(
+      'LORE',
+      `📖 [Grimoire Inscribed] Penned "${cleanTitle}" (${cleanPages.length} pages) upon the chamber lectern!`,
+    );
+
+    this.transport.sendPacket({
+      senderName: this.character().name,
+      type: 'GRIMOIRE_SHARED',
+      gateAddress: this.activeGateAddress().formatted,
+      roomId,
+      grimoire,
+    });
+    return true;
+  }
+
+  tributeFallenExplorer(tombstoneId?: string): boolean {
+    const room = this.currentRoom();
+    if (!room.tombstones || room.tombstones.length === 0) {
+      this.appendFeed(
+        'SYSTEM',
+        'No memorial stones or fallen explorer graves rest in this chamber.',
+      );
+      return false;
+    }
+    const tomb = tombstoneId
+      ? room.tombstones.find((t) => t.id === tombstoneId)
+      : room.tombstones[0];
+    if (!tomb) {
+      this.appendFeed('SYSTEM', 'The specified memorial stone could not be found.');
+      return false;
+    }
+
+    const shards = this.character().resonanceShards || 0;
+    if (shards < 1) {
+      this.appendFeed(
+        'SYSTEM',
+        'You need at least 1 Resonance Shard to offer tribute at a memorial.',
+      );
+      return false;
+    }
+
+    // Deduct 1 shard & grant +15% Ward blessing
+    this.character.update((c) => ({
+      ...c,
+      resonanceShards: Math.max(0, c.resonanceShards - 1),
+    }));
+
+    tomb.tributeCount = (tomb.tributeCount || 0) + 1;
+    this.rooms.update((all) =>
+      all.map((r) =>
+        r.id === room.id
+          ? {
+              ...r,
+              tombstones: r.tombstones?.map((t) =>
+                t.id === tomb.id ? { ...t, tributeCount: tomb.tributeCount } : t,
+              ),
+            }
+          : r,
+      ),
+    );
+
+    this.soundFx.playTombstoneTribute();
+    this.soundFx.triggerHaptic('TRIBUTE');
+    this.appendFeed(
+      'LORE',
+      `🪦 [Fallen Explorer Tribute] You offer 1 Resonance Shard in solemn honor of ${tomb.slainPlayerName}. A ghostly blessing envelops you (+15% Ward). Total tributes: ${tomb.tributeCount}.`,
+    );
+
+    this.transport.sendPacket({
+      senderName: this.character().name,
+      type: 'TOMBSTONE_COMMITTED',
+      gateAddress: this.activeGateAddress().formatted,
+      roomId: room.id,
+      tombstone: tomb,
+    });
+    return true;
+  }
+
+  pullLinkedMechanism(): boolean {
+    const room = this.currentRoom();
+    if (!room.linkedMechanism) {
+      this.appendFeed('SYSTEM', 'No synchronized mechanism in this chamber.');
+      return false;
+    }
+    const mech = room.linkedMechanism;
+    if (mech.state === 'HARMONIZED') {
+      this.appendFeed('SYSTEM', `⚙️ The ${mech.name} is already harmonized and unlocked!`);
+      return false;
+    }
+
+    mech.activatedByLocal = true;
+    mech.lastActivationTime = Date.now();
+
+    this.soundFx.playMechanismClank();
+    this.soundFx.triggerHaptic('MECHANISM');
+
+    this.appendFeed(
+      'LORE',
+      `⚙️ [Mechanism Pulled] You throw the massive iron lever on [${mech.name}]! Heavy chains rattle through the planar floorplates. Awaiting peer activation on the connected wing...`,
+    );
+
+    // If remote is already active, harmonize!
+    if (mech.activatedByRemote) {
+      this.completeMechanismHarmonization(room.id, mech);
+    } else {
+      this.rooms.update((all) =>
+        all.map((r) => (r.id === room.id ? { ...r, linkedMechanism: { ...mech } } : r)),
+      );
+    }
+
+    this.transport.sendPacket({
+      senderName: this.character().name,
+      type: 'MECHANISM_PULLED',
+      gateAddress: this.activeGateAddress().formatted,
+      roomId: room.id,
+      linkedMechanism: mech,
+    });
+    return true;
+  }
+
+  harmonizeLinkedMechanism(): boolean {
+    const room = this.currentRoom();
+    if (!room.linkedMechanism) {
+      this.appendFeed('SYSTEM', 'No synchronized mechanism in this chamber.');
+      return false;
+    }
+    const mech = room.linkedMechanism;
+    if (mech.state === 'HARMONIZED') {
+      this.appendFeed('SYSTEM', `⚙️ The ${mech.name} is already harmonized!`);
+      return false;
+    }
+    const shards = this.character().resonanceShards || 0;
+    if (shards < 10) {
+      this.appendFeed(
+        'SYSTEM',
+        `Solo harmonization requires 10 Resonance Shards (Current: ${shards}). Delve deeper or wait for a peer to pull the twin lever.`,
+      );
+      return false;
+    }
+
+    this.character.update((c) => ({
+      ...c,
+      resonanceShards: c.resonanceShards - 10,
+    }));
+
+    this.completeMechanismHarmonization(room.id, mech);
+    return true;
+  }
+
+  private completeMechanismHarmonization(roomId: string, mech: LinkedMechanismData): void {
+    mech.state = 'HARMONIZED';
+    mech.activatedByLocal = true;
+    mech.activatedByRemote = true;
+
+    // Generate Legendary Relic Drop
+    const relicReward: EquipmentItem = {
+      id: `relic-${Date.now()}`,
+      name: 'Resonance Conduit Matrix',
+      slot: 'Off-Hand',
+      rarity: 'Relic',
+      weight: 2,
+      provenance: 'Verified Drop',
+      originGateAddress: this.activeGateAddress().formatted,
+      statBonuses: { mitigationBonus: 10 },
+      totalStatBudget: 28,
+      description:
+        'A glowing titan core forged from the simultaneous activation of linked dimensional levers.',
+    };
+
+    this.character.update((c) => ({
+      ...c,
+      inventory: [...c.inventory, relicReward],
+      resonanceShards: (c.resonanceShards || 0) + 50,
+    }));
+
+    this.rooms.update((all) =>
+      all.map((r) =>
+        r.id === roomId ? { ...r, linkedMechanism: { ...mech, rewardClaimed: true } } : r,
+      ),
+    );
+
+    this.soundFx.playConvergenceChime();
+    this.soundFx.triggerHaptic('CONVERGENCE');
+    this.appendFeed(
+      'LORE',
+      `🌟 [Titan Vault Unlocked] Harmonic resonance achieved! The titan gate slides open, revealing [${relicReward.name}] and +50 Resonance Shards!`,
+    );
+  }
+
+  private handleRemoteMechanismPulled(roomId: string, remoteMech: LinkedMechanismData): void {
+    const room = this.rooms().find((r) => r.id === roomId);
+    if (!room || !room.linkedMechanism) return;
+    const local = room.linkedMechanism;
+    local.activatedByRemote = true;
+    this.soundFx.playMechanismClank();
+    this.soundFx.triggerHaptic('MECHANISM');
+    const mechanismName = remoteMech?.name || local.name;
+    this.appendFeed(
+      'NETWORK',
+      `⚙️ [Remote Lever Pulled] A distant traveler threw the twin lever on [${mechanismName}]! Pull your lever (@lever pull) to harmonize the titan gate!`,
+    );
+    if (local.activatedByLocal) {
+      this.completeMechanismHarmonization(roomId, local);
+    } else {
+      this.rooms.update((all) =>
+        all.map((r) => (r.id === roomId ? { ...r, linkedMechanism: { ...local } } : r)),
+      );
+    }
+  }
+
   emitCurrentRoomNarrative(): void {
     const room = this.currentRoom();
     if (!room) return;
@@ -3542,6 +4304,42 @@ export class MudEngineService implements OnDestroy {
         colorHex: '#fbbf24',
       });
     }
+    if (room.inscriptions && room.inscriptions.length > 0) {
+      for (const ins of room.inscriptions) {
+        badges.push({
+          label: `✍ "${ins.text.length > 22 ? ins.text.slice(0, 20) + '…' : ins.text}" (${ins.authorName})`,
+          targetId: ins.id,
+          actionType: 'INSPECT',
+          colorHex: '#cbd5e1',
+        });
+      }
+    }
+    if (room.tombstones && room.tombstones.length > 0) {
+      for (const tomb of room.tombstones) {
+        badges.push({
+          label: `🪦 ${tomb.slainPlayerName} (${tomb.tributeCount} tributes)`,
+          targetId: tomb.id,
+          actionType: 'INSPECT',
+          colorHex: '#e2e8f0',
+        });
+      }
+    }
+    if (room.grimoire) {
+      badges.push({
+        label: `📖 Tome: "${room.grimoire.title}"`,
+        targetId: room.grimoire.id,
+        actionType: 'INSPECT',
+        colorHex: '#a78bfa',
+      });
+    }
+    if (room.linkedMechanism) {
+      badges.push({
+        label: `⚙️ ${room.linkedMechanism.name} [${room.linkedMechanism.state}]`,
+        targetId: room.linkedMechanism.id,
+        actionType: 'INSPECT',
+        colorHex: '#f59e0b',
+      });
+    }
     if (room.legendType === 'anchor-portal') {
       for (const peer of this.transport.activeVisitorsList()) {
         badges.push({
@@ -3558,9 +4356,20 @@ export class MudEngineService implements OnDestroy {
       .map((e) => `${e.direction}${e.isSecret ? '(Secret)' : ''}`)
       .join(', ');
 
+    let extraFlavor = '';
+    if (room.tombstones && room.tombstones.length > 0) {
+      extraFlavor += ` 🪦 A memorial slab honors fallen explorer ${room.tombstones[0].slainPlayerName} (${room.tombstones[0].tributeCount} tributes).`;
+    }
+    if (room.grimoire) {
+      extraFlavor += ` 📖 A stone lectern displays an open tome: "${room.grimoire.title}".`;
+    }
+    if (room.linkedMechanism) {
+      extraFlavor += ` ⚙️ Heavy synchronized levers connect to the planar floorplates [${room.linkedMechanism.state}].`;
+    }
+
     this.appendFeed(
       'NARRATIVE',
-      `${legend.glyph} [${room.title}] — ${room.description} (Exits: ${exitsStr || 'None'})`,
+      `${legend.glyph} [${room.title}] — ${room.description}${extraFlavor} (Exits: ${exitsStr || 'None'})`,
       badges,
     );
   }

@@ -3,6 +3,7 @@ import { Component, HostListener, computed, inject, signal } from '@angular/core
 import {
   CompassDirection,
   EquipmentItem,
+  MonsterBodyPart,
   MonsterEntity,
   RoomExit,
   TravelerEcho,
@@ -194,7 +195,13 @@ export class FirstPersonStageComponent {
     this.selectedMonster.set(monster);
     this.selectedItem.set(null);
     this.selectedEcho.set(null);
-    this.engine.selectedTargetId.set(monster.id);
+    this.engine.selectTargetMonster(monster.id);
+  }
+
+  selectAnatomicalPart(part: MonsterBodyPart): void {
+    if (part.isSevered) return;
+    const currentPartId = this.engine.selectedTargetPartId();
+    this.engine.selectTargetPart(currentPartId === part.id ? null : part.id);
   }
 
   selectItem(item: EquipmentItem): void {
@@ -210,23 +217,27 @@ export class FirstPersonStageComponent {
   }
 
   attackMonster(monster: MonsterEntity): void {
+    const partId = this.engine.selectedTargetPartId();
     this.engine.dispatchCommandIntent({
       type: 'ATTACK',
       rawInput: `attack ${monster.name.toLowerCase()}`,
       source: 'HUD',
       targetId: monster.id,
+      payload: partId ? { targetPartId: partId } : undefined,
     });
   }
 
   castPrimarySkill(monster: MonsterEntity): void {
     const skill = this.engine.character().activeSkills[0];
     const key = skill ? skill.commandKey : 'sunder';
+    const partId = this.engine.selectedTargetPartId();
     this.engine.dispatchCommandIntent({
       type: 'CAST_SKILL',
       rawInput: `cast ${key} ${monster.name.toLowerCase()}`,
       source: 'HUD',
       skillKey: key,
       targetId: monster.id,
+      payload: partId ? { targetPartId: partId } : undefined,
     });
   }
 

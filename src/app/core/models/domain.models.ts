@@ -369,6 +369,46 @@ export interface TravelerEcho {
   heraldGreeting?: string;
 }
 
+export interface PhantomBreadcrumb {
+  id: string;
+  peerId: string;
+  playerName: string;
+  archetype: ArchetypeClass;
+  roomId: string;
+  roomTitle: string;
+  timestampMs: number;
+  heraldGreeting?: string;
+  actionText?: string;
+}
+
+export interface TombstoneRecord {
+  id: string;
+  slainPlayerName: string;
+  slainBy: string;
+  epitaph: string;
+  timestamp: number;
+  tributeCount: number;
+}
+
+export interface GrimoireData {
+  id: string;
+  title: string;
+  authorName: string;
+  pages: string[];
+  createdAt: number;
+  sealed?: boolean;
+}
+
+export interface LinkedMechanismData {
+  id: string;
+  name: string;
+  state: 'LOCKED' | 'ACTIVATED' | 'HARMONIZED';
+  activatedByLocal: boolean;
+  activatedByRemote: boolean;
+  lastActivationTime?: number;
+  rewardClaimed: boolean;
+}
+
 export interface ThunderpassSporePayload {
   peerPublicKey: string;
   playerName: string;
@@ -377,6 +417,9 @@ export interface ThunderpassSporePayload {
   signatureRoomDelta?: RoomDeltaOverride;
   timestampMs: number;
   heraldGreeting?: string;
+  breadcrumbs?: PhantomBreadcrumb[];
+  tombstones?: TombstoneRecord[];
+  grimoire?: GrimoireData;
 }
 
 export interface ThunderpassEncounter {
@@ -427,6 +470,16 @@ export interface DeclarativeTrigger {
   actionPayload: string;
 }
 
+export interface MonsterBodyPart {
+  id: string;
+  name: string; // e.g. "Core Dynamo", "Left Scythe-Claw", "Chitin Carapace"
+  hp: number;
+  maxHp: number;
+  isSevered: boolean;
+  debuffAppliedOnBreak: string; // e.g. "-30% Atk", "-40% Mit", "Stunned"
+  partEffectDescription: string;
+}
+
 export interface MonsterEntity {
   id: string;
   templateId: string;
@@ -446,6 +499,7 @@ export interface MonsterEntity {
   loreSnippet: string;
   secretWeaknessHint: string;
   lootTable: EquipmentItem[];
+  targetableParts?: MonsterBodyPart[];
 }
 
 export interface RoomNode {
@@ -482,6 +536,11 @@ export interface RoomNode {
   conjunctionAnomaly?: ConjunctionAnomaly;
   isExpedition?: boolean;
   isRiftPortal?: boolean;
+  inscriptions?: ChalkInscription[];
+  phantomTrails?: PhantomBreadcrumb[];
+  tombstones?: TombstoneRecord[];
+  grimoire?: GrimoireData;
+  linkedMechanism?: LinkedMechanismData;
 }
 
 export interface RulesetManifest {
@@ -521,6 +580,29 @@ export interface RoomDeltaOverride {
   conjunctionAnomaly?: ConjunctionAnomaly;
   isExpedition?: boolean;
   isRiftPortal?: boolean;
+  inscriptions?: ChalkInscription[];
+  phantomTrails?: PhantomBreadcrumb[];
+  tombstones?: TombstoneRecord[];
+  grimoire?: GrimoireData;
+  linkedMechanism?: LinkedMechanismData;
+}
+
+export interface ChalkInscription {
+  id: string;
+  authorName: string;
+  authorTriChord: string;
+  text: string;
+  timestampIso: string;
+  glyph?: string;
+}
+
+export interface ConvergenceEncounterBanner {
+  peerName: string;
+  peerTriChord: string;
+  localTheme: string;
+  remoteTheme: string;
+  roomsGraftedCount: number;
+  timestampMs: number;
 }
 
 export interface RealmData {
@@ -681,7 +763,11 @@ export type NetworkPacketType =
   | 'GRAVESTONE_RECORD'
   | 'TRADE_OFFER'
   | 'THUNDERPASS_SPORE'
-  | 'CHAT_MESSAGE';
+  | 'CHAT_MESSAGE'
+  | 'CHALK_INSCRIPTION'
+  | 'TOMBSTONE_COMMITTED'
+  | 'GRIMOIRE_SHARED'
+  | 'MECHANISM_PULLED';
 
 export interface NetworkPeerVisitor {
   peerId: string;
@@ -711,6 +797,11 @@ export interface NetworkPacket {
   spore?: ThunderpassSporePayload;
   echo?: TravelerEcho;
   chat?: P2PChatMessage;
+  chalkInscription?: ChalkInscription;
+  breadcrumbs?: PhantomBreadcrumb[];
+  tombstone?: TombstoneRecord;
+  grimoire?: GrimoireData;
+  linkedMechanism?: LinkedMechanismData;
   heraldGreeting?: string;
   visitorState?: {
     level: number;

@@ -1894,7 +1894,7 @@ textarea {
 
 .drawer-sheet {
   width: 100%;
-  height: min(82dvh, calc(100% - 130px));
+  height: min(72dvh, calc(100% - 180px));
   margin-bottom: calc(52px + var(--safe-bottom));
   background: var(--bg-surface);
   border-top: 1px solid var(--color-primary);
@@ -2930,7 +2930,7 @@ textarea {
   inset: 0;
   background: rgba(5, 8, 15, 0.88);
   backdrop-filter: blur(8px);
-  z-index: 50;
+  z-index: 100;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -3185,6 +3185,14 @@ textarea {
 /* ========================================================================== */
 
 /* Header Overgrowth Meter Pill */
+.header-meters-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 0;
+  width: 100%;
+}
+
 .overgrowth-meter-pill {
   display: inline-flex;
   align-items: center;
@@ -3195,7 +3203,8 @@ textarea {
   border-radius: var(--radius-sm);
   font-size: 0.72rem;
   color: #f5d0fe;
-  white-space: nowrap;
+  flex-wrap: wrap;
+  min-width: 0;
 
   .overgrowth-item {
     &.alert {
@@ -3212,7 +3221,7 @@ textarea {
   .presence-item {
     background: transparent;
     border: none;
-    padding: 0;
+    padding: 0.15rem 0.35rem;
     color: #67e8f9;
     font-family: inherit;
     font-size: inherit;
@@ -3220,11 +3229,15 @@ textarea {
     display: inline-flex;
     align-items: center;
     gap: 0.2rem;
+    border-radius: var(--radius-sm);
+    min-height: 28px;
+    touch-action: manipulation;
 
     &:hover,
     &:focus-visible {
       text-decoration: underline;
       color: #38bdf8;
+      background: rgba(56, 189, 248, 0.1);
     }
   }
 }
@@ -3759,4 +3772,359 @@ textarea {
     text-align: center;
     max-width: 320px;
   }
+}
+
+/* =========================================================================
+   MUTUAL REALM CONVERGENCE ENCOUNTER BANNER & SENSORY POLISH
+   ========================================================================= */
+.convergence-encounter-banner {
+  background: linear-gradient(135deg, rgba(88, 28, 135, 0.95), rgba(15, 23, 42, 0.98));
+  border-bottom: 2px solid #c084fc;
+  box-shadow: 0 4px 20px rgba(192, 132, 252, 0.25);
+  padding: 0.5rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  z-index: 100;
+  animation: slideDown 0.3s ease-out;
+
+  .convergence-content {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+
+    .convergence-sigil {
+      font-size: 1.4rem;
+      animation: pulse 2s infinite ease-in-out;
+    }
+
+    .convergence-text {
+      display: flex;
+      flex-direction: column;
+      gap: 0.1rem;
+
+      .convergence-headline {
+        color: #f5d0fe;
+        font-size: 0.85rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+      }
+
+      .convergence-subtext {
+        color: #e2e8f0;
+        font-size: 0.75rem;
+
+        em {
+          color: #38bdf8;
+          font-style: normal;
+          font-weight: 600;
+        }
+
+        strong {
+          color: #a855f7;
+        }
+      }
+    }
+  }
+
+  .convergence-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    .convergence-btn {
+      min-height: var(--touch-target-min);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 700;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      padding: 0 0.85rem;
+      font-family: inherit;
+      transition: all 0.15s ease;
+
+      &:focus-visible {
+        outline: var(--focus-ring);
+      }
+
+      &.primary {
+        background: #a855f7;
+        color: #ffffff;
+        border: 1px solid #c084fc;
+
+        &:hover {
+          background: #9333ea;
+        }
+      }
+
+      &.dismiss {
+        background: transparent;
+        color: #94a3b8;
+        border: none;
+        padding: 0 0.6rem;
+        font-size: 1rem;
+
+        &:hover {
+          color: #f1f5f9;
+        }
+      }
+    }
+  }
+}
+
+/* Tactile Web Audio Toggle Button */
+.sound-toggle-btn {
+  &.muted {
+    color: var(--text-muted);
+    opacity: 0.75;
+  }
+}
+
+/* Interactive Narrative Entity Chips & Inscriptions */
+.stage-narrative-card {
+  .sensory-hook-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: 0.35rem;
+
+    .leave-inscr-btn {
+      min-height: 32px;
+      padding: 0.2rem 0.55rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #cbd5e1;
+      background: rgba(148, 163, 184, 0.12);
+      border: 1px dashed rgba(203, 213, 225, 0.4);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-family: inherit;
+      transition: all 0.15s ease;
+
+      &:hover {
+        background: rgba(148, 163, 184, 0.25);
+        border-color: #f1f5f9;
+        color: #ffffff;
+      }
+
+      &:focus-visible {
+        outline: var(--focus-ring);
+      }
+    }
+  }
+
+  .narrative-interactive-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.5rem;
+    padding-top: 0.45rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+
+    .narrative-chip {
+      min-height: 32px;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.2rem 0.6rem;
+      border-radius: 9999px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s ease;
+
+      &:focus-visible {
+        outline: var(--focus-ring);
+      }
+
+      &.mob-chip {
+        background: rgba(239, 68, 68, 0.15);
+        border: 1px solid rgba(248, 113, 113, 0.45);
+        color: #fca5a5;
+
+        &:hover {
+          background: rgba(239, 68, 68, 0.3);
+          border-color: #f87171;
+        }
+      }
+
+      &.item-chip {
+        background: rgba(245, 158, 11, 0.15);
+        border: 1px solid rgba(251, 191, 36, 0.45);
+        color: #fde047;
+
+        &:hover {
+          background: rgba(245, 158, 11, 0.3);
+          border-color: #fbbf24;
+        }
+      }
+
+      &.chalk-chip {
+        background: rgba(148, 163, 184, 0.12);
+        border: 1px solid rgba(203, 213, 225, 0.35);
+        color: #f1f5f9;
+        font-style: italic;
+
+        &:hover {
+          background: rgba(148, 163, 184, 0.25);
+          border-color: #cbd5e1;
+        }
+      }
+
+      &.campfire-chip {
+        background: rgba(14, 165, 233, 0.15);
+        border: 1px solid rgba(56, 189, 248, 0.45);
+        color: #7dd3fc;
+
+        &:hover {
+          background: rgba(14, 165, 233, 0.3);
+          border-color: #38bdf8;
+        }
+      }
+
+      &.mech-chip {
+        background: rgba(168, 85, 247, 0.15);
+        border: 1px solid rgba(168, 85, 247, 0.45);
+        color: #d8b4fe;
+
+        &:hover {
+          background: rgba(168, 85, 247, 0.3);
+          border-color: #c084fc;
+        }
+      }
+
+      &.phantom-chip {
+        background: rgba(56, 189, 248, 0.15);
+        border: 1px solid rgba(56, 189, 248, 0.5);
+        color: #7dd3fc;
+        animation: pulseSlow 2.5s infinite alternate;
+
+        &:hover {
+          background: rgba(56, 189, 248, 0.3);
+          border-color: #38bdf8;
+        }
+      }
+    }
+  }
+}
+
+.anatomy-focus-section {
+  margin-top: 0.4rem;
+  padding-top: 0.35rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.12);
+
+  .anatomy-section-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--color-text-muted, #94a3b8);
+    font-family: var(--font-mono);
+  }
+
+  .anatomy-chip-cluster {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.25rem;
+  }
+
+  .anatomy-sub-chip {
+    min-height: 28px;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    color: #fef3c7;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    transition: all var(--transition-fast, 150ms);
+
+    &:hover:not(:disabled) {
+      background: rgba(245, 158, 11, 0.3);
+      border-color: #f59e0b;
+    }
+
+    &.selected {
+      background: #b45309;
+      border-color: #f59e0b;
+      color: #ffffff;
+      box-shadow: 0 0 6px rgba(245, 158, 11, 0.5);
+    }
+
+    &.severed {
+      opacity: 0.45;
+      text-decoration: line-through;
+      background: rgba(239, 68, 68, 0.15);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.inscription-modal-card {
+  max-width: 520px;
+}
+
+/* Grimoire Parchment Modal & Content */
+.grimoire-modal-card {
+  max-width: 600px;
+  background: #181411;
+  border-color: #d97706;
+}
+
+.grimoire-page-content {
+  padding: 1.25rem 1.5rem;
+  min-height: 180px;
+  max-height: 340px;
+  overflow-y: auto;
+  background: rgba(41, 37, 36, 0.6);
+  border-radius: var(--radius-sm);
+  margin: 0.75rem 1rem;
+  border: 1px solid rgba(217, 119, 6, 0.25);
+}
+
+.parchment-prose {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 0.95rem;
+  line-height: 1.65;
+  color: #fef3c7;
+  letter-spacing: 0.015em;
+  margin: 0;
+  white-space: pre-line;
+}
+
+/* 2.5D Viewport Interactive Props */
+.tombstone-memorial-glyph,
+.lectern-grimoire-pedestal,
+.linked-mechanism-apparatus {
+  cursor: pointer;
+  transition:
+    transform 0.2s ease,
+    filter 0.2s ease;
+
+  &:hover,
+  &:focus-visible {
+    filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.7));
+  }
+}
+
+.tombstone-card {
+  border-left: 3px solid #64748b;
+}
+
+.grimoire-card {
+  border-left: 3px solid #d97706;
+}
+
+.mechanism-card {
+  border-left: 3px solid #f59e0b;
 }

@@ -7,6 +7,7 @@ import {
 } from './core/services/chaos-gate.service';
 import { LegendRegistryService } from './core/services/legend-registry.service';
 import { MudEngineService } from './core/services/mud-engine.service';
+import { SoundFxService } from './core/services/sound-fx.service';
 import { StorageService } from './core/services/storage.service';
 import { TransportService } from './core/services/transport.service';
 import { ThunderpassService } from './core/services/thunderpass.service';
@@ -15,6 +16,8 @@ import {
   HERALD_ADJECTIVES,
   HERALD_NOUNS,
   HERALD_VERBS,
+  MonsterEntity,
+  SkillSlot,
   formatHeraldGreeting,
   rollRandomHeraldGreeting,
 } from './core/models/domain.models';
@@ -1408,6 +1411,410 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
         initialShards + unlockedSalvage.shardsEarned,
       );
       expect(engine.character().inventory.some((i) => i.id === 'test-salvage-armor')).toBe(false);
+    });
+  });
+
+  describe('Feature Evolution: MUD Theorycrafting Polish, Web Audio & Mutual Convergence', () => {
+    it('should initialize SoundFxService and toggle mute with localStorage persistence', () => {
+      const soundFx = TestBed.inject(SoundFxService);
+      expect(soundFx).toBeDefined();
+
+      const initialMute = soundFx.isMuted();
+      const toggled = soundFx.toggleMute();
+      expect(toggled).toBe(!initialMute);
+      expect(soundFx.isMuted()).toBe(!initialMute);
+
+      // Verify all audio cue methods execute safely without throwing
+      expect(() => {
+        soundFx.playFootstep();
+        soundFx.playConvergenceChime();
+        soundFx.playCombatHit();
+        soundFx.playCastSkill();
+        soundFx.playHarvestShards();
+        soundFx.playCampfireRest();
+        soundFx.playInscription();
+      }).not.toThrow();
+
+      // Toggle back
+      soundFx.toggleMute();
+    });
+
+    it('should trigger mutual realm convergence and set activeConvergenceBanner when encountering a new peer beacon', () => {
+      const initialRoomsCount = engine.rooms().length;
+      const remoteAddr = chaosGate.createAddress('Λ', 'Crystalline', 'Astral', 'Spire');
+
+      // Inject a live peer beacon
+      transport.injectSimulatedPacket({
+        senderPeerId: 'peer-live-wanderer-42',
+        senderName: 'Vagrant_Lyra',
+        gateAddress: remoteAddr.formatted,
+        type: 'GATE_BEACON',
+        roomId: 'room-0',
+      });
+
+      // Verification: hybrid rooms grafted and convergence banner populated
+      expect(engine.rooms().length).toBeGreaterThan(initialRoomsCount);
+      const banner = engine.activeConvergenceBanner();
+      expect(banner).toBeDefined();
+      expect(banner?.peerName).toBe('Vagrant_Lyra');
+      expect(banner?.peerTriChord).toBe(remoteAddr.formatted);
+      expect(banner?.roomsGraftedCount).toBeGreaterThan(0);
+
+      // Dismiss banner
+      engine.dismissConvergenceBanner();
+      expect(engine.activeConvergenceBanner()).toBeNull();
+
+      // Subsequent beacon from same peer does not duplicate graft
+      const afterRoomsCount = engine.rooms().length;
+      transport.injectSimulatedPacket({
+        senderPeerId: 'peer-live-wanderer-42',
+        senderName: 'Vagrant_Lyra',
+        gateAddress: remoteAddr.formatted,
+        type: 'GATE_BEACON',
+        roomId: 'room-0',
+      });
+      expect(engine.rooms().length).toBe(afterRoomsCount);
+    });
+
+    it('should create, persist, and broadcast traveler chalk inscriptions in room', () => {
+      const noteText = 'Praise the Loom! Beware the eastern automaton.';
+
+      engine.leaveChalkInscription(noteText);
+
+      // Verify inscription added to room
+      const roomInscrs = engine.currentRoom().inscriptions;
+      expect(roomInscrs).toBeDefined();
+      expect(roomInscrs?.length).toBeGreaterThan(0);
+      const created = roomInscrs?.find((i) => i.text === noteText);
+      expect(created).toBeDefined();
+      expect(created?.authorName).toBe(engine.character().name);
+
+      // Verify inspection displays traveler note details
+      engine.inspectTarget(created?.id);
+      const lens = engine.inspectedEntity();
+      expect(lens).toBeDefined();
+      expect(lens?.type).toBe('ROOM');
+      expect(lens?.title).toContain(engine.character().name);
+      expect(lens?.details.some((d) => d.includes(noteText))).toBe(true);
+    });
+
+    it('should parse @inscribe terminal command and etch note onto floor', () => {
+      const note = 'Secret cache behind the southern pillar.';
+      engine.parseAndDispatchTerminalInput(`@inscribe ${note}`);
+
+      const found = engine.currentRoom().inscriptions?.some((i) => i.text === note);
+      expect(found).toBe(true);
+    });
+
+    it('should handle incoming CHALK_INSCRIPTION network packets from peers', () => {
+      const curRoom = engine.currentRoom();
+      const foreignInscr = {
+        id: 'inscr-remote-99',
+        authorName: 'Traveler_Echo_7',
+        authorTriChord: 'Σ: Blighted Monolithic Citadel',
+        text: 'The boss here is weak to Frost!',
+        timestampIso: new Date().toISOString(),
+        glyph: '✍',
+      };
+
+      transport.injectSimulatedPacket({
+        senderPeerId: 'peer-stranger-99',
+        senderName: 'Traveler_Echo_7',
+        type: 'CHALK_INSCRIPTION',
+        gateAddress: 'Σ: Blighted Monolithic Citadel',
+        roomId: curRoom.id,
+        chalkInscription: foreignInscr,
+      });
+
+      const matched = engine.currentRoom().inscriptions?.find((i) => i.id === foreignInscr.id);
+      expect(matched).toBeDefined();
+      expect(matched?.text).toBe('The boss here is weak to Frost!');
+    });
+  });
+
+  describe('Theorycrafting Sprint: Tactical Anatomy, Environmental Alchemy & Ghost Presence', () => {
+    it('generates targetable body parts for boss monsters', () => {
+      const boss = chaosGate
+        .generateRealm(engine.activeGateAddress())
+        .flatMap((r) => r.monsters)
+        .find((m) => m.isBoss);
+
+      expect(boss).toBeDefined();
+      expect(boss?.targetableParts).toBeDefined();
+      expect(boss!.targetableParts!.length).toBeGreaterThanOrEqual(2);
+      expect(boss!.targetableParts![0].name).toContain('Core Dynamo');
+      expect(boss!.targetableParts![0].isSevered).toBe(false);
+    });
+
+    it('severing an anatomical sub-part inflicts permanent debuffs and awards shards', () => {
+      const room = engine.currentRoom();
+      const testPart = {
+        id: 'part-test-core',
+        name: 'Core Dynamo',
+        hp: 1, // 1 HP so any hit breaks it
+        maxHp: 20,
+        isSevered: false,
+        debuffAppliedOnBreak: '-35% Atk & Silenced',
+        partEffectDescription: 'Disables burst attacks',
+      };
+      const testMob: MonsterEntity = {
+        id: 'mob-test-anatomy',
+        templateId: 'test-automaton',
+        name: 'Test Titan',
+        level: 1,
+        isBoss: true,
+        hp: 100,
+        maxHp: 100,
+        atk: 20,
+        mitigationPct: 10,
+        speed: 10,
+        atbGauge: 0,
+        element: 'Physical',
+        weakness: 'Fire',
+        statuses: [],
+        loreSnippet: 'A mechanical testing unit.',
+        secretWeaknessHint: 'Target its core.',
+        lootTable: [],
+        targetableParts: [testPart],
+      };
+
+      engine.rooms.update((all) =>
+        all.map((r) => (r.id === room.id ? { ...r, monsters: [testMob] } : r)),
+      );
+      engine.selectTargetMonster(testMob.id);
+      engine.selectTargetPart(testPart.id);
+      expect(engine.selectedTargetPartId()).toBe(testPart.id);
+
+      const initialShards = engine.character().resonanceShards || 0;
+
+      // Charge ATB to 100% and execute attack on sub-part
+      engine.character.update((c) => ({ ...c, atbGauge: 100 }));
+      engine.dispatchCommandIntent({
+        type: 'ATTACK',
+        rawInput: 'attack test titan',
+        source: 'HUD',
+        targetId: testMob.id,
+        payload: { targetPartId: testPart.id },
+      });
+
+      const updatedMob = engine.livingRoomMonsters().find((m) => m.id === testMob.id);
+      expect(updatedMob).toBeDefined();
+      const updatedPart = updatedMob!.targetableParts?.find((p) => p.id === testPart.id);
+      expect(updatedPart?.isSevered).toBe(true);
+      expect(updatedPart?.hp).toBe(0);
+      expect(updatedMob!.atk).toBeLessThan(20); // -35% Atk applied!
+      expect(engine.character().resonanceShards).toBe(initialShards + 15); // +15 shards awarded!
+    });
+
+    it('triggers environmental elemental resonance combos in combat', () => {
+      const room = engine.currentRoom();
+      const testMob: MonsterEntity = {
+        id: 'mob-test-alchemy',
+        templateId: 'mire-golem',
+        name: 'Mire Golem',
+        level: 1,
+        isBoss: false,
+        hp: 200,
+        maxHp: 200,
+        atk: 10,
+        mitigationPct: 0,
+        speed: 10,
+        atbGauge: 0,
+        element: 'Bio',
+        weakness: 'Fire',
+        statuses: [],
+        loreSnippet: 'A spore-covered golem.',
+        secretWeaknessHint: 'Flammable spores.',
+        lootTable: [],
+      };
+
+      // Set room atmosphere to Fungal
+      engine.rooms.update((all) =>
+        all.map((r) =>
+          r.id === room.id
+            ? { ...r, monsters: [testMob], atmosphereEffect: 'Fungal Spores — Bioluminescent haze' }
+            : r,
+        ),
+      );
+      engine.selectTargetMonster(testMob.id);
+
+      // Give player a Fire skill and cast it
+      const fireSkill: SkillSlot = {
+        id: 'sk-test-fire',
+        name: 'Solar Flare',
+        commandKey: 'flare',
+        archetype: 'Vanguard',
+        staminaCost: 0,
+        cooldownMs: 0,
+        currentCooldownMs: 0,
+        powerMultiplier: 1.0,
+        element: 'Fire',
+        description: 'Fire burst',
+      };
+      engine.character.update((c) => ({ ...c, atbGauge: 100, activeSkills: [fireSkill] }));
+
+      engine.dispatchCommandIntent({
+        type: 'CAST_SKILL',
+        rawInput: 'cast flare',
+        source: 'HUD',
+        skillKey: 'flare',
+        targetId: testMob.id,
+      });
+
+      const feed = engine.terminalFeed();
+      const resonanceLogged = feed.some((f) =>
+        f.text.includes('RESONANCE: 🔥 Spore Conflagration'),
+      );
+      expect(resonanceLogged).toBe(true);
+    });
+
+    it('tracks phantom traveler breadcrumbs across room traversal and mesh packets', () => {
+      const targetRoomId = engine
+        .rooms()
+        .find((r) => r.id !== engine.character().currentRoomId)!.id;
+
+      // Inject incoming peer breadcrumbs
+      const foreignCrumb = {
+        id: 'crumb-remote-1',
+        peerId: 'peer-wanderer-alex',
+        playerName: 'Alex the Swift',
+        archetype: 'Chronomancer' as const,
+        roomId: targetRoomId,
+        roomTitle: 'Ancient Antechamber',
+        timestampMs: Date.now() - 30000, // 30 seconds ago
+      };
+
+      transport.injectSimulatedPacket({
+        senderPeerId: 'peer-wanderer-alex',
+        senderName: 'Alex the Swift',
+        type: 'GATE_BEACON',
+        gateAddress: 'Θ: Scorching Clockwork Catacombs',
+        breadcrumbs: [foreignCrumb],
+      });
+
+      expect(engine.phantomTrails().some((t) => t.id === foreignCrumb.id)).toBe(true);
+
+      // Navigate to target room and verify activeRoomPhantom detection
+      engine.moveToRoom(targetRoomId);
+      expect(engine.activeRoomPhantom()).toBeDefined();
+      expect(engine.activeRoomPhantom()?.playerName).toBe('Alex the Swift');
+    });
+
+    it('computes pure SVG spore QR codes and supports seed grafting', () => {
+      const fixture = TestBed.createComponent(App);
+      const app = fixture.componentInstance;
+      const url = app.shareableSporeUrl();
+      expect(url).toContain('#spore=');
+      expect(app.sporeQrSvgPath()).toContain('M0,0h1v1h-1z');
+      expect(app.sporeQrSize()).toBeGreaterThanOrEqual(21);
+
+      // Test grafting a foreign spore code
+      const initialRoomCount = engine.rooms().length;
+      app.sporeInputText.set('Σ: Crystalline Monolithic Citadel');
+      app.importSporeCode();
+
+      expect(engine.rooms().length).toBeGreaterThan(initialRoomCount);
+      expect(engine.activeConvergenceBanner()).toBeDefined();
+      expect(engine.activeConvergenceBanner()?.peerTriChord).toBe(
+        'Σ: Crystalline Monolithic Citadel',
+      );
+    });
+  });
+
+  describe('Feature Evolution: Chamber History, Player Grimoires, Spatial Audio & Synchronized Mechanisms', () => {
+    it('calculates directional stereo audio panning based on heading and target direction', () => {
+      const soundFx = TestBed.inject(SoundFxService);
+      // Facing North
+      expect(soundFx.calculateBearingPan('N', 'N')).toBe(0);
+      expect(soundFx.calculateBearingPan('E', 'N')).toBeGreaterThan(0.5); // Right ear
+      expect(soundFx.calculateBearingPan('W', 'N')).toBeLessThan(-0.5); // Left ear
+      expect(soundFx.calculateBearingPan('S', 'N')).toBe(0); // Directly behind
+
+      // Facing East
+      expect(soundFx.calculateBearingPan('E', 'E')).toBe(0);
+      expect(soundFx.calculateBearingPan('S', 'E')).toBeGreaterThan(0.5); // Right
+      expect(soundFx.calculateBearingPan('N', 'E')).toBeLessThan(-0.5); // Left
+    });
+
+    it('honors fallen explorer memorials with tributes and transient blessings', () => {
+      // Move to room-1 which has a starter tombstone
+      engine.moveToRoom('room-1');
+      const room = engine.currentRoom();
+      expect(room.tombstones).toBeDefined();
+      expect(room.tombstones!.length).toBeGreaterThan(0);
+      const tomb = room.tombstones![0];
+      const initialTributes = tomb.tributeCount;
+
+      // Give player resonance shards for tribute
+      engine.character.update((c) => ({ ...c, resonanceShards: 5 }));
+
+      const success = engine.tributeFallenExplorer(tomb.id);
+      expect(success).toBe(true);
+      expect(engine.character().resonanceShards).toBe(4);
+      expect(tomb.tributeCount).toBe(initialTributes + 1);
+
+      // Verify terminal log contains memorial message
+      const latestFeed = engine.terminalFeed()[0];
+      expect(latestFeed.text).toContain('Fallen Explorer Tribute');
+    });
+
+    it('authors, turns pages, and reads sanctum grimoires', () => {
+      // Move to room-0 and author a new grimoire
+      engine.moveToRoom('room-0');
+      const written = engine.writeGrimoire('The Book of Astral Tides', [
+        'First passage: in the beginning was resonance.',
+        'Second passage: through conjunction we endure.',
+      ]);
+      expect(written).toBe(true);
+
+      const room = engine.currentRoom();
+      expect(room.grimoire).toBeDefined();
+      expect(room.grimoire?.title).toBe('The Book of Astral Tides');
+      expect(room.grimoire?.pages.length).toBe(2);
+
+      // Open reader modal
+      engine.openGrimoire(room.grimoire!);
+      expect(engine.activeGrimoire()).toBeDefined();
+      expect(engine.activeGrimoirePage()).toBe(0);
+
+      // Turn page forward
+      engine.nextGrimoirePage();
+      expect(engine.activeGrimoirePage()).toBe(1);
+
+      // Turn page backward
+      engine.prevGrimoirePage();
+      expect(engine.activeGrimoirePage()).toBe(0);
+
+      // Close modal
+      engine.closeGrimoire();
+      expect(engine.activeGrimoire()).toBeNull();
+    });
+
+    it('activates and harmonizes synchronized multi-dungeon mechanisms', () => {
+      // Move to room-5 which contains the starter linked mechanism
+      engine.moveToRoom('room-5');
+      const room = engine.currentRoom();
+      expect(room.linkedMechanism).toBeDefined();
+      const mech = room.linkedMechanism!;
+      expect(mech.state).toBe('LOCKED');
+
+      // Pull the lever locally
+      const pulled = engine.pullLinkedMechanism();
+      expect(pulled).toBe(true);
+      expect(mech.activatedByLocal).toBe(true);
+
+      // Give shards to harmonize solo
+      engine.character.update((c) => ({ ...c, resonanceShards: 25 }));
+      const harmonized = engine.harmonizeLinkedMechanism();
+      expect(harmonized).toBe(true);
+      expect(engine.currentRoom().linkedMechanism?.state).toBe('HARMONIZED');
+
+      // Verify Legendary Relic reward was granted
+      expect(engine.character().inventory.some((i) => i.name === 'Resonance Conduit Matrix')).toBe(
+        true,
+      );
+      // Shards deducted 10, then +50 awarded -> 25 - 10 + 50 = 65
+      expect(engine.character().resonanceShards).toBe(65);
     });
   });
 });

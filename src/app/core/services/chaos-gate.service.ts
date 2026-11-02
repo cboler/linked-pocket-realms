@@ -9,6 +9,7 @@ import {
   ElementalAffinity,
   EquipmentItem,
   ExitDirection,
+  MonsterBodyPart,
   MonsterEntity,
   RealmDelta,
   RealmDnaPacket,
@@ -527,6 +528,17 @@ export class ChaosGateService {
         items: [],
         triggers: [],
         rumorSignal: 'Faint chanting in the nave',
+        tombstones: [
+          {
+            id: 'tomb-caelum-nave',
+            slainPlayerName: 'Vanguard_Caelum',
+            slainBy: 'Sanctum Automaton',
+            epitaph:
+              'To tread the clockwork path is to court the turning of the wheel. Honor the fallen with resonance.',
+            timestamp: 1730419200000,
+            tributeCount: 3,
+          },
+        ],
       },
       {
         id: 'room-2',
@@ -588,6 +600,17 @@ export class ChaosGateService {
         items: [],
         triggers: [],
         rumorSignal: 'Glint of crystalline memory glyphs',
+        grimoire: {
+          id: 'grim-starter-codex',
+          title: 'Codex of the Linked Realmlords',
+          authorName: 'Wayfinder_Archivist',
+          pages: [
+            'Welcome, traveler, to the Linked Pocket Realms. Each realm is a living domain anchored by its Tri-Chord: Atmosphere, Architecture, and Biome.',
+            'When two Wayfinders pass near one another with their realms open, the dimensional membranes resonate. Rooms cross-pollinate, creating hybrid incursion chambers with dual themes.',
+            'Leave your own mark upon these halls: inscribe runes upon the flagstones with @inscribe, leave your words in the lectern grimoires with @book write, and honor fallen wanderers at their memorial stones.',
+          ],
+          createdAt: 1730419200000,
+        },
         propInteractable: {
           name: 'Archival Memory Terminal',
           type: 'terminal',
@@ -672,6 +695,14 @@ export class ChaosGateService {
         items: [],
         triggers: [],
         rumorSignal: 'Humming ward at the Primordial Threshold',
+        linkedMechanism: {
+          id: 'mech-primordial-conduit',
+          name: 'Twin Chrono-Resonance Conduit',
+          state: 'LOCKED',
+          activatedByLocal: false,
+          activatedByRemote: false,
+          rewardClaimed: false,
+        },
       },
     ];
   }
@@ -1208,6 +1239,18 @@ export class ChaosGateService {
     const baseHp = Math.round((55 + Math.floor(prng() * 25)) * eraMeta.statMultiplier);
     const atk = Math.round((11 + Math.floor(prng() * 5)) * eraMeta.statMultiplier);
     const adj = atmospherePrefix || 'Scorching';
+    const targetableParts: MonsterBodyPart[] = [];
+    if (prng() < 0.6) {
+      targetableParts.push({
+        id: `part-${id}-joint`,
+        name: 'Servo Joint',
+        hp: Math.max(10, Math.round(baseHp * 0.45)),
+        maxHp: Math.max(10, Math.round(baseHp * 0.45)),
+        isSevered: false,
+        debuffAppliedOnBreak: '-25% Speed & Stunned',
+        partEffectDescription: 'Locomotion assembly; breaking causes kinetic stagger.',
+      });
+    }
     return {
       id,
       templateId: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
@@ -1227,6 +1270,7 @@ export class ChaosGateService {
       loreSnippet: `A native ${adj.toLowerCase()} ${name} adapted to ${gateAddress}.`,
       secretWeaknessHint: `Structural joints destabilize when struck by ${weakness} or Sunder combos.`,
       lootTable: [],
+      targetableParts,
     };
   }
 
@@ -1246,6 +1290,36 @@ export class ChaosGateService {
       prng,
       true,
     );
+    const targetableParts: MonsterBodyPart[] = [
+      {
+        id: `part-${address.seed}-core`,
+        name: 'Core Dynamo',
+        hp: Math.max(20, Math.round(maxHp * 0.35)),
+        maxHp: Math.max(20, Math.round(maxHp * 0.35)),
+        isSevered: false,
+        debuffAppliedOnBreak: '-35% Atk & Silenced',
+        partEffectDescription:
+          'Channels planar discharge; severing disables high-threat burst attacks.',
+      },
+      {
+        id: `part-${address.seed}-carapace`,
+        name: 'Aegis Carapace',
+        hp: Math.max(18, Math.round(maxHp * 0.3)),
+        maxHp: Math.max(18, Math.round(maxHp * 0.3)),
+        isSevered: false,
+        debuffAppliedOnBreak: '-50% Mitigation (Vulnerable)',
+        partEffectDescription: 'Heavy defensive plating; breaking exposes raw vulnerable conduits.',
+      },
+      {
+        id: `part-${address.seed}-blade`,
+        name: 'Scythe Limb',
+        hp: Math.max(15, Math.round(maxHp * 0.25)),
+        maxHp: Math.max(15, Math.round(maxHp * 0.25)),
+        isSevered: false,
+        debuffAppliedOnBreak: '-30% Speed & Stagger',
+        partEffectDescription: 'Kinetic striker; fracturing slows movement cadence.',
+      },
+    ];
     return {
       id: `boss-${address.seed}`,
       templateId: biomeMeta.bossArchetype.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
@@ -1265,6 +1339,7 @@ export class ChaosGateService {
       loreSnippet: `Supreme guardian of ${address.formatted}, bound to the Chaos Gate core.`,
       secretWeaknessHint: `Core shielding collapses under ${biomeMeta.bossWeakness} elemental bursts while Sundered.`,
       lootTable: [bossDrop],
+      targetableParts,
     };
   }
 
@@ -1974,6 +2049,7 @@ export class ChaosGateService {
           isPrunable: override.isPrunable ?? existing.isPrunable,
           shardsHarvestable: override.shardsHarvestable ?? existing.shardsHarvestable,
           travelerEcho: override.travelerEcho ?? existing.travelerEcho,
+          inscriptions: override.inscriptions ?? existing.inscriptions,
         });
       } else {
         // Custom dug room or overgrowth room added by Incursion/Architect
@@ -2009,6 +2085,7 @@ export class ChaosGateService {
           isPrunable: override.isPrunable,
           shardsHarvestable: override.shardsHarvestable,
           travelerEcho: override.travelerEcho,
+          inscriptions: override.inscriptions ?? [],
         });
       }
     }

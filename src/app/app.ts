@@ -12,6 +12,7 @@ import {
   ExitDirection,
   GuestbookGravestoneEntry,
   HeatmapMode,
+  MonsterBodyPart,
   MonsterEntity,
   PaperdollSlotType,
   PerspectiveRole,
@@ -36,9 +37,11 @@ import {
 } from './core/services/chaos-gate.service';
 import { LegendRegistryService } from './core/services/legend-registry.service';
 import { ARCHETYPE_CATALOG, MudEngineService } from './core/services/mud-engine.service';
+import { SoundFxService } from './core/services/sound-fx.service';
 import { StorageService } from './core/services/storage.service';
 import { TransportService } from './core/services/transport.service';
 import { ThunderpassService } from './core/services/thunderpass.service';
+import { generateQrMatrix, generateQrSvgPath } from './core/utils/qr-code.util';
 import { FirstPersonStageComponent } from './viewport/first-person-stage';
 import { NodeMapGraphComponent } from './hud/node-map-graph/node-map-graph';
 import { ResonanceLoomModalComponent } from './hud/resonance-loom-modal/resonance-loom-modal';
@@ -63,6 +66,10 @@ export class App {
   readonly storage = inject(StorageService);
   readonly chaosGate = inject(ChaosGateService);
   readonly thunderpass = inject(ThunderpassService);
+  readonly soundFx = inject(SoundFxService);
+
+  readonly isWritingInscription = signal<boolean>(false);
+  readonly inscriptionDraft = signal<string>('');
 
   // Constants exposed for templates
   readonly archetypeCatalog = ARCHETYPE_CATALOG;
@@ -189,6 +196,91 @@ export class App {
   // P2P & Cartridge Import/Export
   readonly exportedCartridgeText = signal<string>('');
   readonly remoteHandshakeInput = signal<string>('');
+
+  // Spore QR Code & Portable Planar Seeds
+  readonly shareableSporeUrl = computed<string>(() => {
+    const char = this.engine.character();
+    const addr = this.engine.activeGateAddress();
+    const origin =
+      typeof window !== 'undefined'
+        ? window.location.origin + window.location.pathname
+        : 'https://chris.github.io/linked-pocket-realms';
+    return `${origin}#spore=${encodeURIComponent(addr.formatted)}&p=${encodeURIComponent(char.name)}&seed=${addr.seed}`;
+  });
+
+  readonly sporeQrSvgPath = computed<string>(() => {
+    try {
+      const url = this.shareableSporeUrl();
+      const matrix = generateQrMatrix(url);
+      return generateQrSvgPath(matrix);
+    } catch {
+      return '';
+    }
+  });
+
+  readonly sporeQrSize = computed<number>(() => {
+    try {
+      const url = this.shareableSporeUrl();
+      const matrix = generateQrMatrix(url);
+      return matrix.length;
+    } catch {
+      return 25;
+    }
+  });
+
+  readonly copiedSporeUrlSuccess = signal<boolean>(false);
+  readonly sporeInputText = signal<string>('');
+
+  copySporeUrl(): void {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      void navigator.clipboard.writeText(this.shareableSporeUrl()).then(() => {
+        this.copiedSporeUrlSuccess.set(true);
+        setTimeout(() => this.copiedSporeUrlSuccess.set(false), 2500);
+      });
+    }
+  }
+
+  importSporeCode(): void {
+    const raw = this.sporeInputText().trim();
+    if (!raw) return;
+    let addrStr = raw;
+    if (raw.includes('#spore=')) {
+      const match = raw.match(/#spore=([^&]+)/);
+      if (match) addrStr = decodeURIComponent(match[1]);
+    }
+    const parsed = this.chaosGate.parseAddressString(addrStr);
+    if (parsed) {
+      const grafted = this.engine.graftOvergrowthIncursion(parsed, 'Spore Traveler');
+      if (grafted.length > 0) {
+        this.engine.activeConvergenceBanner.set({
+          peerName: 'Spore Traveler',
+          peerTriChord: parsed.formatted,
+          localTheme: this.engine.activeGateAddress().theme,
+          remoteTheme: parsed.theme,
+          roomsGraftedCount: grafted.length,
+          timestampMs: Date.now(),
+        });
+        this.soundFx.playConvergenceChime();
+        this.soundFx.triggerHaptic('CONVERGENCE');
+        this.engine.appendFeed(
+          'NETWORK',
+          `🌱 [Spore Grafted] Spliced ${grafted.length} rooms from spore code ${parsed.formatted}!`,
+        );
+      }
+      this.sporeInputText.set('');
+    } else {
+      this.engine.appendFeed(
+        'SYSTEM',
+        'Invalid spore code or URL. Format must match: "Θ: Scorching Clockwork Catacombs".',
+      );
+    }
+  }
+
+  selectAnatomicalPart(part: MonsterBodyPart): void {
+    if (part.isSevered) return;
+    const current = this.engine.selectedTargetPartId();
+    this.engine.selectTargetPart(current === part.id ? null : part.id);
+  }
 
   // Computed Current Room Legend & Exits for Persistent Room Stage
   readonly currentRoomLegend = computed(() => {
@@ -693,9 +785,72 @@ export class App {
     if (event.key === 'm' || event.key === 'M') {
       event.preventDefault();
       this.toggleObservatoryMap();
-    } else if (event.key === 'Escape' && this.mobileLayoutMode() === 'MAP') {
+    } else if (event.key === 'Escape') {
       event.preventDefault();
-      this.setMobileLayoutMode('STAGE');
+      if (this.isWritingInscription()) {
+        this.isWritingInscription.set(false);
+      } else if (this.mobileLayoutMode() === 'MAP') {
+        this.setMobileLayoutMode('STAGE');
+      } else if (this.engine.activeDrawer() !== 'NONE') {
+        this.engine.activeDrawer.set('NONE');
+      }
+    } else if (event.key >= '1' && event.key <= '4') {
+      const idx = parseInt(event.key, 10) - 1;
+      const skills = this.engine.character().activeSkills;
+      if (idx >= 0 && idx < skills.length) {
+        event.preventDefault();
+        this.onSkillButtonClick(skills[idx]);
+      }
+    } else if (event.key === ' ') {
+      event.preventDefault();
+      if (this.engine.inActiveCombat()) {
+        const mobs = this.engine.livingRoomMonsters();
+        if (mobs.length > 0) {
+          const target = mobs.find((m) => m.id === this.engine.selectedTargetId()) || mobs[0];
+          this.onStageAttackMonster(target);
+        }
+      } else {
+        this.engine.toggleAutoAttack();
+      }
+    } else if (event.key === 'Tab') {
+      event.preventDefault();
+      const mobs = this.engine.livingRoomMonsters();
+      if (mobs.length > 0) {
+        const currentTargetId = this.engine.selectedTargetId();
+        const curIdx = mobs.findIndex((m) => m.id === currentTargetId);
+        const nextIdx = (curIdx + 1) % mobs.length;
+        this.engine.selectedTargetId.set(mobs[nextIdx].id);
+      }
+    } else if (event.key === 'i' || event.key === 'I' || event.key === 'p' || event.key === 'P') {
+      event.preventDefault();
+      this.toggleDrawer('PAPERDOLL');
+    } else if (event.key === 'n' || event.key === 'N') {
+      event.preventDefault();
+      this.toggleDrawer('NETWORK');
+    }
+  }
+
+  openInscriptionPrompt(): void {
+    this.inscriptionDraft.set('');
+    this.isWritingInscription.set(true);
+  }
+
+  confirmChalkInscription(): void {
+    const text = this.inscriptionDraft().trim();
+    if (text) {
+      this.engine.leaveChalkInscription(text);
+    }
+    this.isWritingInscription.set(false);
+  }
+
+  delveSplicedWing(): void {
+    const banner = this.engine.activeConvergenceBanner();
+    if (banner) {
+      const overgrowthRoom = this.engine.rooms().find((r) => r.isOvergrowth || r.isSynthesisSeam);
+      if (overgrowthRoom) {
+        this.engine.moveToRoom(overgrowthRoom.id);
+      }
+      this.engine.dismissConvergenceBanner();
     }
   }
 
@@ -812,24 +967,28 @@ export class App {
 
   // Tactile Stage Entity Actions (with automatic Syntax Echo Teaching)
   onStageAttackMonster(mob: MonsterEntity): void {
-    this.engine.selectedTargetId.set(mob.id);
+    this.engine.selectTargetMonster(mob.id);
+    const partId = this.engine.selectedTargetPartId();
     this.engine.dispatchCommandIntent({
       type: 'ATTACK',
       rawInput: `attack ${mob.name.toLowerCase()}`,
       source: 'HUD',
       targetId: mob.id,
+      payload: partId ? { targetPartId: partId } : undefined,
     });
   }
 
   onStageCastSkillOnMonster(skill: SkillSlot, mob: MonsterEntity): void {
-    this.engine.selectedTargetId.set(mob.id);
+    this.engine.selectTargetMonster(mob.id);
     this.activeSkillMenuMonsterId.set(null);
+    const partId = this.engine.selectedTargetPartId();
     this.engine.dispatchCommandIntent({
       type: 'CAST_SKILL',
       rawInput: `cast ${skill.commandKey} ${mob.name.toLowerCase()}`,
       source: 'HUD',
       skillKey: skill.commandKey,
       targetId: mob.id,
+      payload: partId ? { targetPartId: partId } : undefined,
     });
   }
 
@@ -901,12 +1060,14 @@ export class App {
     const targetMob =
       this.engine.livingRoomMonsters().find((m) => m.id === this.engine.selectedTargetId()) ??
       this.engine.livingRoomMonsters()[0];
+    const partId = this.engine.selectedTargetPartId();
     this.engine.dispatchCommandIntent({
       type: 'CAST_SKILL',
       rawInput: `cast ${skill.commandKey}${targetMob ? ' ' + targetMob.name.toLowerCase() : ''}`,
       source: 'HUD',
       skillKey: skill.commandKey,
       targetId: targetMob?.id,
+      payload: partId ? { targetPartId: partId } : undefined,
     });
   }
 

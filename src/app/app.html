@@ -1,4 +1,42 @@
 <div class="hud-viewport" role="application" aria-label="Linked Pocket Realms Tactical HUD">
+  <!-- MUTUAL REALM CONVERGENCE ENCOUNTER BANNER -->
+  @if (engine.activeConvergenceBanner(); as banner) {
+    <div class="convergence-encounter-banner" role="alert" data-testid="convergence-banner">
+      <div class="convergence-content">
+        <span class="convergence-sigil" aria-hidden="true">🌌</span>
+        <div class="convergence-text">
+          <strong class="convergence-headline"
+            >Realms in Resonance: Crossed paths with {{ banner.peerName }}!</strong
+          >
+          <span class="convergence-subtext">
+            Spliced <strong>{{ banner.roomsGraftedCount }}</strong> hybrid chambers combining your
+            <em>{{ banner.localTheme }}</em> and their <em>{{ banner.remoteTheme }}</em
+            >!
+          </span>
+        </div>
+      </div>
+      <div class="convergence-actions">
+        <button
+          type="button"
+          class="convergence-btn primary"
+          (click)="delveSplicedWing()"
+          data-testid="delve-spliced-btn"
+        >
+          🧭 Delve Spliced Wing
+        </button>
+        <button
+          type="button"
+          class="convergence-btn dismiss"
+          (click)="engine.dismissConvergenceBanner()"
+          title="Dismiss convergence notice"
+          aria-label="Dismiss banner"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  }
+
   <!-- TOP TACTICAL HEADER -->
   <header class="hud-header" role="banner">
     <div class="header-top-row">
@@ -29,39 +67,30 @@
               </span>
             }
           </div>
-
-          <!-- OVERGROWTH & RESONANCE SHARDS METER PILL -->
-          <div
-            class="overgrowth-meter-pill"
-            title="Overgrowth Incursion Encroachment, Resonance Shards & Adventurers"
-            data-testid="overgrowth-meter-pill"
-          >
-            <span class="meter-item overgrowth-item" [class.alert]="engine.overgrowthCount() > 0">
-              🌿 Incursions: <strong>{{ engine.overgrowthCount() }}</strong>
-            </span>
-            <span class="meter-item shards-item">
-              💎 Shards: <strong>{{ engine.character().resonanceShards || 0 }}</strong>
-            </span>
-            <button
-              type="button"
-              class="meter-item presence-item"
-              (click)="engine.listAdventurersInRealm()"
-              title="Inspect adventurers currently in realm"
-              data-testid="presence-roster-pill"
-            >
-              👥 Adventurers: <strong>{{ transport.activeVisitorsList().length + 1 }}</strong>
-            </button>
-          </div>
         </div>
       </div>
 
-      <!-- VIEWPORT MODE SWITCHER (DELVE / OBSERVATORY / SPLIT) -->
+      <!-- VIEWPORT MODE SWITCHER (DELVE / OBSERVATORY / SPLIT) & SOUND TOGGLE -->
       <div
         class="mobile-view-switcher"
         role="group"
         aria-label="Viewport Layout Mode"
         data-testid="mobile-view-switcher"
       >
+        <button
+          type="button"
+          class="view-mode-btn sound-toggle-btn"
+          [class.muted]="soundFx.isMuted()"
+          (click)="soundFx.toggleMute()"
+          [title]="
+            soundFx.isMuted()
+              ? 'Tactile Web Audio Muted (Click to enable footsteps, strikes, and convergence chimes)'
+              : 'Tactile Web Audio Active (Click to mute)'
+          "
+          data-testid="sound-toggle-btn"
+        >
+          {{ soundFx.isMuted() ? '🔇 mute' : '🔊 audio' }}
+        </button>
         <button
           type="button"
           class="view-mode-btn"
@@ -91,6 +120,31 @@
           data-testid="view-mode-split"
         >
           ⚖ split
+        </button>
+      </div>
+    </div>
+
+    <!-- OVERGROWTH & RESONANCE SHARDS METER ROW -->
+    <div class="header-meters-row">
+      <div
+        class="overgrowth-meter-pill"
+        title="Overgrowth Incursion Encroachment, Resonance Shards & Adventurers"
+        data-testid="overgrowth-meter-pill"
+      >
+        <span class="meter-item overgrowth-item" [class.alert]="engine.overgrowthCount() > 0">
+          🌿 Incursions: <strong>{{ engine.overgrowthCount() }}</strong>
+        </span>
+        <span class="meter-item shards-item">
+          💎 Shards: <strong>{{ engine.character().resonanceShards || 0 }}</strong>
+        </span>
+        <button
+          type="button"
+          class="meter-item presence-item"
+          (click)="engine.listAdventurersInRealm()"
+          title="Inspect adventurers currently in realm"
+          data-testid="presence-roster-pill"
+        >
+          👥 Adventurers: <strong>{{ transport.activeVisitorsList().length + 1 }}</strong>
         </button>
       </div>
     </div>
@@ -850,6 +904,114 @@
               <p class="room-prose">{{ engine.currentRoom().description }}</p>
               <div class="sensory-hook-line">
                 <span>🌫 {{ engine.currentRoom().atmosphereEffect }}</span>
+                <button
+                  type="button"
+                  class="leave-inscr-btn"
+                  (click)="openInscriptionPrompt()"
+                  title="Inscribe a traveler's chalk note on the chamber floor"
+                  data-testid="open-inscribe-btn"
+                >
+                  ✍ Inscribe Note
+                </button>
+              </div>
+
+              <!-- INTERACTIVE NARRATIVE ENTITY CHIPS (MUD THEORYCRAFTING AFFORDANCES) -->
+              <div
+                class="narrative-interactive-chips"
+                aria-label="Interactive Chamber Elements"
+                data-testid="narrative-interactive-chips"
+              >
+                @if (engine.activeRoomPhantom(); as phantom) {
+                  <button
+                    type="button"
+                    class="narrative-chip phantom-chip"
+                    (click)="engine.inspectTarget(phantom.id)"
+                    [title]="
+                      'Phantom echo of Wanderer ' +
+                      phantom.playerName +
+                      ' (' +
+                      phantom.archetype +
+                      ')'
+                    "
+                  >
+                    👻 {{ phantom.playerName }} (Echo)
+                  </button>
+                }
+                @if (engine.activeRoomPhantom(); as phantom) {
+                  <button
+                    type="button"
+                    class="narrative-chip phantom-chip"
+                    (click)="engine.inspectTarget(phantom.id)"
+                    [title]="
+                      'Phantom echo of Wanderer ' +
+                      phantom.playerName +
+                      ' (' +
+                      phantom.archetype +
+                      ')'
+                    "
+                  >
+                    👻 {{ phantom.playerName }} (Echo)
+                  </button>
+                }
+                @for (mob of engine.livingRoomMonsters(); track mob.id) {
+                  <button
+                    type="button"
+                    class="narrative-chip mob-chip"
+                    (click)="onStageAttackMonster(mob)"
+                    [title]="'Attack ' + mob.name + ' (Lv.' + mob.level + ' ' + mob.element + ')'"
+                  >
+                    ⚔️ {{ mob.name }} [HP {{ mob.hp }}/{{ mob.maxHp }}]
+                  </button>
+                }
+                @for (item of engine.currentRoom().items; track item.id) {
+                  <button
+                    type="button"
+                    class="narrative-chip item-chip"
+                    (click)="onStageTakeItem(item)"
+                    [title]="'Take ' + item.name + ' (' + item.rarity + ')'"
+                  >
+                    ❖ {{ item.name }}
+                  </button>
+                }
+                @for (inscr of engine.currentRoom().inscriptions || []; track inscr.id) {
+                  <button
+                    type="button"
+                    class="narrative-chip chalk-chip"
+                    (click)="engine.inspectTarget(inscr.id)"
+                    [title]="'Chalk Inscription by ' + inscr.authorName + ': ' + inscr.text"
+                  >
+                    ✍ &ldquo;{{
+                      inscr.text.length > 24 ? inscr.text.slice(0, 22) + '…' : inscr.text
+                    }}&rdquo; ({{ inscr.authorName }})
+                  </button>
+                }
+                @if (engine.currentRoom().legendType === 'safe-campfire') {
+                  <button
+                    type="button"
+                    class="narrative-chip campfire-chip"
+                    (click)="
+                      engine.dispatchCommandIntent({
+                        type: 'REST_CAMPFIRE',
+                        rawInput: 'rest',
+                        source: 'HUD',
+                      })
+                    "
+                  >
+                    ♨ Rest at Campfire
+                  </button>
+                }
+                @if (
+                  engine.currentRoom().legendType === 'puzzle-mechanism' ||
+                  engine.currentRoom().triggers.length > 0
+                ) {
+                  <button
+                    type="button"
+                    class="narrative-chip mech-chip"
+                    (click)="engine.useOrPullRoomMechanisms()"
+                  >
+                    ⚙ Pull Mechanism
+                  </button>
+                }
               </div>
             </div>
 
@@ -922,6 +1084,47 @@
                           {{ st.tag }} x{{ st.stacks }}
                         </span>
                       }
+                    </div>
+                  }
+
+                  @if (mob.targetableParts && mob.targetableParts.length > 0) {
+                    <div class="anatomy-focus-section" data-testid="anatomy-focus-section">
+                      <span class="anatomy-section-title">Anatomy Focus:</span>
+                      <div class="anatomy-chip-cluster">
+                        @for (part of mob.targetableParts; track part.id) {
+                          <button
+                            type="button"
+                            class="anatomy-sub-chip"
+                            [class.selected]="engine.selectedTargetPartId() === part.id"
+                            [class.severed]="part.isSevered"
+                            [disabled]="part.isSevered"
+                            (click)="selectAnatomicalPart(part)"
+                            [title]="
+                              part.isSevered
+                                ? 'Severed: ' + part.debuffAppliedOnBreak
+                                : part.name +
+                                  ' (' +
+                                  part.hp +
+                                  '/' +
+                                  part.maxHp +
+                                  ' HP) - ' +
+                                  part.partEffectDescription
+                            "
+                          >
+                            {{
+                              part.isSevered
+                                ? '💥 ' + part.name + ' [Severed]'
+                                : (engine.selectedTargetPartId() === part.id ? '🎯 ' : '') +
+                                  part.name +
+                                  ' (' +
+                                  part.hp +
+                                  '/' +
+                                  part.maxHp +
+                                  ')'
+                            }}
+                          </button>
+                        }
+                      </div>
                     </div>
                   }
 
@@ -1090,6 +1293,120 @@
                     >
                       🔍 Inspect
                     </button>
+                  </div>
+                </div>
+              }
+
+              <!-- Fallen Explorer Memorial (Bloodstain History) -->
+              @if (engine.currentRoom().tombstones; as tombstones) {
+                @if (tombstones.length > 0) {
+                  <div class="stage-entity-card tombstone-card" data-testid="stage-tombstone-card">
+                    <div class="entity-card-header">
+                      <span class="entity-sigil" aria-hidden="true">🪦</span>
+                      <div class="entity-name-cluster">
+                        <strong class="entity-name">Fallen Explorer Memorial</strong>
+                        <span class="entity-provenance"
+                          >Honoring {{ tombstones[0].slainPlayerName }}</span
+                        >
+                      </div>
+                      <span class="element-badge text-muted"
+                        >🕯 {{ tombstones[0].tributeCount }}</span
+                      >
+                    </div>
+                    <p class="entity-subtext">"{{ tombstones[0].epitaph }}"</p>
+                    <div class="entity-actions-row">
+                      <button
+                        type="button"
+                        class="entity-btn accent"
+                        (click)="engine.tributeFallenExplorer(tombstones[0].id)"
+                        data-testid="tribute-btn"
+                      >
+                        🕯 Offer Tribute (1 Shard)
+                      </button>
+                    </div>
+                  </div>
+                }
+              }
+
+              <!-- Ancient Lectern & Grimoire Tome -->
+              @if (engine.currentRoom().grimoire; as grimoire) {
+                <div class="stage-entity-card grimoire-card" data-testid="stage-grimoire-card">
+                  <div class="entity-card-header">
+                    <span class="entity-sigil" aria-hidden="true">📖</span>
+                    <div class="entity-name-cluster">
+                      <strong class="entity-name">{{ grimoire.title }}</strong>
+                      <span class="entity-provenance"
+                        >Penned by {{ grimoire.authorName }} ({{
+                          grimoire.pages.length
+                        }}
+                        Pages)</span
+                      >
+                    </div>
+                    <span class="element-badge text-muted">Sanctum Tome</span>
+                  </div>
+                  <p class="entity-subtext">
+                    An open grimoire sits upon the lectern, inscribed with traveler lore and arcane
+                    notes.
+                  </p>
+                  <div class="entity-actions-row">
+                    <button
+                      type="button"
+                      class="entity-btn accent"
+                      (click)="engine.openGrimoire(grimoire)"
+                      data-testid="read-grimoire-btn"
+                    >
+                      📖 Read Tome
+                    </button>
+                  </div>
+                </div>
+              }
+
+              <!-- Synchronized Multi-Dungeon Mechanism -->
+              @if (engine.currentRoom().linkedMechanism; as mech) {
+                <div
+                  class="stage-entity-card mechanism-card"
+                  data-testid="stage-linked-mechanism-card"
+                >
+                  <div class="entity-card-header">
+                    <span class="entity-sigil" aria-hidden="true">⚙️</span>
+                    <div class="entity-name-cluster">
+                      <strong class="entity-name">{{ mech.name }}</strong>
+                      <span class="entity-provenance"
+                        >State: {{ mech.state }} · Local:
+                        {{ mech.activatedByLocal ? 'Engaged' : 'Ready' }}</span
+                      >
+                    </div>
+                    <span class="element-badge" [class.accent]="mech.state === 'HARMONIZED'">{{
+                      mech.state
+                    }}</span>
+                  </div>
+                  <p class="entity-subtext">
+                    {{
+                      mech.state === 'HARMONIZED'
+                        ? 'Harmonized! The titan vault gate is open.'
+                        : 'A heavy synchronized planar lever. Pull together with a peer or infuse 10 shards to harmonize.'
+                    }}
+                  </p>
+                  <div class="entity-actions-row">
+                    <button
+                      type="button"
+                      class="entity-btn accent"
+                      [disabled]="mech.state === 'HARMONIZED'"
+                      (click)="engine.pullLinkedMechanism()"
+                      data-testid="pull-lever-btn"
+                    >
+                      ⚙️ Pull Lever
+                    </button>
+                    @if (mech.state !== 'HARMONIZED') {
+                      <button
+                        type="button"
+                        class="entity-btn success"
+                        (click)="engine.harmonizeLinkedMechanism()"
+                        data-testid="harmonize-mechanism-btn"
+                      >
+                        ✨ Harmonize (10 Shards)
+                      </button>
+                    }
                   </div>
                 </div>
               }
@@ -1268,22 +1585,22 @@
           class="auto-toggle-btn"
           [class.active]="engine.character().autoAttackEnabled"
           (click)="engine.toggleAutoAttack()"
-          title="Toggle automatic basic attacks whenever ATB reaches 100%"
+          title="Toggle automatic basic attacks whenever ATB reaches 100% (Hotkey: Space)"
           data-testid="auto-attack-toggle"
         >
-          ⚔ Auto: {{ engine.character().autoAttackEnabled ? 'ON' : 'OFF' }}
+          ⚔ Auto [Space]: {{ engine.character().autoAttackEnabled ? 'ON' : 'OFF' }}
         </button>
 
-        @for (skill of engine.character().activeSkills; track skill.id) {
+        @for (skill of engine.character().activeSkills; track skill.id; let sIdx = $index) {
           <button
             type="button"
             class="skill-slot-btn"
             [disabled]="skill.currentCooldownMs > 0"
             (click)="onSkillButtonClick(skill)"
-            [title]="skill.description"
+            [title]="skill.description + ' (Hotkey: ' + (sIdx + 1) + ')'"
             [attr.data-testid]="'skill-btn-' + skill.commandKey"
           >
-            <span class="sk-name">[{{ skill.name }}]</span>
+            <span class="sk-name">[{{ sIdx + 1 }}] {{ skill.name }}</span>
             <span class="sk-meta">
               {{ skill.element }} • {{ skill.staminaCost }} STA
               @if (skill.currentCooldownMs > 0) {
@@ -1439,6 +1756,145 @@
       </div>
     </section>
   </main>
+
+  <!-- ========================================================================= -->
+  <!-- TRAVELER'S CHALK INSCRIPTION MODAL (MUD THEORYCRAFTING ASYNC GRAFFITI)     -->
+  <!-- ========================================================================= -->
+  @if (isWritingInscription()) {
+    <div
+      class="onboarding-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Inscribe Traveler Note"
+      data-testid="inscription-modal"
+    >
+      <div class="onboarding-modal-card inscription-modal-card">
+        <div class="onboarding-header">
+          <div>
+            <span class="era-badge">✍ TRAVELER'S CHALK INSCRIPTION</span>
+            <h2>Inscribe Note in {{ engine.currentRoom().title }}</h2>
+            <p>
+              Leave a tactile message etched upon the chamber flagstones. Any adventurer who delves
+              your realm, traverses your Chaos Gate, or crosses paths with you on a walk will read
+              your words!
+            </p>
+          </div>
+          <button
+            type="button"
+            class="close-drawer-btn"
+            (click)="isWritingInscription.set(false)"
+            aria-label="Close inscription modal"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="onboarding-section">
+          <label class="onboard-name-label">
+            <span>Chalk Inscription (Max 100 characters)</span>
+            <input
+              type="text"
+              maxlength="100"
+              [ngModel]="inscriptionDraft()"
+              (ngModelChange)="inscriptionDraft.set($event)"
+              placeholder="e.g. Beware the northern trap... or Praise the Resonance Loom!"
+              (keydown.enter)="confirmChalkInscription()"
+              data-testid="inscription-input"
+            />
+          </label>
+        </div>
+
+        <div class="popover-footer" style="display: flex; gap: 0.75rem; justify-content: flex-end">
+          <button
+            type="button"
+            class="mini-action-btn accent"
+            (click)="confirmChalkInscription()"
+            data-testid="save-inscription-btn"
+          >
+            ✍ Etch onto Floor
+          </button>
+          <button type="button" class="mini-action-btn" (click)="isWritingInscription.set(false)">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- ========================================================================= -->
+  <!-- GRIMOIRE READER MODAL (PARCHMENT LORE READER)                             -->
+  <!-- ========================================================================= -->
+  @if (engine.activeGrimoire(); as grimoire) {
+    <div
+      class="onboarding-modal-backdrop grimoire-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      [attr.aria-label]="'Reading Grimoire: ' + grimoire.title"
+      data-testid="grimoire-reader-modal"
+    >
+      <div class="onboarding-modal-card grimoire-modal-card">
+        <div class="onboarding-header">
+          <div>
+            <span class="era-badge">📖 SANCTUM TOME</span>
+            <h2>{{ grimoire.title }}</h2>
+            <p>
+              Authored by <strong>{{ grimoire.authorName }}</strong> · Page
+              {{ engine.activeGrimoirePage() + 1 }} of {{ grimoire.pages.length }}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="close-drawer-btn"
+            (click)="engine.closeGrimoire()"
+            aria-label="Close Grimoire"
+            data-testid="close-grimoire-btn"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="grimoire-page-content" data-testid="grimoire-page-content">
+          <p class="parchment-prose">{{ grimoire.pages[engine.activeGrimoirePage()] }}</p>
+        </div>
+
+        <div
+          class="grimoire-page-nav"
+          style="
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1rem;
+            border-top: 1px solid var(--border-subtle);
+          "
+        >
+          <button
+            type="button"
+            class="mini-action-btn"
+            [disabled]="engine.activeGrimoirePage() === 0"
+            (click)="engine.prevGrimoirePage()"
+            data-testid="prev-grimoire-page-btn"
+          >
+            ◀ Prev Page
+          </button>
+          <span
+            class="grimoire-page-counter"
+            style="font-family: var(--font-mono); font-size: 0.8rem; color: #cbd5e1"
+          >
+            {{ engine.activeGrimoirePage() + 1 }} / {{ grimoire.pages.length }}
+          </span>
+          <button
+            type="button"
+            class="mini-action-btn accent"
+            [disabled]="engine.activeGrimoirePage() >= grimoire.pages.length - 1"
+            (click)="engine.nextGrimoirePage()"
+            data-testid="next-grimoire-page-btn"
+          >
+            Next Page ▶
+          </button>
+        </div>
+      </div>
+    </div>
+  }
 
   <!-- ========================================================================= -->
   <!-- FIRST-TIME USER ONBOARDING: CHARACTER & REALM AWAKENING MODAL              -->

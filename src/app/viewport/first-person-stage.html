@@ -461,6 +461,179 @@
         </g>
       }
 
+      <!-- 2b. Asynchronous Phantom Wanderer Silhouette -->
+      @if (engine.activeRoomPhantom(); as phantom) {
+        <g
+          class="phantom-wanderer-silhouette"
+          role="img"
+          [attr.aria-label]="'Phantom Wanderer: ' + phantom.playerName"
+          data-testid="fp-phantom-silhouette"
+          transform="translate(560, 210)"
+        >
+          <!-- Ethereal Trail Halo -->
+          <ellipse
+            cx="40"
+            cy="140"
+            rx="45"
+            ry="16"
+            fill="rgba(56, 189, 248, 0.25)"
+            filter="url(#auraGlow)"
+          />
+          <!-- Translucent Phantom Figure -->
+          <path
+            d="M40,25 C30,25 22,35 25,55 L20,110 C20,125 35,135 40,135 C45,135 60,125 60,110 L55,55 C58,35 50,25 40,25 Z"
+            fill="rgba(56, 189, 248, 0.45)"
+            stroke="#38bdf8"
+            stroke-width="1.5"
+            stroke-dasharray="3,2"
+          />
+          <circle cx="40" cy="40" r="10" fill="#bae6fd" opacity="0.8" filter="url(#auraGlow)" />
+          <text x="40" y="12" text-anchor="middle" fill="#7dd3fc" font-size="11" font-weight="bold">
+            👻 {{ phantom.playerName }}
+          </text>
+          <text x="40" y="156" text-anchor="middle" fill="#94a3b8" font-size="9">
+            (Traversed here recently)
+          </text>
+        </g>
+      }
+
+      <!-- 2b. Fallen Explorer Memorial Stone (Bloodstain History) -->
+      @if (currentRoom().tombstones && currentRoom().tombstones!.length > 0) {
+        <g
+          class="tombstone-memorial-glyph"
+          role="button"
+          tabindex="0"
+          (click)="engine.tributeFallenExplorer(currentRoom().tombstones![0].id)"
+          [attr.aria-label]="
+            'Fallen Explorer Memorial: ' + currentRoom().tombstones![0].slainPlayerName
+          "
+          data-testid="fp-tombstone-glyph"
+          transform="translate(180, 250)"
+        >
+          <!-- Ethereal Memorial Glow -->
+          <ellipse
+            cx="25"
+            cy="80"
+            rx="36"
+            ry="12"
+            fill="rgba(148, 163, 184, 0.3)"
+            filter="url(#auraGlow)"
+          />
+          <!-- Stone Slab -->
+          <path
+            d="M10,80 L10,35 C10,18 40,18 40,35 L40,80 Z"
+            fill="#334155"
+            stroke="#64748b"
+            stroke-width="2"
+          />
+          <line x1="18" y1="36" x2="32" y2="36" stroke="#94a3b8" stroke-width="2" />
+          <line x1="25" y1="29" x2="25" y2="46" stroke="#94a3b8" stroke-width="2" />
+          <!-- Memorial Flame Candle -->
+          <rect x="22" y="70" width="6" height="10" fill="#fef08a" />
+          <circle cx="25" cy="67" r="4" fill="#f59e0b" filter="url(#auraGlow)" />
+          <text x="25" y="98" text-anchor="middle" fill="#cbd5e1" font-size="10" font-weight="bold">
+            🪦 {{ currentRoom().tombstones![0].slainPlayerName }}
+          </text>
+          <text x="25" y="110" text-anchor="middle" fill="#38bdf8" font-size="9">
+            🕯 {{ currentRoom().tombstones![0].tributeCount }} Tributes (Click to Honor)
+          </text>
+        </g>
+      }
+
+      <!-- 2c. Ancient Sanctum Lectern & Grimoire Tome -->
+      @if (currentRoom().grimoire; as grimoire) {
+        <g
+          class="lectern-grimoire-pedestal"
+          role="button"
+          tabindex="0"
+          (click)="engine.openGrimoire(grimoire)"
+          [attr.aria-label]="'Grimoire Lectern: ' + grimoire.title"
+          data-testid="fp-grimoire-lectern"
+          transform="translate(360, 250)"
+        >
+          <!-- Lectern Base & Stem -->
+          <polygon
+            points="15,95 65,95 55,75 25,75"
+            fill="#1e293b"
+            stroke="#475569"
+            stroke-width="1.5"
+          />
+          <rect
+            x="36"
+            y="45"
+            width="8"
+            height="30"
+            fill="#334155"
+            stroke="#475569"
+            stroke-width="1.5"
+          />
+          <polygon
+            points="10,45 70,45 60,35 20,35"
+            fill="#1e293b"
+            stroke="#64748b"
+            stroke-width="1.5"
+          />
+          <!-- Open Parchment Book -->
+          <path
+            d="M18,36 C28,32 38,36 40,38 C42,36 52,32 62,36 L60,20 C50,16 42,20 40,22 C38,20 30,16 20,20 Z"
+            fill="#fef3c7"
+            stroke="#d97706"
+            stroke-width="1.5"
+            filter="url(#auraGlow)"
+          />
+          <line x1="40" y1="22" x2="40" y2="38" stroke="#b45309" stroke-width="1.5" />
+          <text x="40" y="10" text-anchor="middle" fill="#fde68a" font-size="10" font-weight="bold">
+            📖 {{ grimoire.title }}
+          </text>
+          <text x="40" y="108" text-anchor="middle" fill="#a78bfa" font-size="9">
+            (Click to Read Tome)
+          </text>
+        </g>
+      }
+
+      <!-- 2d. Synchronized Multi-Dungeon Mechanism (Twin Levers) -->
+      @if (currentRoom().linkedMechanism; as mech) {
+        <g
+          class="linked-mechanism-apparatus"
+          role="button"
+          tabindex="0"
+          (click)="engine.pullLinkedMechanism()"
+          [attr.aria-label]="'Synchronized Mechanism: ' + mech.name"
+          data-testid="fp-linked-mechanism"
+          transform="translate(620, 240)"
+        >
+          <!-- Gear Casing -->
+          <circle cx="35" cy="50" r="28" fill="#1e293b" stroke="#f59e0b" stroke-width="2" />
+          <circle cx="35" cy="50" r="10" fill="#0f172a" stroke="#d97706" stroke-width="2" />
+          <!-- Lever Handle -->
+          <line
+            x1="35"
+            y1="50"
+            [attr.x2]="mech.activatedByLocal ? '55' : '15'"
+            [attr.y2]="mech.activatedByLocal ? '25' : '20'"
+            stroke="#fbbf24"
+            stroke-width="5"
+            stroke-linecap="round"
+          />
+          <circle
+            [attr.cx]="mech.activatedByLocal ? '55' : '15'"
+            [attr.cy]="mech.activatedByLocal ? '25' : '20'"
+            r="6"
+            fill="#f59e0b"
+            filter="url(#auraGlow)"
+          />
+          <text x="35" y="10" text-anchor="middle" fill="#fbbf24" font-size="10" font-weight="bold">
+            ⚙️
+            {{
+              mech.state === 'HARMONIZED' ? 'UNLOCKED' : mech.activatedByLocal ? 'ENGAGED' : 'READY'
+            }}
+          </text>
+          <text x="35" y="92" text-anchor="middle" fill="#94a3b8" font-size="8">
+            {{ mech.state === 'HARMONIZED' ? 'Harmonized!' : 'Twin Resonance Lever' }}
+          </text>
+        </g>
+      }
+
       <!-- 3. Ground Loot Items & Chests -->
       @for (item of currentRoom().items; track item.id; let idx = $index) {
         <g
@@ -496,6 +669,41 @@
           <circle cx="24" cy="18" r="3" fill="#fde047" />
           <text x="24" y="42" text-anchor="middle" fill="#fde047" font-size="10" font-weight="bold">
             {{ item.name }}
+          </text>
+        </g>
+      }
+
+      <!-- 4. Chalk Inscriptions on Chamber Floor -->
+      @for (inscr of currentRoom().inscriptions || []; track inscr.id; let idx = $index) {
+        <g
+          class="chalk-inscription-rune"
+          (click)="inspectTarget(inscr.id)"
+          role="button"
+          tabindex="0"
+          [attr.aria-label]="'Chalk Inscription: ' + inscr.text"
+          [attr.data-testid]="'fp-inscription-' + inscr.id"
+          [attr.transform]="'translate(' + (180 + idx * 130) + ', 400)'"
+        >
+          <ellipse
+            cx="40"
+            cy="16"
+            rx="45"
+            ry="14"
+            fill="rgba(241, 245, 249, 0.12)"
+            stroke="#cbd5e1"
+            stroke-width="1.5"
+            stroke-dasharray="4,2"
+          />
+          <text
+            x="40"
+            y="20"
+            text-anchor="middle"
+            fill="#f8fafc"
+            font-size="12"
+            font-weight="bold"
+            filter="url(#auraGlow)"
+          >
+            ✍ {{ inscr.authorName }}
           </text>
         </g>
       }
@@ -568,6 +776,45 @@
         >
           🔍 Inspect
         </button>
+
+        @if (mob.targetableParts && mob.targetableParts.length > 0) {
+          <div class="anatomy-pills-row" data-testid="fp-anatomy-parts">
+            <span class="anatomy-subheading">Anatomy Focus:</span>
+            @for (part of mob.targetableParts; track part.id) {
+              <button
+                type="button"
+                class="action-pill anatomy-pill"
+                [class.selected]="engine.selectedTargetPartId() === part.id"
+                [class.severed]="part.isSevered"
+                [disabled]="part.isSevered"
+                (click)="selectAnatomicalPart(part)"
+                [title]="
+                  part.isSevered
+                    ? 'Severed: ' + part.debuffAppliedOnBreak
+                    : part.name +
+                      ' (' +
+                      part.hp +
+                      '/' +
+                      part.maxHp +
+                      ' HP) - ' +
+                      part.partEffectDescription
+                "
+              >
+                {{
+                  part.isSevered
+                    ? '💥 ' + part.name + ' [Severed]'
+                    : (engine.selectedTargetPartId() === part.id ? '🎯 ' : '') +
+                      part.name +
+                      ' (' +
+                      part.hp +
+                      '/' +
+                      part.maxHp +
+                      ')'
+                }}
+              </button>
+            }
+          </div>
+        }
       </div>
     } @else if (selectedItem(); as it) {
       <div class="target-action-cluster" data-testid="fp-item-actions">

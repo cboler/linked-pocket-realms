@@ -100,4 +100,3 @@ describe('EnemySpriteComponent', () => {
     expect(badgeTexts).toContain('BOSS');
   });
 });
-

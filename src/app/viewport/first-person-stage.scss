@@ -406,3 +406,72 @@
   overflow: hidden;
   white-space: nowrap;
 }
+
+.phantom-wanderer-silhouette {
+  cursor: pointer;
+  animation: phantomPulse 3s ease-in-out infinite alternate;
+  transition: opacity var(--transition-fast);
+
+  &:hover {
+    filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.7));
+  }
+}
+
+@keyframes phantomPulse {
+  0% {
+    opacity: 0.55;
+    transform: translate(560px, 210px) translateY(0);
+  }
+  100% {
+    opacity: 0.95;
+    transform: translate(560px, 206px) translateY(-4px);
+  }
+}
+
+.anatomy-pills-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding-top: 0.35rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.12);
+}
+
+.anatomy-subheading {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-text-muted, #94a3b8);
+  font-family: var(--font-mono);
+}
+
+.action-pill.anatomy-pill {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fef3c7;
+  border-color: rgba(245, 158, 11, 0.45);
+  font-size: 0.72rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+
+  &:hover:not(:disabled) {
+    background: rgba(245, 158, 11, 0.3);
+    border-color: #f59e0b;
+  }
+
+  &.selected {
+    background: #d97706;
+    color: #ffffff;
+    border-color: #fbbf24;
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+  }
+
+  &.severed {
+    opacity: 0.45;
+    text-decoration: line-through;
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #fca5a5;
+    cursor: not-allowed;
+  }
+}

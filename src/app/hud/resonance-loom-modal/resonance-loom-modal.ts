@@ -23,9 +23,11 @@ import {
   STRUCTURAL_THEMES,
 } from '../../core/services/chaos-gate.service';
 import { MudEngineService } from '../../core/services/mud-engine.service';
+import { SoundFxService } from '../../core/services/sound-fx.service';
 import { StorageService } from '../../core/services/storage.service';
 import { ThunderpassService } from '../../core/services/thunderpass.service';
 import { TransportService } from '../../core/services/transport.service';
+import { generateQrMatrix, generateQrSvgPath } from '../../core/utils/qr-code.util';
 
 @Component({
   selector: 'app-resonance-loom-modal',
@@ -40,12 +42,94 @@ export class ResonanceLoomModalComponent {
   readonly thunderpass = inject(ThunderpassService);
   readonly chaosGate = inject(ChaosGateService);
   readonly storage = inject(StorageService);
+  readonly soundFx = inject(SoundFxService);
 
-  readonly loomActiveTab = signal<'WEAVER' | 'WEBRTC' | 'THUNDERPASS' | 'OVERGROWTH'>('WEBRTC');
+  readonly loomActiveTab = signal<'WEAVER' | 'WEBRTC' | 'THUNDERPASS' | 'OVERGROWTH' | 'SPORE'>(
+    'WEBRTC',
+  );
   readonly shareConfirmationMessage = signal<string>('');
   readonly exportedCartridgeText = signal<string>('');
   readonly remoteHandshakeInput = signal<string>('');
   readonly isColliding = signal<boolean>(false);
+
+  // Spore QR Code & Planar Seed Sharing
+  readonly shareableSporeUrl = computed<string>(() => {
+    const char = this.engine.character();
+    const addr = this.engine.activeGateAddress();
+    const origin =
+      typeof window !== 'undefined'
+        ? window.location.origin + window.location.pathname
+        : 'https://chris.github.io/linked-pocket-realms';
+    return `${origin}#spore=${encodeURIComponent(addr.formatted)}&p=${encodeURIComponent(char.name)}&seed=${addr.seed}`;
+  });
+
+  readonly sporeQrSvgPath = computed<string>(() => {
+    try {
+      const url = this.shareableSporeUrl();
+      const matrix = generateQrMatrix(url);
+      return generateQrSvgPath(matrix);
+    } catch {
+      return '';
+    }
+  });
+
+  readonly sporeQrSize = computed<number>(() => {
+    try {
+      const url = this.shareableSporeUrl();
+      const matrix = generateQrMatrix(url);
+      return matrix.length;
+    } catch {
+      return 25;
+    }
+  });
+
+  readonly copiedSporeSuccess = signal<boolean>(false);
+  readonly sporeInput = signal<string>('');
+
+  copySporeUrl(): void {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      void navigator.clipboard.writeText(this.shareableSporeUrl()).then(() => {
+        this.copiedSporeSuccess.set(true);
+        setTimeout(() => this.copiedSporeSuccess.set(false), 2500);
+      });
+    }
+  }
+
+  graftForeignSpore(): void {
+    const raw = this.sporeInput().trim();
+    if (!raw) return;
+    let addrStr = raw;
+    if (raw.includes('#spore=')) {
+      const match = raw.match(/#spore=([^&]+)/);
+      if (match) addrStr = decodeURIComponent(match[1]);
+    }
+    const parsed = this.chaosGate.parseAddressString(addrStr);
+    if (parsed) {
+      const grafted = this.engine.graftOvergrowthIncursion(parsed, 'Spore Traveler');
+      if (grafted.length > 0) {
+        this.engine.activeConvergenceBanner.set({
+          peerName: 'Spore Traveler',
+          peerTriChord: parsed.formatted,
+          localTheme: this.engine.activeGateAddress().theme,
+          remoteTheme: parsed.theme,
+          roomsGraftedCount: grafted.length,
+          timestampMs: Date.now(),
+        });
+        this.soundFx.playConvergenceChime();
+        this.soundFx.triggerHaptic('CONVERGENCE');
+        this.engine.appendFeed(
+          'NETWORK',
+          `🌱 [Spore Grafted] Spliced ${grafted.length} rooms from spore seed ${parsed.formatted}!`,
+        );
+      }
+      this.sporeInput.set('');
+    } else {
+      this.engine.appendFeed(
+        'SYSTEM',
+        'Invalid spore code or URL. Format must match: "Θ: Scorching Clockwork Catacombs".',
+      );
+    }
+  }
 
   // Wayfinder Loom & Expedition Rift State
   readonly serverEras = Object.values(SERVER_ERAS);
@@ -87,7 +171,7 @@ export class ResonanceLoomModalComponent {
     this.refreshCartridgeText();
   }
 
-  setLoomActiveTab(tab: 'WEAVER' | 'WEBRTC' | 'THUNDERPASS' | 'OVERGROWTH'): void {
+  setLoomActiveTab(tab: 'WEAVER' | 'WEBRTC' | 'THUNDERPASS' | 'OVERGROWTH' | 'SPORE'): void {
     this.loomActiveTab.set(tab);
     if (tab === 'WEAVER') {
       this.refreshCartridgeText();
