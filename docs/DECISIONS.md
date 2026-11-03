@@ -19,6 +19,7 @@ Each record outlines the context, rationale, consequences, and trade-offs of sig
 - [ADR-009: Targetable Monster Anatomy, Environmental Spell Reactions, Phantom Trails & Zero-Dependency SVG QR Codes](#adr-009-targetable-monster-anatomy-environmental-spell-reactions-phantom-trails--zero-dependency-svg-qr-codes)
 - [ADR-010: Directional Spatial Audio Panning, Bloodstain Lore Memorials, Delver Grimoires & Synchronized Conjunction Mechanisms](#adr-010-directional-spatial-audio-panning-bloodstain-lore-memorials-delver-grimoires--synchronized-conjunction-mechanisms)
 - [ADR-011: Shadow Bazaar Dungeon Economy, Item Provenance Chains, and Multi-Peer WebRTC DataChannel Mesh](#adr-011-shadow-bazaar-dungeon-economy-item-provenance-chains-and-multi-peer-webrtc-datachannel-mesh)
+- [ADR-012: Astral Echo Companion Bot Toggle Setting and Universal Mesh Labeling](#adr-012-astral-echo-companion-bot-toggle-setting-and-universal-mesh-labeling)
 
 ---
 
@@ -333,6 +334,40 @@ To fulfill this vision without introducing central servers or external databases
 
 - **Positive**: 100% serverless peer-to-peer economy and party exploration; rich visual feedback for co-delvers in the 2.5D perspective viewport; immutable historical item provenance creates personal value for traded equipment.
 - **Trade-offs**: WebRTC mesh scale is bounded by client bandwidth and NAT traversal topology (ideal for 2-8 co-delvers per realm, which matches party dungeon crawling).
+
+---
+
+## ADR-012: Astral Echo Companion Bot Toggle Setting and Universal Mesh Labeling
+
+### Status
+
+Accepted
+
+### Context
+
+Previously, `MudEngineService` unconditionally injected a simulated peer `Kite_Zero` (`peer-astral-echo`) into `transport.discoveredPeers` upon engine startup so solo players would have an immediate neighboring Chaos Gate to explore. While this served initial prototyping, it created confusion by showing `Adventurers: 2` and `P2P Gate (1)` for solo players. Furthermore, future plans call for autonomous companion bots capable of managing chambers while AFK or simulating elapsed time.
+
+### Decision
+
+1. **Default-Off Solo Mesh Authenticity**:
+   - Seeded Astral Echoes are no longer injected unconditionally at startup.
+   - A solo player starts with `Adventurers: 1` and `P2P Gate (0)`, reflecting genuine connected peers only.
+2. **User-Controllable Companion Setting & Persistence**:
+   - Introduced `astralEchoBotEnabled` reactive signal and persisted preference (`localStorage: linked_pocket_realms_astral_echo_bot`).
+   - Accessible via the **🤖 Astral Echo Companion (Autonomous Bot)** card in the P2P Gate modal (`🌐 Realm Mesh Collider` tab) and via terminal commands (`bot on`, `bot off`, `@bot`, `echo on`, `echo off`).
+3. **Universal Labeling**:
+   - Any Astral Echo peer is explicitly tagged with `[Astral Echo]` or `[Echo]` across all UI surfaces:
+     - Header adventurer counter: `👥 Adventurers: 2 (1 Echo)`
+     - Roster ticker command (`who`): `Kite_Zero (Lv.4 Chronomancer) [Astral Echo] [Peer]`
+     - P2P Gate anchor portals: `🤖 Astral Echo` pill badge
+     - Anchor room stage portals: `🌀 Chaos Gate: Δ: Silent Fungal Observatory (Kite_Zero [Astral Echo])`
+     - 1st-person viewport & room cards: `[Astral Echo]` entity badge
+     - Minimap cartography node tooltips: `[Echo]` visitor label
+
+### Consequences
+
+- **Positive**: Eliminates ghost peer confusion while providing a clear toggleable companion bot for testing, portal traversal, and future autonomous AFK zone management routines.
+- **Trade-offs**: Solo players exploring P2P portals without another human delver must toggle on their Astral Echo bot (or use the Wayfinder Rift Loom) to explore remote realms.
 
 ---
 

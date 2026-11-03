@@ -806,6 +806,7 @@ export interface NetworkPeerVisitor {
   heraldGreeting?: string;
   currentHp?: number;
   maxHp?: number;
+  isAstralEcho?: boolean;
 }
 
 export interface NetworkPacket {
@@ -842,12 +843,14 @@ export interface NetworkPacket {
     senderName: string;
     text: string;
   };
+  isAstralEcho?: boolean;
   visitorState?: {
     level: number;
     archetype: ArchetypeClass;
     inCombat: boolean;
     currentHp?: number;
     maxHp?: number;
+    isAstralEcho?: boolean;
   };
 }
 

@@ -350,6 +350,19 @@ export const ARCHETYPE_CATALOG: Record<
   },
 };
 
+const STORAGE_KEY_ASTRAL_ECHO_BOT = 'linked_pocket_realms_astral_echo_bot';
+
+function initAstralEchoBotSetting(): boolean {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      return localStorage.getItem(STORAGE_KEY_ASTRAL_ECHO_BOT) === 'true';
+    }
+  } catch {
+    // localStorage unavailable
+  }
+  return false;
+}
+
 @Injectable({
   providedIn: 'root',
 })
@@ -371,6 +384,19 @@ export class MudEngineService implements OnDestroy {
 
   // Convergence Encounter Banner & Audio
   readonly activeConvergenceBanner = signal<ConvergenceEncounterBanner | null>(null);
+
+  // Astral Echo Companion Bot State
+  readonly astralEchoBotEnabled = signal<boolean>(initAstralEchoBotSetting());
+  readonly hasActiveAstralEcho = computed<boolean>(() => {
+    return this.transport
+      .activeVisitorsList()
+      .some((v) => v.isAstralEcho || v.peerId === 'peer-astral-echo');
+  });
+  readonly astralEchoCount = computed<number>(() => {
+    return this.transport
+      .activeVisitorsList()
+      .filter((v) => v.isAstralEcho || v.peerId === 'peer-astral-echo').length;
+  });
 
   // UI Perspective & Active Drawer State
   readonly perspective = signal<PerspectiveRole>('EXPLORER');
@@ -594,7 +620,18 @@ export class MudEngineService implements OnDestroy {
     // Subscribe to P2P transport packets
     this.netSub = this.transport.packets$.subscribe((pkt) => this.onNetworkPacket(pkt));
 
-    // Seed a simulated neighboring Chaos Gate beacon so the Anchor Portal immediately shows a discoverable P2P realm
+    // Seed a simulated neighboring Chaos Gate beacon only if the Astral Echo companion bot is enabled (Default: OFF)
+    if (this.astralEchoBotEnabled()) {
+      this.spawnAstralEchoBeacon();
+    }
+
+    this.startAtbLoop();
+  }
+
+  /**
+   * Inject the simulated Astral Echo companion beacon into the P2P mesh
+   */
+  spawnAstralEchoBeacon(): void {
     const demoNeighborAddress = this.chaosGate.createAddress(
       'Δ',
       'Silent',
@@ -612,9 +649,42 @@ export class MudEngineService implements OnDestroy {
       lastSeenMs: Date.now(),
       transport: 'BroadcastChannel',
       heraldGreeting: 'Beware: Eldritch Shadow lurks ahead.',
+      isAstralEcho: true,
     });
+  }
 
-    this.startAtbLoop();
+  /**
+   * Toggle the simulated Astral Echo companion bot on or off with persistence
+   */
+  toggleAstralEchoBot(enable?: boolean): boolean {
+    const current = this.astralEchoBotEnabled();
+    const next = enable !== undefined ? enable : !current;
+    this.astralEchoBotEnabled.set(next);
+
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY_ASTRAL_ECHO_BOT, String(next));
+      }
+    } catch {
+      // storage error
+    }
+
+    if (next) {
+      this.spawnAstralEchoBeacon();
+      this.appendFeed(
+        'NETWORK',
+        "🤖 [Astral Echo Awakened] Autonomous echo bot 'Kite_Zero' is now active in Δ: Silent Fungal Observatory.",
+      );
+      this.soundFx.playConvergenceChime();
+    } else {
+      this.transport.removeDiscoveredPeer('peer-astral-echo');
+      this.appendFeed(
+        'NETWORK',
+        '🤖 [Astral Echo Deactivated] Autonomous echo bot has been recalled from the realm mesh.',
+      );
+    }
+
+    return next;
   }
 
   private async hydrateFromStorage(): Promise<void> {
@@ -1418,6 +1488,18 @@ export class MudEngineService implements OnDestroy {
 
     if (verb === 'who' || verb === '@who' || verb === 'players' || verb === 'adventurers') {
       this.listAdventurersInRealm();
+      return { type: 'LOOK', rawInput: trimmed, source: 'TERMINAL' };
+    }
+
+    if (verb === 'bot' || verb === '@bot' || verb === 'echo' || verb === '@echo') {
+      const sub = parts[1]?.toLowerCase();
+      if (sub === 'on' || sub === 'enable' || sub === '1' || sub === 'start') {
+        this.toggleAstralEchoBot(true);
+      } else if (sub === 'off' || sub === 'disable' || sub === '0' || sub === 'stop') {
+        this.toggleAstralEchoBot(false);
+      } else {
+        this.toggleAstralEchoBot();
+      }
       return { type: 'LOOK', rawInput: trimmed, source: 'TERMINAL' };
     }
 
@@ -3885,8 +3967,13 @@ export class MudEngineService implements OnDestroy {
     const char = this.character();
     const room = this.currentRoom();
     const visitors = this.transport.activeVisitorsList();
+    const echoCount = this.astralEchoCount();
+    const echoSuffix = echoCount > 0 ? ` [${echoCount} Astral Echo]` : '';
 
-    this.appendFeed('SYSTEM', `👥 [Adventurers In Realm] (${visitors.length + 1} Present)`);
+    this.appendFeed(
+      'SYSTEM',
+      `👥 [Adventurers In Realm] (${visitors.length + 1} Present${echoSuffix})`,
+    );
     const myGreeting = char.heraldGreeting?.formatted
       ? ` — "${char.heraldGreeting.formatted}"`
       : '';
@@ -3898,7 +3985,7 @@ export class MudEngineService implements OnDestroy {
     if (visitors.length === 0) {
       this.appendFeed(
         'SYSTEM',
-        'No other adventurers detected in your mesh right now. Open another browser tab or connect via the Resonance Loom to delve & chat together!',
+        'No other adventurers detected in your mesh right now. Open another browser tab, connect via the Resonance Loom, or type "bot on" to activate your Astral Echo companion!',
       );
     } else {
       for (const v of visitors) {
@@ -3907,15 +3994,17 @@ export class MudEngineService implements OnDestroy {
             ? `Here with you (${room.title})`
             : `Sector ${v.currentRoomId}`;
         const peerGreeting = v.heraldGreeting ? ` — "${v.heraldGreeting}"` : '';
+        const isEcho = v.isAstralEcho || v.peerId === 'peer-astral-echo';
+        const echoTag = isEcho ? ' [Astral Echo]' : '';
         this.appendFeed(
           'SYSTEM',
-          `• ${v.playerName} (Lv.${v.level} ${v.archetype}) -- ${location} [${v.transport}]${peerGreeting}`,
+          `• ${v.playerName} (Lv.${v.level} ${v.archetype})${echoTag} -- ${location} [${v.transport}]${peerGreeting}`,
         );
       }
     }
     this.appendFeed(
       'SYSTEM',
-      'Chat & Herald: say <msg> (room), shout <msg> (realm), who (players), @greeting roll (change motto).',
+      'Chat & Herald: say <msg> (room), shout <msg> (realm), who (players), bot on/off (companion), @greeting roll (change motto).',
     );
   }
 

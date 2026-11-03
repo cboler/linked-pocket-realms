@@ -156,6 +156,11 @@
           data-testid="presence-roster-pill"
         >
           👥 Adventurers: <strong>{{ transport.activeVisitorsList().length + 1 }}</strong>
+          @if (engine.hasActiveAstralEcho()) {
+            <span class="echo-header-pill" data-testid="echo-header-pill"
+              >({{ engine.astralEchoCount() }} Echo)</span
+            >
+          }
         </button>
       </div>
     </div>
@@ -1584,13 +1589,32 @@
                   <div class="entity-card-header">
                     <span class="entity-sigil" aria-hidden="true">👤</span>
                     <div class="entity-name-cluster">
-                      <strong class="entity-name">{{ peer.playerName }}</strong>
+                      <strong class="entity-name">
+                        {{ peer.playerName }}
+                        @if (peer.isAstralEcho || peer.peerId === 'peer-astral-echo') {
+                          <span class="echo-badge-inline" data-testid="stage-echo-tag"
+                            >[Astral Echo]</span
+                          >
+                        }
+                      </strong>
                       <span class="entity-provenance"
                         >{{ peer.archetype }} Lv.{{ peer.level }} · From
                         {{ peer.gateAddress }}</span
                       >
                     </div>
-                    <span class="element-badge success">Co-Delver</span>
+                    <span
+                      class="element-badge"
+                      [class.success]="!peer.isAstralEcho && peer.peerId !== 'peer-astral-echo'"
+                      [class.echo-badge-pill]="
+                        peer.isAstralEcho || peer.peerId === 'peer-astral-echo'
+                      "
+                    >
+                      {{
+                        peer.isAstralEcho || peer.peerId === 'peer-astral-echo'
+                          ? 'Astral Echo'
+                          : 'Co-Delver'
+                      }}
+                    </span>
                   </div>
                   <p class="entity-subtext">
                     {{
@@ -1652,7 +1676,12 @@
                     [title]="'Traverse P2P Chaos Gate Portal into ' + peer.playerName + 's realm'"
                     [attr.data-testid]="'stage-portal-' + peer.peerId"
                   >
-                    🌀 Chaos Gate: {{ peer.gateAddress }} ({{ peer.playerName }})
+                    🌀 Chaos Gate: {{ peer.gateAddress }} ({{ peer.playerName
+                    }}{{
+                      peer.isAstralEcho || peer.peerId === 'peer-astral-echo'
+                        ? ' [Astral Echo]'
+                        : ''
+                    }})
                   </button>
                 }
               }
@@ -3260,13 +3289,32 @@
                   <div class="entity-card-header">
                     <span class="entity-sigil" aria-hidden="true">👤</span>
                     <div class="entity-name-cluster">
-                      <strong class="entity-name">{{ peer.playerName }}</strong>
+                      <strong class="entity-name">
+                        {{ peer.playerName }}
+                        @if (peer.isAstralEcho || peer.peerId === 'peer-astral-echo') {
+                          <span class="echo-badge-inline" data-testid="stage-echo-tag"
+                            >[Astral Echo]</span
+                          >
+                        }
+                      </strong>
                       <span class="entity-provenance"
                         >{{ peer.archetype }} Lv.{{ peer.level }} · From
                         {{ peer.gateAddress }}</span
                       >
                     </div>
-                    <span class="element-badge success">Co-Delver</span>
+                    <span
+                      class="element-badge"
+                      [class.success]="!peer.isAstralEcho && peer.peerId !== 'peer-astral-echo'"
+                      [class.echo-badge-pill]="
+                        peer.isAstralEcho || peer.peerId === 'peer-astral-echo'
+                      "
+                    >
+                      {{
+                        peer.isAstralEcho || peer.peerId === 'peer-astral-echo'
+                          ? 'Astral Echo'
+                          : 'Co-Delver'
+                      }}
+                    </span>
                   </div>
                   <p class="entity-subtext">
                     {{

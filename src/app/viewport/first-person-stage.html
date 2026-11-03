@@ -746,7 +746,8 @@
             fill="#34d399"
           />
           <text x="25" y="8" text-anchor="middle" fill="#6ee7b7" font-size="9" font-weight="bold">
-            👤 {{ peer.playerName }}
+            👤 {{ peer.playerName
+            }}{{ peer.isAstralEcho || peer.peerId === 'peer-astral-echo' ? ' [Echo]' : '' }}
           </text>
           <text x="25" y="103" text-anchor="middle" fill="#a7f3d0" font-size="7">
             {{ peer.archetype }} Lv.{{ peer.level }}
@@ -1030,7 +1031,8 @@
             fill="#34d399"
           />
           <text x="25" y="8" text-anchor="middle" fill="#6ee7b7" font-size="9" font-weight="bold">
-            👤 {{ peer.playerName }}
+            👤 {{ peer.playerName
+            }}{{ peer.isAstralEcho || peer.peerId === 'peer-astral-echo' ? ' [Echo]' : '' }}
           </text>
           <text x="25" y="103" text-anchor="middle" fill="#a7f3d0" font-size="7">
             {{ peer.archetype }} Lv.{{ peer.level }}

@@ -165,6 +165,10 @@ test.describe('Linked Pocket Realms — Tactical HUD, Perspectives & Drawers E2E
     await expect(page.getByTestId('herald-tuning-card')).toBeVisible();
 
     await page.getByTestId('loom-tab-webrtc').click();
+    await expect(page.getByTestId('astral-echo-settings-card')).toBeVisible();
+    // Toggle on Astral Echo companion bot to test autonomous portal anchor & mesh traversal
+    await page.getByTestId('toggle-astral-echo-btn').click();
+    await expect(page.getByTestId('astral-echo-badge')).toBeVisible();
     await page.getByTestId('traverse-portal-peer-astral-echo').click();
     await expect(page.getByTestId('active-gate-address')).toContainText(
       'Δ: Silent Fungal Observatory',

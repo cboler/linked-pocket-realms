@@ -2645,6 +2645,28 @@ textarea {
   color: var(--color-error);
 }
 
+.echo-header-pill {
+  font-size: 0.7rem;
+  color: #c084fc;
+  font-weight: 600;
+  margin-left: 0.25rem;
+  opacity: 0.9;
+}
+
+.echo-badge-inline {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #c084fc;
+  margin-left: 0.35rem;
+}
+
+.element-badge.echo-badge-pill {
+  background: rgba(168, 85, 247, 0.2);
+  border: 1px solid #a855f7;
+  color: #d8b4fe;
+}
+
 /* Radar SVG */
 .radar-svg {
   width: 100%;

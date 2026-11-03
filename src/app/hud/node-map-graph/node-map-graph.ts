@@ -78,7 +78,10 @@ export class NodeMapGraphComponent {
         const leg = this.legendRegistry.resolveEntry(r.legendType, r.customLegendId);
         const roomVisitors = visitors
           .filter((v) => v.currentRoomId === r.id)
-          .map((v) => v.playerName);
+          .map(
+            (v) =>
+              v.playerName + (v.isAstralEcho || v.peerId === 'peer-astral-echo' ? ' [Echo]' : ''),
+          );
         const m = metrics[r.id];
         let heatVal = 0;
         if (m) {

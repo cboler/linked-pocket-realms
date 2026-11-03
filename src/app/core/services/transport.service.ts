@@ -164,6 +164,11 @@ export class TransportService implements OnDestroy {
             heraldGreeting: packet.heraldGreeting || existing?.heraldGreeting,
             currentHp: packet.visitorState?.currentHp ?? existing?.currentHp,
             maxHp: packet.visitorState?.maxHp ?? existing?.maxHp,
+            isAstralEcho:
+              packet.isAstralEcho ??
+              packet.visitorState?.isAstralEcho ??
+              existing?.isAstralEcho ??
+              packet.senderPeerId === 'peer-astral-echo',
           },
         };
       });
@@ -380,6 +385,18 @@ export class TransportService implements OnDestroy {
   }
 
   /**
+   * Safely evict a peer from the discovered peers registry (e.g. when deactivating a simulated echo bot)
+   */
+  removeDiscoveredPeer(peerId: string): void {
+    this.discoveredPeers.update((prev) => {
+      if (!prev[peerId]) return prev;
+      const next = { ...prev };
+      delete next[peerId];
+      return next;
+    });
+  }
+
+  /**
    * Simulate a local Loopback Peer Portal for single-tab testing or demo discovery
    */
   injectSimulatedPeerBeacon(peer: NetworkPeerVisitor, cartridgeBase64?: string): void {
@@ -394,12 +411,14 @@ export class TransportService implements OnDestroy {
         roomId: peer.currentRoomId,
         realmCartridgeBase64: cartridgeBase64,
         heraldGreeting: peer.heraldGreeting,
+        isAstralEcho: peer.isAstralEcho ?? true,
         visitorState: {
           archetype: peer.archetype,
           level: peer.level,
           inCombat: peer.inCombat,
           currentHp: peer.currentHp,
           maxHp: peer.maxHp,
+          isAstralEcho: peer.isAstralEcho ?? true,
         },
       },
       peer.transport,

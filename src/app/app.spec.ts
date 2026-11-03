@@ -642,6 +642,8 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
 
     it('should include herald greeting in the adventurer roster and Thunderpass encounters', () => {
       engine.setHeraldGreeting(0, 'Valiant', 'Wanderer', 'triumph');
+      // Enable echo bot so neighbor peer appears in adventurer roster
+      engine.toggleAstralEchoBot(true);
 
       // Check adventurer roster lists our motto
       engine.parseAndDispatchTerminalInput('who');
@@ -649,8 +651,9 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
       const youLine = feed.find((l) => l.text.includes('• You:'));
       expect(youLine?.text).toContain('May the Valiant Wanderer guide your journey.');
 
-      // Check neighbor peer motto
+      // Check neighbor peer motto and Astral Echo label
       const peerLine = feed.find((l) => l.text.includes('Kite_Zero'));
+      expect(peerLine?.text).toContain('[Astral Echo]');
       expect(peerLine?.text).toContain('Beware: Eldritch Shadow lurks ahead.');
 
       // Simulate a Thunderpass encounter and verify motto propagation
@@ -1978,6 +1981,60 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
 
       expect(mockDc1.send).toHaveBeenCalledTimes(1);
       expect(mockDc2.send).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Astral Echo Companion Bot & Mesh Presence', () => {
+    it('should default to OFF with authentic solo mesh and no ghost peers', () => {
+      localStorage.removeItem('linked_pocket_realms_astral_echo_bot');
+      engine.toggleAstralEchoBot(false);
+
+      expect(engine.astralEchoBotEnabled()).toBe(false);
+      expect(engine.hasActiveAstralEcho()).toBe(false);
+      expect(engine.astralEchoCount()).toBe(0);
+
+      engine.listAdventurersInRealm();
+      const feed = engine.terminalFeed();
+      const soloMsg = feed.find((l) =>
+        l.text.includes('No other adventurers detected in your mesh right now'),
+      );
+      expect(soloMsg).toBeDefined();
+    });
+
+    it('should toggle on Astral Echo bot, inject Kite_Zero with [Astral Echo] label, and persist', () => {
+      engine.toggleAstralEchoBot(true);
+
+      expect(engine.astralEchoBotEnabled()).toBe(true);
+      expect(localStorage.getItem('linked_pocket_realms_astral_echo_bot')).toBe('true');
+      expect(engine.hasActiveAstralEcho()).toBe(true);
+      expect(engine.astralEchoCount()).toBe(1);
+
+      const visitor = transport.activeVisitorsList().find((v) => v.peerId === 'peer-astral-echo');
+      expect(visitor).toBeDefined();
+      expect(visitor?.playerName).toBe('Kite_Zero');
+      expect(visitor?.isAstralEcho).toBe(true);
+
+      engine.listAdventurersInRealm();
+      const feed = engine.terminalFeed();
+      const echoLine = feed.find((l) => l.text.includes('Kite_Zero'));
+      expect(echoLine?.text).toContain('[Astral Echo]');
+    });
+
+    it('should toggle off Astral Echo bot via terminal command "bot off" and remove peer from mesh', () => {
+      engine.toggleAstralEchoBot(true);
+      expect(engine.astralEchoBotEnabled()).toBe(true);
+
+      engine.parseAndDispatchTerminalInput('bot off');
+      expect(engine.astralEchoBotEnabled()).toBe(false);
+      expect(localStorage.getItem('linked_pocket_realms_astral_echo_bot')).toBe('false');
+      expect(engine.hasActiveAstralEcho()).toBe(false);
+      expect(transport.activeVisitorsList().some((v) => v.peerId === 'peer-astral-echo')).toBe(
+        false,
+      );
+
+      engine.parseAndDispatchTerminalInput('echo on');
+      expect(engine.astralEchoBotEnabled()).toBe(true);
+      expect(engine.hasActiveAstralEcho()).toBe(true);
     });
   });
 });
