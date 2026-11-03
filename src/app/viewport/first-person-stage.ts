@@ -292,6 +292,15 @@ export class FirstPersonStageComponent {
     this.selectedItem.set(null);
   }
 
+  takeAllItems(): void {
+    this.engine.dispatchCommandIntent({
+      type: 'TAKE_ALL_ITEMS',
+      rawInput: 'take all',
+      source: 'HUD',
+    });
+    this.selectedItem.set(null);
+  }
+
   pruneCurrentRoom(): void {
     this.engine.dispatchCommandIntent({
       type: 'PRUNE_ROOM',

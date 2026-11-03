@@ -1254,14 +1254,36 @@
         <span class="target-label"
           >Item: <strong>{{ it.name }}</strong> ({{ it.rarity }})</span
         >
-        <button
-          type="button"
-          class="action-pill take-pill"
-          (click)="takeItem(it)"
-          data-testid="fp-action-take"
-        >
-          ✋ Take Item
-        </button>
+        @if (currentRoom().items.length > 1) {
+          <button
+            type="button"
+            class="action-pill take-all-pill"
+            (click)="takeAllItems()"
+            data-testid="fp-action-take-all"
+            title="Take all items from this room"
+          >
+            📦 Take All ({{ currentRoom().items.length }})
+          </button>
+          <button
+            type="button"
+            class="action-pill take-pill"
+            (click)="takeItem(it)"
+            data-testid="fp-action-take"
+            title="Take only this item"
+          >
+            ✋ Take This
+          </button>
+        } @else {
+          <button
+            type="button"
+            class="action-pill take-pill"
+            (click)="takeItem(it)"
+            data-testid="fp-action-take"
+            title="Collect this item into inventory"
+          >
+            ✋ Take Item
+          </button>
+        }
         <button
           type="button"
           class="action-pill inspect-pill"

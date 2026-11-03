@@ -979,6 +979,19 @@
                     ⚔️ {{ mob.name }} [HP {{ mob.hp }}/{{ mob.maxHp }}]
                   </button>
                 }
+                @if (engine.currentRoom().items.length > 1) {
+                  <button
+                    type="button"
+                    class="narrative-chip item-chip take-all-chip"
+                    (click)="onStageTakeAllItems()"
+                    [title]="
+                      'Take all ' + engine.currentRoom().items.length + ' items from this chamber'
+                    "
+                    data-testid="stage-take-all-chip"
+                  >
+                    📦 Take All ({{ engine.currentRoom().items.length }})
+                  </button>
+                }
                 @for (item of engine.currentRoom().items; track item.id) {
                   <button
                     type="button"
@@ -1195,6 +1208,25 @@
               }
 
               <!-- GROUND LOOT / ITEM CARDS -->
+              @if (engine.currentRoom().items.length > 1) {
+                <div class="loot-take-all-bar" data-testid="loot-take-all-bar">
+                  <div class="take-all-info">
+                    <span class="take-all-sigil">📦</span>
+                    <span
+                      ><strong>{{ engine.currentRoom().items.length }} Items</strong> on chamber
+                      floor</span
+                    >
+                  </div>
+                  <button
+                    type="button"
+                    class="entity-btn accent take-all-btn"
+                    (click)="onStageTakeAllItems()"
+                    data-testid="take-all-items-btn"
+                  >
+                    📦 Take All ({{ engine.currentRoom().items.length }})
+                  </button>
+                </div>
+              }
               @for (item of engine.currentRoom().items; track item.id) {
                 <div
                   class="entity-card loot-entity-card"
@@ -1220,8 +1252,13 @@
                       class="entity-btn accent"
                       (click)="onStageTakeItem(item)"
                       [attr.data-testid]="'take-item-btn-' + item.id"
+                      [title]="
+                        engine.currentRoom().items.length > 1
+                          ? 'Collect only this item into bag'
+                          : 'Collect this item into bag'
+                      "
                     >
-                      ✋ Take
+                      ✋ {{ engine.currentRoom().items.length > 1 ? 'Take This' : 'Take Item' }}
                     </button>
                     <button
                       type="button"

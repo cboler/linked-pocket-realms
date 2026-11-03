@@ -371,6 +371,17 @@
     }
   }
 
+  &.take-all-pill {
+    background: #ca8a04;
+    color: #0f172a;
+    border-color: #fde047;
+    font-weight: 700;
+
+    &:hover {
+      background: #eab308;
+    }
+  }
+
   &.barter-pill {
     background: #9333ea;
     color: #ffffff;

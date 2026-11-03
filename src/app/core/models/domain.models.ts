@@ -728,6 +728,7 @@ export type CommandActionType =
   | 'ATTACK'
   | 'CAST_SKILL'
   | 'TAKE_ITEM'
+  | 'TAKE_ALL_ITEMS'
   | 'EQUIP_ITEM'
   | 'REST_CAMPFIRE'
   | 'ENTER_PORTAL'
@@ -759,7 +760,7 @@ export interface TerminalFeedLine {
   badges?: {
     label: string;
     targetId: string;
-    actionType: 'INSPECT' | 'ATTACK' | 'TAKE_ITEM' | 'MOVE' | 'ENTER_PORTAL';
+    actionType: 'INSPECT' | 'ATTACK' | 'TAKE_ITEM' | 'TAKE_ALL_ITEMS' | 'MOVE' | 'ENTER_PORTAL';
     colorHex?: string;
   }[];
 }

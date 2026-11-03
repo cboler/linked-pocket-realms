@@ -986,6 +986,9 @@ export class MudEngineService implements OnDestroy {
       case 'TAKE_ITEM':
         this.takeRoomItem(intent.targetId);
         break;
+      case 'TAKE_ALL_ITEMS':
+        this.takeAllRoomItems();
+        break;
       case 'EQUIP_ITEM':
         if (intent.targetId) {
           this.equipInventoryItem(intent.targetId);
@@ -1113,6 +1116,27 @@ export class MudEngineService implements OnDestroy {
     if (verb === 'take' || verb === 'get' || verb === 'loot') {
       const query = parts.slice(1).join(' ').toLowerCase();
       const room = this.currentRoom();
+
+      if (query === 'all' || query === '*' || query === 'everything') {
+        const intent: CommandIntent = {
+          type: 'TAKE_ALL_ITEMS',
+          rawInput: trimmed,
+          source: 'TERMINAL',
+        };
+        this.dispatchCommandIntent(intent);
+        return intent;
+      }
+
+      if (!query && room.items.length > 1) {
+        const intent: CommandIntent = {
+          type: 'TAKE_ALL_ITEMS',
+          rawInput: trimmed,
+          source: 'TERMINAL',
+        };
+        this.dispatchCommandIntent(intent);
+        return intent;
+      }
+
       const matchedItem =
         room.items.find((it) => it.name.toLowerCase().includes(query)) ?? room.items[0];
       const intent: CommandIntent = {
@@ -2574,10 +2598,10 @@ export class MudEngineService implements OnDestroy {
       ? this.storage.enforceCustomsGateOnItem(targetItem, ruleset)
       : targetItem;
 
+    const remainingItems = room.items.filter((i) => i.id !== targetItem.id);
+
     this.rooms.update((all) =>
-      all.map((r) =>
-        r.id === room.id ? { ...r, items: r.items.filter((i) => i.id !== targetItem.id) } : r,
-      ),
+      all.map((r) => (r.id === room.id ? { ...r, items: remainingItems } : r)),
     );
 
     this.character.update((c) => ({
@@ -2602,10 +2626,69 @@ export class MudEngineService implements OnDestroy {
       };
     });
 
+    const remainderNote =
+      remainingItems.length > 0
+        ? ` (${remainingItems.length} item${remainingItems.length > 1 ? 's remain' : ' remains'} on ground)`
+        : '';
     this.appendFeed(
       'NARRATIVE',
-      `Collected [${processedItem.name}] (${processedItem.provenance}) into inventory.`,
+      `Collected [${processedItem.name}] (${processedItem.provenance}) into inventory${remainderNote}.`,
     );
+    void this.storage.saveCharacterState(this.character());
+  }
+
+  takeAllRoomItems(): void {
+    const room = this.currentRoom();
+    const itemsToTake = [...room.items];
+    if (itemsToTake.length === 0) {
+      this.appendFeed('SYSTEM', 'There are no items to collect here.');
+      return;
+    }
+
+    const ruleset = this.activeRealmDelta().ruleset;
+    const isExternal = this.isVisitingExternalRealm();
+    const processedItems = itemsToTake.map((it) =>
+      isExternal ? this.storage.enforceCustomsGateOnItem(it, ruleset) : it,
+    );
+
+    this.rooms.update((all) => all.map((r) => (r.id === room.id ? { ...r, items: [] } : r)));
+
+    this.character.update((c) => ({
+      ...c,
+      inventory: [...c.inventory, ...processedItems],
+    }));
+
+    this.telemetry.update((t) => {
+      const m = t.roomMetrics[room.id] ?? {
+        roomId: room.id,
+        visitorCount: 1,
+        playerDeaths: 0,
+        totalTimeSpentMs: 1000,
+        lootExtractedCount: 0,
+      };
+      return {
+        ...t,
+        roomMetrics: {
+          ...t.roomMetrics,
+          [room.id]: { ...m, lootExtractedCount: m.lootExtractedCount + itemsToTake.length },
+        },
+      };
+    });
+
+    const itemNames = processedItems.map((i) => `[${i.name}]`).join(', ');
+    if (processedItems.length === 1) {
+      this.appendFeed(
+        'NARRATIVE',
+        `Collected all room loot (1 item: ${itemNames}) into inventory.`,
+      );
+    } else {
+      this.appendFeed(
+        'NARRATIVE',
+        `📦 Collected all room loot (${processedItems.length} items: ${itemNames}) into inventory.`,
+      );
+    }
+
+    this.soundFx.playConvergenceChime();
     void this.storage.saveCharacterState(this.character());
   }
 

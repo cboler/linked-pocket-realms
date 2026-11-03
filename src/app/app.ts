@@ -1010,6 +1010,14 @@ export class App {
     });
   }
 
+  onStageTakeAllItems(): void {
+    this.engine.dispatchCommandIntent({
+      type: 'TAKE_ALL_ITEMS',
+      rawInput: 'take all',
+      source: 'HUD',
+    });
+  }
+
   onStageTakeAndEquipItem(item: EquipmentItem): void {
     this.engine.takeAndEquipRoomItem(item.id);
   }
@@ -1045,6 +1053,12 @@ export class App {
         rawInput: `take ${badge.targetId}`,
         source: 'HUD',
         targetId: badge.targetId,
+      });
+    } else if (badge.actionType === 'TAKE_ALL_ITEMS') {
+      this.engine.dispatchCommandIntent({
+        type: 'TAKE_ALL_ITEMS',
+        rawInput: 'take all',
+        source: 'HUD',
       });
     } else if (badge.actionType === 'ENTER_PORTAL') {
       this.engine.dispatchCommandIntent({

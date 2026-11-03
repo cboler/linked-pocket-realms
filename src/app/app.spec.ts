@@ -2037,4 +2037,117 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
       expect(engine.hasActiveAstralEcho()).toBe(true);
     });
   });
+
+  describe('Loot Collection Usability: Single Take vs Take All', () => {
+    it('should take a single item and note remaining items in narrative feed', () => {
+      const room = engine.currentRoom();
+      const mockItem1: EquipmentItem = {
+        id: 'test-loot-1',
+        name: 'Glimmering Dagger',
+        slot: 'Main-Hand',
+        rarity: 'Rare',
+        weight: 1,
+        totalStatBudget: 10,
+        statBonuses: { atkBonus: 5, DEX: 5 },
+        provenance: 'Verified Drop',
+        originGateAddress: 'Δ: Silent Fungal Observatory',
+        isLocked: false,
+      };
+      const mockItem2: EquipmentItem = {
+        id: 'test-loot-2',
+        name: 'Iron Aegis',
+        slot: 'Off-Hand',
+        rarity: 'Common',
+        weight: 2,
+        totalStatBudget: 8,
+        statBonuses: { mitigationBonus: 8 },
+        provenance: 'Verified Drop',
+        originGateAddress: 'Δ: Silent Fungal Observatory',
+        isLocked: false,
+      };
+
+      engine.rooms.update((all) =>
+        all.map((r) => (r.id === room.id ? { ...r, items: [mockItem1, mockItem2] } : r)),
+      );
+
+      const invBefore = engine.character().inventory.length;
+      engine.takeRoomItem('test-loot-1');
+
+      expect(engine.character().inventory.length).toBe(invBefore + 1);
+      expect(engine.currentRoom().items.length).toBe(1);
+      expect(engine.currentRoom().items[0].id).toBe('test-loot-2');
+
+      const feed = engine.terminalFeed();
+      const takeFeed = feed.find((l) => l.text.includes('Collected [Glimmering Dagger]'));
+      expect(takeFeed).toBeDefined();
+      expect(takeFeed?.text).toContain('(1 item remains on ground)');
+    });
+
+    it('should sweep all room items via takeAllRoomItems() and log total item count', () => {
+      const room = engine.currentRoom();
+      const mockItem1: EquipmentItem = {
+        id: 'test-sweep-1',
+        name: 'Obsidian Scythe',
+        slot: 'Main-Hand',
+        rarity: 'Mythic',
+        weight: 3,
+        totalStatBudget: 24,
+        statBonuses: { atkBonus: 24 },
+        provenance: 'Verified Drop',
+        originGateAddress: 'Δ: Silent Fungal Observatory',
+        isLocked: false,
+      };
+      const mockItem2: EquipmentItem = {
+        id: 'test-sweep-2',
+        name: 'Astral Pauldrons',
+        slot: 'Chest',
+        rarity: 'Rare',
+        weight: 2,
+        totalStatBudget: 14,
+        statBonuses: { VIT: 14 },
+        provenance: 'Verified Drop',
+        originGateAddress: 'Δ: Silent Fungal Observatory',
+        isLocked: false,
+      };
+
+      engine.rooms.update((all) =>
+        all.map((r) => (r.id === room.id ? { ...r, items: [mockItem1, mockItem2] } : r)),
+      );
+
+      const invBefore = engine.character().inventory.length;
+      engine.takeAllRoomItems();
+
+      expect(engine.character().inventory.length).toBe(invBefore + 2);
+      expect(engine.currentRoom().items.length).toBe(0);
+
+      const feed = engine.terminalFeed();
+      const sweepFeed = feed.find((l) => l.text.includes('Collected all room loot'));
+      expect(sweepFeed).toBeDefined();
+      expect(sweepFeed?.text).toContain('[Obsidian Scythe]');
+      expect(sweepFeed?.text).toContain('[Astral Pauldrons]');
+    });
+
+    it('should execute takeAllRoomItems via terminal command "take all" or "loot all"', () => {
+      const room = engine.currentRoom();
+      const mockItem1: EquipmentItem = {
+        id: 'test-cmd-1',
+        name: 'Chrono Ring',
+        slot: 'Relic 1',
+        rarity: 'Relic',
+        weight: 1,
+        totalStatBudget: 18,
+        statBonuses: { INT: 18 },
+        provenance: 'Verified Drop',
+        originGateAddress: 'Δ: Silent Fungal Observatory',
+        isLocked: false,
+      };
+      engine.rooms.update((all) =>
+        all.map((r) => (r.id === room.id ? { ...r, items: [mockItem1] } : r)),
+      );
+
+      engine.parseAndDispatchTerminalInput('take all');
+      expect(engine.currentRoom().items.length).toBe(0);
+      expect(engine.character().inventory.some((i) => i.id === 'test-cmd-1')).toBe(true);
+    });
+  });
 });
