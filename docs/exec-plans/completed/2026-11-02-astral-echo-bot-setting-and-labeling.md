@@ -68,4 +68,3 @@ Previously, `MudEngineService.constructor()` unconditionally injected a mock pee
 
 - **Ceiling / Known Limitation**: The bot is currently a passive beacon / traversal anchor. Autonomous action loops (AFK area management, simulation of time passing) will build upon this toggle in future milestones.
 - **Rollback Strategy**: Revert changes via Git if regressions are detected.
-
