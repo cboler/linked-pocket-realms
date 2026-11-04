@@ -1,9 +1,12 @@
 import { CommonModule, DatePipe } from '@angular/common';
-import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
+  ArchetypeClass,
   AtmospherePrefix,
   BiomeNoun,
+  EchoCompanion,
+  EchoJob,
   EquipmentItem,
   HERALD_ADJECTIVES,
   HERALD_NOUNS,
@@ -18,6 +21,7 @@ import {
 import {
   ATMOSPHERE_PREFIXES,
   BIOME_NOUNS,
+  CLASS_UTILITY,
   ChaosGateService,
   SERVER_ERAS,
   STRUCTURAL_THEMES,
@@ -32,6 +36,7 @@ import {
   TransportService,
 } from '../../core/services/transport.service';
 import { generateQrMatrix, generateQrSvgPath } from '../../core/utils/qr-code.util';
+import { ECHO_TUNING, jobUnlocked } from '../../core/services/astral-echo';
 
 @Component({
   selector: 'app-resonance-loom-modal',
@@ -48,9 +53,15 @@ export class ResonanceLoomModalComponent implements OnDestroy {
   readonly storage = inject(StorageService);
   readonly soundFx = inject(SoundFxService);
 
-  readonly loomActiveTab = signal<'WEAVER' | 'WEBRTC' | 'THUNDERPASS' | 'OVERGROWTH' | 'SPORE'>(
-    'WEBRTC',
-  );
+  readonly loomActiveTab = signal<
+    'WEAVER' | 'WEBRTC' | 'THUNDERPASS' | 'OVERGROWTH' | 'SPORE' | 'ECHO'
+  >('WEBRTC');
+  readonly echoNameInput = signal<string>('');
+  readonly routeNameInput = signal<string>('');
+  readonly archetypes: ArchetypeClass[] = ['Vanguard', 'Chronomancer', 'Hexblade', 'Artificer'];
+  readonly classUtility = CLASS_UTILITY;
+  readonly satchelCap = ECHO_TUNING.SATCHEL_CAP;
+  readonly farmUnlockLevel = ECHO_TUNING.FARM_UNLOCK_LEVEL;
   readonly shareConfirmationMessage = signal<string>('');
   readonly exportedCartridgeText = signal<string>('');
   readonly remoteHandshakeInput = signal<string>('');
@@ -175,6 +186,13 @@ export class ResonanceLoomModalComponent implements OnDestroy {
   );
 
   constructor() {
+    // "Talk" on the Echo opens this drawer on the Echo tab.
+    effect(() => {
+      if (this.engine.pendingLoomTab() === 'ECHO') {
+        this.engine.pendingLoomTab.set(null);
+        this.setLoomActiveTab('ECHO');
+      }
+    });
     this.refreshCartridgeText();
     // The lobby is only fetched while its tab is on screen.
     this.transport.setLobbyBrowsing(this.loomActiveTab() === 'WEBRTC');
@@ -184,7 +202,26 @@ export class ResonanceLoomModalComponent implements OnDestroy {
     this.transport.setLobbyBrowsing(false);
   }
 
-  setLoomActiveTab(tab: 'WEAVER' | 'WEBRTC' | 'THUNDERPASS' | 'OVERGROWTH' | 'SPORE'): void {
+  isJobUnlocked(echo: EchoCompanion, job: EchoJob): boolean {
+    return jobUnlocked(echo, job);
+  }
+
+  jobDescription(job: EchoJob): string {
+    switch (job.kind) {
+      case 'FOLLOW':
+        return 'Stays with you and fights your target';
+      case 'SCOUT':
+        return "Explores rooms you haven't seen";
+      case 'FARM':
+        return 'Clears rooms and collects loot';
+      default:
+        return `${job.route?.length ?? 0} rooms${job.fight ? ', fights' : ''}${job.loot ? ', loots' : ''}`;
+    }
+  }
+
+  setLoomActiveTab(
+    tab: 'WEAVER' | 'WEBRTC' | 'THUNDERPASS' | 'OVERGROWTH' | 'SPORE' | 'ECHO',
+  ): void {
     this.loomActiveTab.set(tab);
     this.transport.setLobbyBrowsing(tab === 'WEBRTC');
     if (tab === 'WEAVER') {

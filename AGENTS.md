@@ -26,7 +26,8 @@ linked-pocket-realms/
 │   └── exec-plans/{active,completed}/
 ├── e2e/
 │   ├── smoke.spec.ts         # Playwright journey across phone portrait/landscape, tablet, desktop
-│   └── multiplayer.spec.ts   # Two browsers over real WebRTC (project `multiplayer`)
+│   ├── multiplayer.spec.ts   # Two browsers over real WebRTC (project `multiplayer`)
+│   └── echo.spec.ts          # Wake the Astral Echo, talk to it, send it scouting
 ├── public/                   # manifest.webmanifest, favicon, PWA icons
 ├── scripts/
 │   ├── prepare-pages.mjs     # Generates 404.html SPA fallback for GitHub Pages
@@ -41,7 +42,8 @@ linked-pocket-realms/
 │   │   │   ├── config/runtime.config.ts      # Default broker URL (stamped by cloud-function deploy scripts)
 │   │   │   ├── models/domain.models.ts       # All domain types (rooms, items, realm deltas, packets...)
 │   │   │   ├── services/
-│   │   │   │   ├── mud-engine.service.ts     # Game engine: commands, ATB combat, movement, loot, growth, P2P handling
+│   │   │   │   ├── mud-engine.service.ts     # Game engine: commands, ATB combat, movement, loot, chests, respawns, Echo wiring, P2P
+│   │   │   │   ├── astral-echo.ts            # Pure Astral Echo simulation (jobs, fights, catch-up) and tuning
 │   │   │   │   ├── chaos-gate.service.ts     # Seeded (Mulberry32) dungeon generation from 3-word addresses
 │   │   │   │   ├── storage.service.ts        # IndexedDB key-value store, cartridges, ECDSA signing, Customs Gate clamp
 │   │   │   │   ├── transport.service.ts      # Links (star mesh), handshake codes, validation, frugal broker client
@@ -49,7 +51,8 @@ linked-pocket-realms/
 │   │   │   │   ├── legend-registry.service.ts# Shared map legend glyphs + per-realm custom symbols
 │   │   │   │   ├── sound-fx.service.ts       # Synthesized Web Audio effects
 │   │   │   │   ├── realm-persistence.spec.ts # Reload/visit persistence tests
-│   │   │   │   └── mesh-authority.spec.ts    # Host authority, relay, link loss, broker budget tests
+│   │   │   │   ├── mesh-authority.spec.ts    # Host authority, relay, link loss, broker budget, carry, chest-via-host tests
+│   │   │   │   └── echo-and-chests.spec.ts   # Respawns, drops, sealed chests, Echo jobs/catch-up/revival tests
 │   │   │   └── utils/qr-code.util.ts         # Dependency-free SVG QR generator
 │   │   ├── hud/
 │   │   │   ├── node-map-graph/               # Full SVG dungeon map

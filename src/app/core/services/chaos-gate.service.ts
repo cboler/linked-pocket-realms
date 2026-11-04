@@ -1,7 +1,10 @@
 import { Injectable } from '@angular/core';
 import {
+  ArchetypeClass,
   AtmospherePrefix,
   BiomeNoun,
+  ChestSeal,
+  LockedChest,
   ChaosGateAddress,
   ConjunctionAnomaly,
   CoreLegendType,
@@ -394,6 +397,58 @@ const BIOME_META: Record<
 /**
  * Deterministic 32-bit PRNG (Mulberry32)
  */
+/** Which classes can open each chest seal, and how. */
+export const CHEST_SEAL_RULES: Record<
+  ChestSeal,
+  {
+    classes: ArchetypeClass[];
+    action: string;
+    verb: string;
+    staminaCost: number;
+    needsLockpick: boolean;
+    icon: string;
+  }
+> = {
+  LOCK: {
+    classes: ['Hexblade', 'Artificer'],
+    action: 'Pick the lock',
+    verb: 'pick',
+    staminaCost: 0,
+    needsLockpick: true,
+    icon: '🔒',
+  },
+  ARCANE: {
+    classes: ['Chronomancer'],
+    action: 'Dispel the seal',
+    verb: 'dispel',
+    staminaCost: 20,
+    needsLockpick: false,
+    icon: '🔮',
+  },
+  HEAVY: {
+    classes: ['Vanguard'],
+    action: 'Force it open',
+    verb: 'force',
+    staminaCost: 25,
+    needsLockpick: false,
+    icon: '⛓',
+  },
+};
+
+/** One-line utility skill per class, shown on the new-game screen. */
+export const CLASS_UTILITY: Record<ArchetypeClass, string> = {
+  Vanguard: 'Forces barred chests open',
+  Chronomancer: 'Dispels arcane seals',
+  Hexblade: 'Picks locks (needs lockpicks)',
+  Artificer: 'Picks locks (needs lockpicks)',
+};
+
+/** Chance a lockpick attempt succeeds. A failed attempt breaks the pick. */
+export function lockpickChance(dex: number, per: number, tier: number): number {
+  const chance = 0.55 + 0.02 * (dex + per - 20) - 0.15 * (Math.max(1, tier) - 1);
+  return Math.max(0.15, Math.min(0.95, chance));
+}
+
 export function createMulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return function () {
@@ -2130,7 +2185,58 @@ export class ChaosGateService {
   /**
    * Deterministically grows the base dungeon up to stage 1..10 (expanding up to 30+ rooms)
    */
+  /** Rooms for a realm at a growth stage, including its sealed chests. */
   growRealmToStage(address: ChaosGateAddress, growthStage = 1, delta?: RealmDelta): RoomNode[] {
+    return this.addLockedChests(this.growRealmToStageBase(address, growthStage, delta), address);
+  }
+
+  /**
+   * Seeded per realm and room, so the host and every visitor generate the same chests.
+   * Treasure vaults always have one; most other rooms have a small chance.
+   */
+  addLockedChests(rooms: RoomNode[], address: ChaosGateAddress): RoomNode[] {
+    const eraMeta = SERVER_ERAS[address.era];
+    const seals: ChestSeal[] = ['LOCK', 'LOCK', 'ARCANE', 'HEAVY'];
+    const names: Record<ChestSeal, string> = {
+      LOCK: 'Iron-banded strongbox',
+      ARCANE: 'Rune-sealed coffer',
+      HEAVY: 'Barred war chest',
+    };
+    return rooms.map((room) => {
+      if (
+        room.chests ||
+        room.isExpedition ||
+        room.isOvergrowth ||
+        room.legendType === 'anchor-portal' ||
+        room.legendType === 'safe-campfire'
+      ) {
+        return room;
+      }
+      const prng = createMulberry32(hashChaosGateSeed(`${address.formatted}|chest|${room.id}`));
+      const roll = prng();
+      if (room.legendType !== 'treasure-vault' && roll > 0.18) return room;
+      const seal = seals[Math.floor(prng() * seals.length)];
+      const tier = Math.min(3, 1 + Math.floor(eraMeta.levelTier / 8) + (prng() < 0.3 ? 1 : 0));
+      const chest: LockedChest = {
+        id: `chest-${room.id}`,
+        name: names[seal],
+        seal,
+        tier,
+        items: [
+          this.createDeterministicItem(`chest-item-${room.id}`, address, eraMeta, prng, tier >= 3),
+        ],
+        lockpicks: Math.floor(prng() * 3),
+        opened: false,
+      };
+      return { ...room, chests: [chest] };
+    });
+  }
+
+  private growRealmToStageBase(
+    address: ChaosGateAddress,
+    growthStage = 1,
+    delta?: RealmDelta,
+  ): RoomNode[] {
     const clampedStage = Math.max(1, Math.min(10, Math.floor(growthStage || 1)));
     const baseRooms = this.generateRealm(address);
     if (clampedStage === 1 && !delta) {

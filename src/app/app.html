@@ -548,6 +548,14 @@
               title="Perception (PER): Unlocks hidden room exits, trap warnings, and enemy elemental weaknesses in the Inspector Lens."
               >PER {{ engine.effectiveAttributes().PER }}</span
             >
+            @if ((engine.character().lockpicks ?? 0) > 0 || canPickLocks()) {
+              <span
+                class="stat-chip"
+                title="Lockpicks: Hexblades and Artificers use them on locked chests. A failed try breaks one."
+                data-testid="lockpick-count"
+                >🗝 {{ engine.character().lockpicks ?? 0 }}</span
+              >
+            }
           </div>
         </div>
 
@@ -604,6 +612,72 @@
       <!-- ZONE 1 (TOP): THE PERSISTENT ROOM STAGE (ALWAYS VISIBLE, NEVER SCROLLS OFF) -->
       <!-- ===================================================================== -->
       <div class="persistent-room-stage" data-testid="persistent-room-stage">
+        <!-- DOWNED: wait for help, or get up at the campfire you were carried to -->
+        @if (engine.playerDowned(); as down) {
+          <div class="status-banner downed-banner" role="alert" data-testid="downed-card">
+            @if (down.campfireOffer; as offer) {
+              <p>
+                ♨ <strong>{{ offer.byName }}</strong> brought you to a campfire. Get up here?
+              </p>
+              <div class="arch-row">
+                <button
+                  type="button"
+                  class="mini-action-btn accent"
+                  (click)="engine.acceptCampfireRevival()"
+                  data-testid="campfire-getup-btn"
+                >
+                  ♨ Get up here
+                </button>
+                <button
+                  type="button"
+                  class="mini-action-btn"
+                  (click)="engine.respawnAtEntrance('You go back to the entrance.')"
+                  data-testid="downed-entrance-btn"
+                >
+                  Go to the entrance
+                </button>
+              </div>
+            } @else {
+              <p>
+                ☠ You're down.
+                @if (down.carriedBy) {
+                  {{ down.carriedBy.name }} is carrying you to a campfire.
+                } @else {
+                  Another player can carry you to a campfire.
+                }
+              </p>
+              <button
+                type="button"
+                class="mini-action-btn"
+                (click)="engine.respawnAtEntrance('You go back to the entrance.')"
+                data-testid="downed-entrance-btn"
+              >
+                Go to the entrance
+              </button>
+            }
+          </div>
+        }
+
+        <!-- ASTRAL ECHO: what it did while you were away -->
+        @if (engine.echoAwayReport(); as report) {
+          <div class="status-banner echo-report-banner" data-testid="echo-away-report">
+            <p>🤖 {{ engine.describeAwayReport(report) }}</p>
+            <div class="arch-row">
+              <button type="button" class="mini-action-btn accent" (click)="engine.openEchoPanel()">
+                💬 Talk
+              </button>
+              <button
+                type="button"
+                class="mini-action-btn"
+                (click)="engine.echoAwayReport.set(null)"
+                data-testid="dismiss-echo-report"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        }
+
         <!-- STAGE VIEWPORT SELECTOR (1st-Person / Card Stage) -->
         <div
           class="stage-lens-bar"
@@ -1014,6 +1088,49 @@
                     ✍ &ldquo;{{
                       inscr.text.length > 24 ? inscr.text.slice(0, 22) + '…' : inscr.text
                     }}&rdquo; ({{ inscr.authorName }})
+                  </button>
+                }
+                @for (chest of engine.currentRoom().chests || []; track chest.id) {
+                  @if (!chest.opened) {
+                    <button
+                      type="button"
+                      class="narrative-chip item-chip chest-chip"
+                      (click)="engine.openChest(chest.id)"
+                      [title]="chestActionLabel(chest)"
+                      [attr.data-testid]="'chest-chip-' + chest.id"
+                    >
+                      {{ chestIcon(chest) }} {{ chest.name }}: {{ chestActionLabel(chest) }}
+                    </button>
+                  }
+                }
+                @for (peer of engine.peersInCurrentRoom(); track peer.peerId) {
+                  @if (peer.downed) {
+                    <button
+                      type="button"
+                      class="narrative-chip mob-chip"
+                      (click)="engine.carryPeer(peer.peerId)"
+                      [attr.data-testid]="'carry-chip-' + peer.peerId"
+                    >
+                      🤲 Carry {{ peer.playerName }} to a campfire
+                    </button>
+                  } @else if (peer.peerId === echoPeerId) {
+                    <button
+                      type="button"
+                      class="narrative-chip chalk-chip"
+                      (click)="engine.openEchoPanel()"
+                      data-testid="talk-echo-chip"
+                    >
+                      🤖 Talk to {{ peer.playerName }}
+                    </button>
+                  }
+                }
+                @if (engine.carryingPeer(); as carrying) {
+                  <button
+                    type="button"
+                    class="narrative-chip chalk-chip"
+                    (click)="engine.dropCarriedPeer()"
+                  >
+                    Put {{ carrying.name }} down
                   </button>
                 }
                 @if (engine.currentRoom().legendType === 'safe-campfire') {
@@ -2304,6 +2421,7 @@
                   <strong>{{ arch }}</strong>
                 </div>
                 <p class="cc-blurb">{{ classBlurbs[arch] }}</p>
+                <p class="cc-utility">🗝 {{ classUtility[arch] }}</p>
                 <div class="cc-stats">
                   <span>STR {{ meta.baseAttributes.STR }}</span>
                   <span>DEX {{ meta.baseAttributes.DEX }}</span>

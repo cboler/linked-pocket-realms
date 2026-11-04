@@ -707,6 +707,7 @@
       @for (peer of engine.peersInCurrentRoom(); track peer.peerId; let idx = $index) {
         <g
           class="live-peer-adventurer"
+          [class.downed]="peer.downed"
           role="button"
           tabindex="0"
           (click)="selectPeer(peer)"
@@ -746,8 +747,8 @@
             fill="#34d399"
           />
           <text x="25" y="8" text-anchor="middle" fill="#6ee7b7" font-size="9" font-weight="bold">
-            👤 {{ peer.playerName
-            }}{{ peer.isAstralEcho || peer.peerId === 'peer-astral-echo' ? ' [Echo]' : '' }}
+            {{ peer.isAstralEcho ? '🤖' : '👤' }} {{ peer.playerName
+            }}{{ peer.isAstralEcho ? ' [Echo]' : '' }}{{ peer.downed ? ' (down)' : '' }}
           </text>
           <text x="25" y="103" text-anchor="middle" fill="#a7f3d0" font-size="7">
             {{ peer.archetype }} Lv.{{ peer.level }}
@@ -992,6 +993,7 @@
       @for (peer of engine.peersInCurrentRoom(); track peer.peerId; let idx = $index) {
         <g
           class="live-peer-adventurer"
+          [class.downed]="peer.downed"
           role="button"
           tabindex="0"
           (click)="selectPeer(peer)"
@@ -1031,8 +1033,8 @@
             fill="#34d399"
           />
           <text x="25" y="8" text-anchor="middle" fill="#6ee7b7" font-size="9" font-weight="bold">
-            👤 {{ peer.playerName
-            }}{{ peer.isAstralEcho || peer.peerId === 'peer-astral-echo' ? ' [Echo]' : '' }}
+            {{ peer.isAstralEcho ? '🤖' : '👤' }} {{ peer.playerName
+            }}{{ peer.isAstralEcho ? ' [Echo]' : '' }}{{ peer.downed ? ' (down)' : '' }}
           </text>
           <text x="25" y="103" text-anchor="middle" fill="#a7f3d0" font-size="7">
             {{ peer.archetype }} Lv.{{ peer.level }}
@@ -1102,6 +1104,44 @@
           <circle cx="24" cy="18" r="3" fill="#fde047" />
           <text x="24" y="42" text-anchor="middle" fill="#fde047" font-size="10" font-weight="bold">
             {{ item.name }}
+          </text>
+        </g>
+      }
+
+      <!-- 3b. Sealed chests: some loot only certain classes can open -->
+      @for (chest of currentRoom().chests || []; track chest.id; let idx = $index) {
+        <g
+          class="ground-item-chest sealed-chest"
+          [class.opened]="chest.opened"
+          (click)="engine.openChest(chest.id)"
+          (keydown.enter)="engine.openChest(chest.id)"
+          role="button"
+          tabindex="0"
+          [attr.aria-label]="(chest.opened ? 'Opened ' : 'Sealed ') + chest.name"
+          [attr.data-testid]="'fp-chest-' + chest.id"
+          [attr.transform]="'translate(' + (150 + idx * 70) + ', 338)'"
+        >
+          <rect
+            x="4"
+            y="12"
+            width="46"
+            height="28"
+            rx="4"
+            [attr.fill]="chest.opened ? '#27272a' : '#451a03'"
+            [attr.stroke]="sealColor(chest)"
+            stroke-width="2"
+          />
+          <path
+            d="M4,22 Q27,4 50,22"
+            fill="none"
+            [attr.stroke]="sealColor(chest)"
+            stroke-width="1.5"
+          />
+          <text x="27" y="32" text-anchor="middle" font-size="12">
+            {{ chest.opened ? '✓' : sealIcon(chest) }}
+          </text>
+          <text x="27" y="52" text-anchor="middle" fill="#fde68a" font-size="9" font-weight="bold">
+            {{ chest.name }}
           </text>
         </g>
       }
@@ -1353,6 +1393,26 @@
             peer.level
           }})</span
         >
+        @if (peer.isAstralEcho && peer.peerId === echoPeerId) {
+          <button
+            type="button"
+            class="action-pill greet-pill"
+            (click)="engine.openEchoPanel()"
+            data-testid="fp-action-talk-echo"
+          >
+            💬 Talk
+          </button>
+        }
+        @if (peer.downed) {
+          <button
+            type="button"
+            class="action-pill take-pill"
+            (click)="engine.carryPeer(peer.peerId)"
+            data-testid="fp-action-carry"
+          >
+            🤲 Carry to a campfire
+          </button>
+        }
         <button
           type="button"
           class="action-pill greet-pill"

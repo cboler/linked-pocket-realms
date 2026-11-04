@@ -642,7 +642,7 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
 
     it('should include herald greeting in the adventurer roster and Thunderpass encounters', () => {
       engine.setHeraldGreeting(0, 'Valiant', 'Wanderer', 'triumph');
-      // Enable echo bot so neighbor peer appears in adventurer roster
+      // The Astral Echo lives in your realm and appears in the roster
       engine.toggleAstralEchoBot(true);
 
       // Check adventurer roster lists our motto
@@ -651,10 +651,9 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
       const youLine = feed.find((l) => l.text.includes('• You:'));
       expect(youLine?.text).toContain('May the Valiant Wanderer guide your journey.');
 
-      // Check neighbor peer motto and Astral Echo label
+      // The companion is labeled as an Astral Echo
       const peerLine = feed.find((l) => l.text.includes('Kite_Zero'));
       expect(peerLine?.text).toContain('[Astral Echo]');
-      expect(peerLine?.text).toContain('Beware: Eldritch Shadow lurks ahead.');
 
       // Simulate a Thunderpass encounter and verify motto propagation
       thunderpass.simulateThunderpassCollision('Motto_Traveler', 'Ω: Scorching Clockwork Crucible');
@@ -1912,13 +1911,27 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
         playerName: 'Aria_Swift',
         archetype: 'Hexblade',
         level: 5,
-        gateAddress: 'Ψ: Astral Clockwork Spire',
+        gateAddress: engine.activeGateAddress().formatted,
         currentRoomId: currentRoomId,
         inCombat: false,
         lastSeenMs: Date.now(),
         transport: 'BroadcastChannel',
         currentHp: 180,
         maxHp: 200,
+      });
+
+      // Same room id in another realm is a different room
+      transport.injectSimulatedPeerBeacon({
+        peerId: 'peer-elsewhere',
+        playerName: 'Far_Away',
+        archetype: 'Vanguard',
+        level: 2,
+        gateAddress: 'Ψ: Astral Clockwork Spire',
+        currentRoomId: currentRoomId,
+        inCombat: false,
+        lastSeenMs: Date.now(),
+        transport: 'BroadcastChannel',
+        isAstralEcho: false,
       });
 
       const peersInRoom = engine.peersInCurrentRoom();
@@ -2014,10 +2027,12 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
       expect(engine.hasActiveAstralEcho()).toBe(true);
       expect(engine.astralEchoCount()).toBe(1);
 
-      const visitor = transport.activeVisitorsList().find((v) => v.peerId === 'peer-astral-echo');
-      expect(visitor).toBeDefined();
-      expect(visitor?.playerName).toBe('Kite_Zero');
-      expect(visitor?.isAstralEcho).toBe(true);
+      // The companion lives in your realm (not on the network)
+      const companion = engine.localEchoPeer();
+      expect(companion).toBeDefined();
+      expect(companion?.playerName).toBe('Kite_Zero');
+      expect(companion?.isAstralEcho).toBe(true);
+      expect(companion?.gateAddress).toBe(engine.homeGateAddress().formatted);
 
       engine.listAdventurersInRealm();
       const feed = engine.terminalFeed();

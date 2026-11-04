@@ -22,6 +22,7 @@ Each record outlines the context, rationale, consequences, and trade-offs of sig
 - [ADR-012: Astral Echo Companion Bot Toggle Setting and Universal Mesh Labeling](#adr-012-astral-echo-companion-bot-toggle-setting-and-universal-mesh-labeling)
 - [ADR-013: Per-Player Realm Progress and Home-Safe Realm Saves](#adr-013-per-player-realm-progress-and-home-safe-realm-saves)
 - [ADR-014: Host-Authority Star Mesh, Frugal Broker Use, and No TURN (Yet)](#adr-014-host-authority-star-mesh-frugal-broker-use-and-no-turn-yet)
+- [ADR-015: Astral Echo Pawn Companion, Room Respawns, Class-Sealed Chests, and Campfire Revival](#adr-015-astral-echo-pawn-companion-room-respawns-class-sealed-chests-and-campfire-revival)
 
 ---
 
@@ -427,6 +428,30 @@ Direct play did not work: connection codes were made before ICE gathering, so th
 - **Positive**: Real multi-visitor play with one source of truth per realm; no loot duplication between visitors; small, predictable broker cost; codes work without the broker at all.
 - **Trade-offs**: Host bandwidth and CPU grow with visitors (capped at 8). If the host's tab sleeps, visitors lose authority and fall back to an offline copy. Lobby joins can take up to ~20 s (one host heartbeat). Symmetric-NAT networks cannot connect until a TURN relay exists. The server ceiling is per instance and resets on cold start, so client-side discipline is the main guarantee. Statuses and severed anatomy parts are still simulated per player; only HP, kills, and loot are authoritative.
 - **TURN, if added later**: prefer a managed relay with a free allowance and short-lived credentials minted by the existing broker, used only as an ICE fallback; avoid self-hosting coturn on the free e2-micro, whose 1 GB/month egress allowance is easy to exceed with relayed traffic.
+
+---
+
+## ADR-015: Astral Echo Pawn Companion, Room Respawns, Class-Sealed Chests, and Campfire Revival
+
+### Status
+
+Accepted (supersedes the fake neighbor beacon in ADR-012; amends ADR-013's "cleared rooms stay cleared")
+
+### Context
+
+The owner wanted the Astral Echo to become a pawn-like companion: it levels up, works when left unattended, can be talked to, and does jobs it knows or was taught (including farming the dungeon and handing over loot). Farming needs monsters to come back, but ADR-013 made cleared rooms permanent. The owner also asked for loot only some classes can reach (locked chests, lockpicking, lockpicks), and for fallen characters to be carried to a campfire and revived there, the same way for players and the Echo, with the fallen player asked before getting up.
+
+### Decision
+
+1. **Respawns.** `RealmProgress` records when each monster fell (`defeatedAt`). Regular monsters return after 60 minutes, bosses after 24 hours, checked every minute (never in the room you're standing in) and on load. Refilled monsters are restored from a pristine copy. Old saves migrate: kills without times start their cooldown at load. Floor items still never come back; new loot comes from seeded drops (25% item, 10% lockpick per regular kill).
+2. **Sealed chests.** Generated per realm and room from the seed (treasure vaults always; other rooms 18%), so host and visitors agree. `LOCK` needs a Hexblade or Artificer plus a lockpick (`lockpickChance` from DEX, PER, and tier; a failure breaks the pick). `ARCANE` needs a Chronomancer (20 stamina). `HEAVY` needs a Vanguard (25 stamina). Opened chests are saved and never refill; their loot goes to the floor. In a hosted realm the host checks the visitor's class and opens it.
+3. **The Echo lives in your home realm.** A pure, deterministic `stepEcho()` (in `astral-echo.ts`) runs live every 2 s and catches up after time away in 30 s steps, capped at 8 hours, with a report when more than 5 minutes passed. Its effects go through the engine's normal paths (kills recorded so rooms refill; broadcasts while hosting). Jobs: Follow, Scout, Farm (level 3+), and Routes taught with "Watch me". It is about 70% as strong as a player, retreats to rest when hurt, keeps lockpicks for chests its class can open, and hands over its satchel on request. It never uses the network. It's saved at `astral_echo_state`.
+4. **Downed and carried.** A fallen Echo is down for 5 minutes, or revives at once if carried to a campfire. A fallen player: if their Echo is up, it carries them to the nearest campfire; if other players are in the realm, the player stays down where they fell (monsters ignore them) and anyone can carry them; otherwise they wake at the entrance as before. Arriving at a campfire with a carrier prompts the fallen player to get up there or go to the entrance. Carrying between players uses targeted `CARRY_START` / `CARRY_DROP` packets and presence beacons (`downed`, `carriedBy`); a downed player waits up to 3 minutes for help.
+
+### Consequences
+
+- **Positive**: Farming and the Echo give the dungeon a reason to revisit; class choice matters for loot; dying in company becomes a cooperative moment instead of a teleport.
+- **Trade-offs**: Respawns mean cleared rooms refill for everyone. Catch-up is an approximation (coarse steps). Floor drops that aren't taken vanish on reload (they aren't part of the seed). A visitor's lockpick roll happens on the visitor's side (the host checks the class, not the roll). Balance values are first guesses kept as named constants (`ECHO_TUNING`, respawn and drop constants).
 
 ---
 

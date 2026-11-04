@@ -369,6 +369,8 @@ export interface CharacterState {
   resonanceShards: number;
   sanctumVaultShards?: number;
   heraldGreeting: HeraldGreeting;
+  /** Consumable picks for locked chests (Hexblade and Artificer can use them). */
+  lockpicks?: number;
 }
 
 export type ExitDirection = 'N' | 'S' | 'E' | 'W' | 'U' | 'D';
@@ -561,6 +563,27 @@ export interface RoomNode {
   grimoire?: GrimoireData;
   linkedMechanism?: LinkedMechanismData;
   bazaar?: BazaarListing[];
+  /** Sealed chests that only some classes can open. */
+  chests?: LockedChest[];
+}
+
+/**
+ * How a chest is sealed, and so which classes can open it:
+ * LOCK = lockpicking (Hexblade, Artificer) and a lockpick; ARCANE = Chronomancer dispel;
+ * HEAVY = Vanguard force.
+ */
+export type ChestSeal = 'LOCK' | 'ARCANE' | 'HEAVY';
+
+export interface LockedChest {
+  id: string;
+  name: string;
+  seal: ChestSeal;
+  /** 1–3; higher tiers are harder to pick and hold better loot. */
+  tier: number;
+  items: EquipmentItem[];
+  /** Lockpicks found inside. */
+  lockpicks: number;
+  opened: boolean;
 }
 
 export interface RulesetManifest {
@@ -652,8 +675,13 @@ export type RealmDelta = RealmData;
  */
 export interface RealmProgress {
   gateAddress: string;
+  /** Legacy (no timestamps). Migrated into `defeatedAt` on load. */
   defeatedMonsterKeys: string[];
   takenItemKeys: string[];
+  /** When each monster was defeated; it respawns after its cooldown. */
+  defeatedAt?: Record<string, number>;
+  /** Chests opened (they never refill). */
+  openedChestKeys?: string[];
 }
 
 export interface RealmDnaPacket {
@@ -807,8 +835,12 @@ export type NetworkPacketType =
   | 'PEER_CHAT'
   // Link keep-alive (never reaches the engine)
   | 'PING'
+  // Downed players: another player carries them to a campfire
+  | 'CARRY_START'
+  | 'CARRY_DROP'
   // Host authority: the realm owner's browser decides monster HP, kills, and loot
   | 'VISITOR_HELLO'
+  | 'ACTION_OPEN_CHEST'
   | 'VISITOR_LEAVE'
   | 'REALM_SNAPSHOT'
   | 'ROOM_STATE'
@@ -823,6 +855,7 @@ export interface RoomLiveState {
   roomId: string;
   monsters: { id: string; hp: number }[];
   items: EquipmentItem[];
+  openedChestIds?: string[];
 }
 
 /** Payload for host-authority packets. Which fields are set depends on the packet type. */
@@ -840,6 +873,10 @@ export interface AuthorityPayload {
   damage?: number;
   /** ACTION_TAKE */
   itemIds?: string[];
+  /** ACTION_OPEN_CHEST */
+  chestId?: string;
+  /** ACTION_RESULT for a chest: lockpicks found inside */
+  lockpicks?: number;
   /** ACTION_RESULT */
   ok?: boolean;
   reason?: string;
@@ -862,6 +899,10 @@ export interface NetworkPeerVisitor {
   currentHp?: number;
   maxHp?: number;
   isAstralEcho?: boolean;
+  /** Fallen and waiting for help. */
+  downed?: boolean;
+  /** Peer id of whoever is carrying this player. */
+  carriedBy?: string;
 }
 
 export interface NetworkPacket {
@@ -910,6 +951,8 @@ export interface NetworkPacket {
     currentHp?: number;
     maxHp?: number;
     isAstralEcho?: boolean;
+    downed?: boolean;
+    carriedBy?: string;
   };
 }
 
@@ -928,3 +971,65 @@ export type PerspectiveRole = 'EXPLORER' | 'ARCHITECT' | 'SPECTATOR';
 export type DrawerTab =
   'NONE' | 'PAPERDOLL' | 'COMBAT_TELEMETRY' | 'REALM_ANALYTICS' | 'CHRONICLE' | 'NETWORK';
 export type HeatmapMode = 'TRAFFIC' | 'LETHALITY' | 'TIME_SPENT' | 'LOOT';
+
+// =============================================================================
+// Astral Echo companion (a pawn-like NPC that lives in your home realm)
+// =============================================================================
+
+export type EchoJobKind = 'FOLLOW' | 'SCOUT' | 'FARM' | 'ROUTE';
+
+export interface EchoJob {
+  id: string;
+  name: string;
+  kind: EchoJobKind;
+  /** ROUTE: room ids in order (taught with "Watch me"). */
+  route?: string[];
+  fight: boolean;
+  loot: boolean;
+  /** 0–100, grows as the job is done. Faster and safer at higher values. */
+  proficiency: number;
+  runs: number;
+}
+
+export interface EchoLogEntry {
+  atMs: number;
+  text: string;
+}
+
+export interface EchoCompanion {
+  name: string;
+  archetype: ArchetypeClass;
+  level: number;
+  xp: number;
+  hp: number;
+  maxHp: number;
+  roomId: string;
+  mode: 'IDLE' | 'WORKING' | 'RESTING' | 'DOWNED';
+  downedUntilMs?: number;
+  /** True while the player carries the downed Echo. */
+  carried?: boolean;
+  activeJobId: string | null;
+  jobs: EchoJob[];
+  satchel: EquipmentItem[];
+  gold: number;
+  shards: number;
+  lockpicks: number;
+  /** Kills per monster template; small damage bonus against known foes. */
+  knowledge: Record<string, number>;
+  /** ROUTE progress index. */
+  routeIndex?: number;
+  lastSimulatedMs: number;
+  log: EchoLogEntry[];
+}
+
+/** Summary shown after catching up on time away. */
+export interface EchoAwayReport {
+  simulatedMs: number;
+  capped: boolean;
+  kills: number;
+  roomsScouted: number;
+  itemsFound: number;
+  gold: number;
+  levelsGained: number;
+  downedTimes: number;
+}

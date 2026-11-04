@@ -4406,3 +4406,38 @@ textarea {
     transform: translate(10px, -32px) scale(1);
   }
 }
+
+/* Status banners above the room stage: downed prompt, Echo away report */
+.status-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+
+  p {
+    margin: 0;
+  }
+}
+
+.downed-banner {
+  background: rgba(127, 29, 29, 0.35);
+  border: 1px solid var(--color-error);
+}
+
+.echo-report-banner {
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid var(--color-primary);
+}
+
+.cc-utility {
+  margin: 0;
+  font-size: 0.66rem;
+  color: var(--color-warning);
+  text-align: left;
+}
+
+.chest-chip {
+  border-color: rgba(251, 191, 36, 0.5);
+}

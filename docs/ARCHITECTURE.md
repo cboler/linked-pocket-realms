@@ -132,6 +132,7 @@ The address is hashed into a Mulberry32 seed. `ChaosGateService.growRealmToStage
 | Preferences (mute, broker URL, echo bot, hosting) | localStorage   | `lpr_sound_muted`, `lpr_hosting_open`, `linked_pocket_realms_*` | No                                   |
 | Broker calls today (budget guard)                 | localStorage   | `lpr_broker_calls`                                              | No                                   |
 | Thunderpass encounter log                         | localStorage   | `thunderpass_streetpass_log_v1`                                 | No                                   |
+| Astral Echo companion                             | IndexedDB      | `astral_echo_state` (`EchoCompanion`)                           | No (visitors see its presence only)  |
 
 ### Load order
 
@@ -206,8 +207,31 @@ With a live link, the host's snapshot builds the realm (`authorityHost` is set).
 
 ### Simulated presence
 
-- **Astral Echo** (`Kite_Zero`): an optional fake peer for solo testing, off by default (ADR-012). Planned direction: a pawn-like companion (see `docs/ROADMAP.md`).
+- **Astral Echo**: your companion, drawn in its room like another traveler (see section 6a). While you host, visitors see it through a companion presence beacon the host relays.
 - **Phantom trails**: breadcrumbs from presence beacons, drawn as ghosts in the viewport.
+
+---
+
+## 6a. Respawns, Sealed Chests, the Astral Echo, and Revival (ADR-015)
+
+### Respawns and drops
+
+`RealmProgress.defeatedAt` stores when each monster fell. `withRealmProgress()` treats a monster as dead only within its cooldown (60 min; bosses 24 h); `respawnDueMonsters()` runs every minute and restores expired monsters from a pristine copy captured when rooms were generated, skipping the room you're in. Regular kills roll a seeded drop (`rollMonsterDrop()`): 25% an item, 10% a lockpick.
+
+### Sealed chests
+
+`ChaosGateService.addLockedChests()` adds seeded chests to generated rooms. `CHEST_SEAL_RULES` lists which classes open each seal and what it costs; `lockpickChance()` sets the odds. `MudEngineService.openChest()` checks the rules, spends stamina or risks a pick, and puts the loot on the floor. Opened chests are saved (`openedChestKeys`). In a hosted realm, `ACTION_OPEN_CHEST` asks the host, which checks the visitor's class.
+
+### The Astral Echo
+
+- `astral-echo.ts` holds the pure simulation: `createEcho()`, `stepEcho()` (movement by shortest path, jobs, fights, loot, chests, resting, going down, leveling, proficiency, knowledge), and `makeRouteJob()`. Tuning is in `ECHO_TUNING`.
+- `MudEngineService.advanceEcho()` runs one live step every 2 s while you're home; after a longer gap (closed tab, throttled tab, coming back from a visit) it simulates up to 8 hours in 30 s steps, letting rooms refill at simulated times, and shows a report. `applyEchoEffects()` applies its kills, pickups, chest openings, and scouting through the normal paths.
+- It appears via `localEchoPeer` in `peersInCurrentRoom` (which now also matches the realm, not just the room id). Talk opens the **Echo** tab in the Play Together drawer. Commands: `echo on | off | status | follow | scout | farm | route <name> | stop | watch | done <name> | give | lockpick | carry | name <new>`.
+- It never calls the network; while hosting, its presence goes to visitors over direct links only.
+
+### Falling and revival
+
+`afterPlayerFell()` decides what happens when you fall: carried to the nearest campfire by your Echo, left down for others to carry (3-minute wait; monsters ignore you), or straight to the entrance if nobody can help. `playerDowned` holds the state and the campfire prompt (`acceptCampfireRevival()` / `respawnAtEntrance()`). Carrying another player sends `CARRY_START`; their client follows the carrier's presence beacons and shows the prompt at a campfire. A carried Echo revives on arrival at a campfire, or by resting there.
 
 ---
 

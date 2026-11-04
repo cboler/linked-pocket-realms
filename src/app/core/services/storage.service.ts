@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import {
   CharacterState,
+  EchoCompanion,
   EquipmentItem,
   RealmDelta,
   RealmProgress,
@@ -114,6 +115,14 @@ export class StorageService {
   async loadRealmProgress(gateAddress: string): Promise<RealmProgress> {
     const saved = await this.getItem<RealmProgress>(`realm_progress:${gateAddress}`);
     return saved ?? { gateAddress, defeatedMonsterKeys: [], takenItemKeys: [] };
+  }
+
+  async saveEchoState(echo: EchoCompanion): Promise<void> {
+    await this.setItem('astral_echo_state', echo);
+  }
+
+  async loadEchoState(): Promise<EchoCompanion | null> {
+    return this.getItem<EchoCompanion>('astral_echo_state');
   }
 
   async saveCharacterState(character: CharacterState): Promise<void> {

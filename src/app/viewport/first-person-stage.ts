@@ -4,6 +4,7 @@ import {
   BazaarListing,
   CompassDirection,
   EquipmentItem,
+  LockedChest,
   MonsterBodyPart,
   MonsterEntity,
   NetworkPeerVisitor,
@@ -11,6 +12,8 @@ import {
   TravelerEcho,
 } from '../core/models/domain.models';
 import { LegendRegistryService } from '../core/services/legend-registry.service';
+import { ECHO_PEER_ID } from '../core/services/astral-echo';
+import { CHEST_SEAL_RULES } from '../core/services/chaos-gate.service';
 import { MudEngineService } from '../core/services/mud-engine.service';
 import { EnemySpriteComponent } from './enemy-sprite/enemy-sprite';
 
@@ -31,6 +34,16 @@ export class FirstPersonStageComponent {
   readonly selectedEcho = signal<TravelerEcho | null>(null);
   readonly selectedBazaarListing = signal<BazaarListing | null>(null);
   readonly selectedPeer = signal<NetworkPeerVisitor | null>(null);
+  readonly echoPeerId = ECHO_PEER_ID;
+
+  sealIcon(chest: LockedChest): string {
+    return CHEST_SEAL_RULES[chest.seal].icon;
+  }
+
+  sealColor(chest: LockedChest): string {
+    if (chest.opened) return '#52525b';
+    return chest.seal === 'ARCANE' ? '#c084fc' : chest.seal === 'HEAVY' ? '#f87171' : '#fbbf24';
+  }
 
   selectBazaarListing(listing: BazaarListing): void {
     this.selectedBazaarListing.set(listing);

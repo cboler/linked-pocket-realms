@@ -16,6 +16,15 @@
     <button
       type="button"
       class="loom-tab-btn"
+      [class.active]="loomActiveTab() === 'ECHO'"
+      (click)="setLoomActiveTab('ECHO')"
+      data-testid="loom-tab-echo"
+    >
+      🤖 Echo
+    </button>
+    <button
+      type="button"
+      class="loom-tab-btn"
       [class.active]="loomActiveTab() === 'WEAVER'"
       (click)="setLoomActiveTab('WEAVER')"
       data-testid="loom-tab-weaver"
@@ -278,6 +287,236 @@
           </button>
         </div>
       </div>
+    </div>
+  }
+
+  <!-- TAB: ASTRAL ECHO COMPANION -->
+  @if (loomActiveTab() === 'ECHO') {
+    <div class="loom-tab-content drawer-split-grid" data-testid="echo-panel">
+      @if (engine.astralEcho(); as echo) {
+        <!-- STATUS -->
+        <div class="telemetry-card">
+          <div class="card-header-flex">
+            <h3>🤖 {{ echo.name }}</h3>
+            <button
+              type="button"
+              class="toggle-echo-btn"
+              [class.active]="engine.astralEchoBotEnabled()"
+              (click)="engine.toggleAstralEchoBot()"
+              data-testid="echo-panel-toggle"
+            >
+              {{ engine.astralEchoBotEnabled() ? '● On' : '○ Off' }}
+            </button>
+          </div>
+          <p class="card-help" data-testid="echo-status-line">{{ engine.echoStatusLine() }}</p>
+          @if (echo.mode === 'DOWNED') {
+            <p class="card-help">
+              {{ echo.name }} is down.
+              @if (echo.carried) {
+                You're carrying it: reach a campfire to revive it.
+              } @else if (echo.roomId === engine.character().currentRoomId) {
+                Carry it to a campfire, or it gets up at the entrance on its own.
+              } @else {
+                Go to it and carry it to a campfire, or it gets up at the entrance on its own.
+              }
+            </p>
+            @if (!echo.carried && echo.roomId === engine.character().currentRoomId) {
+              <button
+                type="button"
+                class="mini-action-btn accent"
+                (click)="engine.carryEcho()"
+                data-testid="echo-carry-btn"
+              >
+                🤲 Carry {{ echo.name }}
+              </button>
+            }
+          }
+          <div class="arch-row">
+            <input
+              type="text"
+              aria-label="Rename your Echo"
+              [ngModel]="echoNameInput()"
+              (ngModelChange)="echoNameInput.set($event)"
+              [placeholder]="echo.name"
+            />
+            <button
+              type="button"
+              class="mini-action-btn"
+              (click)="engine.renameEcho(echoNameInput()); echoNameInput.set('')"
+            >
+              Rename
+            </button>
+          </div>
+          <label class="diag-label">
+            <span>Class (decides which chests it can open)</span>
+            <select
+              aria-label="Echo class"
+              [ngModel]="echo.archetype"
+              (ngModelChange)="engine.setEchoClass($event)"
+            >
+              @for (arch of archetypes; track arch) {
+                <option [value]="arch">{{ arch }}: {{ classUtility[arch] }}</option>
+              }
+            </select>
+          </label>
+        </div>
+
+        <!-- JOBS -->
+        <div class="telemetry-card">
+          <h3>Jobs</h3>
+          <p class="card-help">
+            It keeps working while this tab is open, and catches up on up to 8 hours when you come
+            back.
+          </p>
+          <div class="peer-list">
+            @for (job of echo.jobs; track job.id) {
+              <div class="peer-row" [attr.data-testid]="'echo-job-' + job.id">
+                <div>
+                  <strong>{{ job.name }}</strong>
+                  @if (echo.activeJobId === job.id) {
+                    <span class="online-pill">● Working</span>
+                  }
+                  <div class="peer-sub">
+                    {{ jobDescription(job) }} • Skill {{ job.proficiency }}/100
+                  </div>
+                </div>
+                <div class="arch-row">
+                  @if (echo.activeJobId === job.id) {
+                    <button type="button" class="mini-action-btn" (click)="engine.setEchoJob(null)">
+                      Stop
+                    </button>
+                  } @else {
+                    <button
+                      type="button"
+                      class="mini-action-btn accent"
+                      [disabled]="!isJobUnlocked(echo, job) || !engine.astralEchoBotEnabled()"
+                      (click)="engine.setEchoJob(job.id)"
+                      [attr.data-testid]="'echo-start-' + job.id"
+                    >
+                      {{ isJobUnlocked(echo, job) ? 'Start' : 'Level ' + farmUnlockLevel }}
+                    </button>
+                  }
+                  @if (job.kind === 'ROUTE') {
+                    <button
+                      type="button"
+                      class="mini-action-btn"
+                      (click)="engine.forgetEchoJob(job.id)"
+                    >
+                      Forget
+                    </button>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+
+        <!-- TEACH (Watch me) -->
+        <div class="telemetry-card" data-testid="echo-teach-card">
+          <h3>Teach a route</h3>
+          @if (engine.echoWatch(); as watch) {
+            <p class="card-help" data-testid="echo-watch-status">
+              Watching: {{ watch.rooms.length }} room(s){{ watch.fought ? ', you fought' : ''
+              }}{{ watch.looted ? ', you looted' : '' }}. Walk the route, then save it.
+            </p>
+            <div class="arch-row">
+              <input
+                type="text"
+                aria-label="Name for this route"
+                [ngModel]="routeNameInput()"
+                (ngModelChange)="routeNameInput.set($event)"
+                placeholder="Route name"
+              />
+              <button
+                type="button"
+                class="mini-action-btn accent"
+                (click)="engine.finishEchoWatch(routeNameInput()); routeNameInput.set('')"
+                data-testid="echo-save-route-btn"
+              >
+                Save as job
+              </button>
+              <button type="button" class="mini-action-btn" (click)="engine.cancelEchoWatch()">
+                Cancel
+              </button>
+            </div>
+          } @else {
+            <p class="card-help">
+              Tap Watch me, then play the rooms, fights, and pickups you want it to repeat.
+            </p>
+            <button
+              type="button"
+              class="mini-action-btn accent"
+              [disabled]="!engine.astralEchoBotEnabled()"
+              (click)="engine.startEchoWatch(); engine.activeDrawer.set('NONE')"
+              data-testid="echo-watch-btn"
+            >
+              👁 Watch me
+            </button>
+          }
+        </div>
+
+        <!-- SATCHEL -->
+        <div class="telemetry-card" data-testid="echo-satchel-card">
+          <h3>Satchel ({{ echo.satchel.length }}/{{ satchelCap }})</h3>
+          <p class="card-help">
+            {{ echo.gold }} gold • {{ echo.lockpicks }} lockpick(s) it keeps for locked chests
+          </p>
+          @if (echo.satchel.length > 0) {
+            <ul class="echo-satchel-list">
+              @for (item of echo.satchel; track item.id) {
+                <li>{{ item.name }} ({{ item.rarity }})</li>
+              }
+            </ul>
+          }
+          <div class="arch-row">
+            <button
+              type="button"
+              class="mini-action-btn accent"
+              [disabled]="echo.satchel.length === 0 && echo.gold === 0"
+              (click)="engine.takeEchoSatchel()"
+              data-testid="echo-take-all-btn"
+            >
+              📦 Take all
+            </button>
+            <button
+              type="button"
+              class="mini-action-btn"
+              [disabled]="(engine.character().lockpicks ?? 0) === 0"
+              (click)="engine.giveEchoLockpick()"
+            >
+              🗝 Give a lockpick (you have {{ engine.character().lockpicks ?? 0 }})
+            </button>
+          </div>
+        </div>
+
+        <!-- LOG -->
+        <div class="telemetry-card">
+          <h3>What it has been doing</h3>
+          <ul class="echo-log-list" data-testid="echo-log">
+            @for (entry of echo.log.slice(0, 12); track entry.atMs + entry.text) {
+              <li>
+                <span class="peer-sub">{{ entry.atMs | date: 'shortTime' }}</span> {{ entry.text }}
+              </li>
+            }
+          </ul>
+        </div>
+      } @else {
+        <div class="telemetry-card">
+          <h3>🤖 Astral Echo</h3>
+          <p class="card-help">
+            A companion that lives in your dungeon. It levels up, scouts, farms, learns routes you
+            show it, and keeps working while you're away. It never uses the internet.
+          </p>
+          <button
+            type="button"
+            class="mini-action-btn accent"
+            (click)="engine.toggleAstralEchoBot(true)"
+            data-testid="echo-wake-btn"
+          >
+            Wake your Echo
+          </button>
+        </div>
+      }
     </div>
   }
 

@@ -339,6 +339,88 @@ describe('Host-authority mesh', () => {
     expect(host.engine.realmVisitors()['peer-visitor']).toBeUndefined();
   });
 
+  it('lets a visitor of the right class open a chest, decided by the host', async () => {
+    link(host, visitor);
+    await settle();
+    const roomId = host.engine.rooms()[1].id;
+    const chest = {
+      id: 'chest-mp',
+      name: 'Iron-banded strongbox',
+      seal: 'LOCK' as const,
+      tier: 1,
+      items: [
+        {
+          id: 'mp-loot',
+          name: 'Shared Loot',
+          slot: 'Main-Hand' as const,
+          rarity: 'Rare' as const,
+          weight: 1,
+          totalStatBudget: 5,
+          statBonuses: { atkBonus: 2 },
+          provenance: 'Verified Drop' as const,
+          originGateAddress: 'x',
+          isLocked: false,
+        },
+      ],
+      lockpicks: 1,
+      opened: false,
+    };
+    for (const p of [host, visitor]) {
+      p.engine.rooms.update((all) =>
+        all.map((r) => (r.id === roomId ? { ...r, chests: [chest] } : r)),
+      );
+    }
+    // The visitor is a Hexblade with a pick.
+    visitor.engine.character.update((c) => ({ ...c, currentRoomId: roomId, lockpicks: 1 }));
+    visitor.engine['combatRng'] = () => 0;
+    visitor.engine.openChest();
+    await settle();
+
+    const hostChest = host.engine.rooms().find((r) => r.id === roomId)?.chests?.[0];
+    expect(hostChest?.opened).toBe(true);
+    expect(
+      host.engine
+        .rooms()
+        .find((r) => r.id === roomId)
+        ?.items.some((i) => i.id === 'mp-loot'),
+    ).toBe(true);
+    expect(visitor.engine.rooms().find((r) => r.id === roomId)?.chests?.[0].opened).toBe(true);
+    expect(visitor.engine.character().lockpicks).toBe(2);
+  });
+
+  it('lets one player carry another to a campfire, and asks before they get up', async () => {
+    link(host, visitor);
+    await settle();
+    const fire = host.engine.rooms().find((r) => r.legendType === 'safe-campfire')!;
+    expect(fire).toBeTruthy();
+    const fightRoom = host.engine.rooms().find((r) => r.id !== fire.id && r.monsters.length > 0)!;
+    host.engine.character.update((c) => ({ ...c, currentRoomId: fightRoom.id }));
+    visitor.engine.character.update((c) => ({ ...c, currentRoomId: fightRoom.id }));
+    host.engine.sendPresenceBeacon();
+    visitor.engine.sendPresenceBeacon();
+    await settle();
+
+    visitor.engine['handlePlayerWipe'](fightRoom.monsters[0]);
+    await settle();
+    expect(visitor.engine.playerDowned()?.roomId).toBe(fightRoom.id);
+    expect(host.transport.discoveredPeers()['peer-visitor']?.downed).toBe(true);
+
+    host.engine.carryPeer('peer-visitor');
+    await settle();
+    expect(visitor.engine.playerDowned()?.carriedBy?.id).toBe('peer-host');
+
+    host.engine.moveToRoom(fire.id);
+    await settle();
+    expect(visitor.engine.playerDowned()?.campfireOffer?.roomId).toBe(fire.id);
+    expect(visitor.engine.character().currentRoomId).toBe(fire.id);
+
+    visitor.engine.acceptCampfireRevival();
+    await settle();
+    expect(visitor.engine.playerDowned()).toBeNull();
+    expect(visitor.engine.character().hp).toBeGreaterThan(0);
+    expect(host.engine.carryingPeer()).toBeNull();
+  });
+
   it('tells visitors when the host leaves home', async () => {
     link(host, visitor);
     await settle();

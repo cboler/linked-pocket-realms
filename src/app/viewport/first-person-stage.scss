@@ -521,3 +521,13 @@
     cursor: not-allowed;
   }
 }
+
+/* Fallen players and Echo lie low and fade until someone carries them. */
+.live-peer-adventurer.downed {
+  opacity: 0.55;
+  transform-box: fill-box;
+}
+
+.sealed-chest.opened {
+  opacity: 0.5;
+}

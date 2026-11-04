@@ -22,7 +22,7 @@ echo " Runtime:       nodejs22 (Gen 2)"
 echo " Min Instances: 0 (Scale-to-zero, $0.00 idle cost)"
 echo " Max Instances: 1 (DoS / Runaway cost ceiling)"
 echo " Concurrency:   80 requests/instance"
-echo " Memory:        256Mi (1.44M free compute seconds/mo)"
+echo " Memory:        512Mi, 1 vCPU (Cloud Run needs 1 vCPU for concurrency > 1)"
 echo " Timeout:       10s (Fast hung-connection termination)"
 echo "=========================================================="
 
@@ -48,7 +48,8 @@ gcloud functions deploy "$FUNCTION_NAME" \
   --min-instances=0 \
   --max-instances=1 \
   --concurrency=80 \
-  --memory=256Mi \
+  --cpu=1 \
+  --memory=512Mi \
   --timeout=10s \
   --quiet
 

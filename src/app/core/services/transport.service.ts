@@ -69,6 +69,9 @@ const KNOWN_PACKET_TYPES = new Set<NetworkPacketType>([
   'BAZAAR_PURCHASED',
   'PEER_CHAT',
   'PING',
+  'CARRY_START',
+  'CARRY_DROP',
+  'ACTION_OPEN_CHEST',
   'VISITOR_HELLO',
   'VISITOR_LEAVE',
   'REALM_SNAPSHOT',
@@ -90,6 +93,9 @@ const RELAYABLE_TYPES = new Set<NetworkPacketType>([
   'GRAVESTONE_RECORD',
   'GRIMOIRE_SHARED',
   'COOP_COMBAT_INTENT',
+  // Carrying a downed player works between two visitors through their host.
+  'CARRY_START',
+  'CARRY_DROP',
 ]);
 
 function initTabPeerId(): string {
@@ -459,6 +465,12 @@ export class TransportService implements OnDestroy {
               packet.visitorState?.isAstralEcho ??
               existing?.isAstralEcho ??
               packet.senderPeerId === 'peer-astral-echo',
+            downed:
+              packet.type === 'GATE_BEACON'
+                ? packet.visitorState?.downed === true
+                : existing?.downed,
+            carriedBy:
+              packet.type === 'GATE_BEACON' ? packet.visitorState?.carriedBy : existing?.carriedBy,
           },
         };
       });
@@ -1413,14 +1425,14 @@ export class TransportService implements OnDestroy {
         gateAddress: peer.gateAddress,
         roomId: peer.currentRoomId,
         heraldGreeting: peer.heraldGreeting,
-        isAstralEcho: peer.isAstralEcho ?? true,
+        isAstralEcho: peer.isAstralEcho ?? false,
         visitorState: {
           archetype: peer.archetype,
           level: peer.level,
           inCombat: peer.inCombat,
           currentHp: peer.currentHp,
           maxHp: peer.maxHp,
-          isAstralEcho: peer.isAstralEcho ?? true,
+          isAstralEcho: peer.isAstralEcho ?? false,
         },
       },
       peer.transport,
@@ -1437,6 +1449,7 @@ export class TransportService implements OnDestroy {
     inCombat: boolean,
     heraldGreeting?: string,
     breadcrumbs?: PhantomBreadcrumb[],
+    status?: { downed?: boolean; carriedBy?: string },
   ): void {
     this.sendPacket({
       senderName,
@@ -1449,8 +1462,41 @@ export class TransportService implements OnDestroy {
         archetype,
         level,
         inCombat,
+        downed: status?.downed || undefined,
+        carriedBy: status?.carriedBy,
       },
     });
+  }
+
+  /**
+   * Host only: presence for a companion that lives in my realm (my Astral Echo), so my
+   * visitors see it. Sent over direct links only; visitors accept it as relayed by me.
+   */
+  announceCompanionBeacon(
+    companionId: string,
+    name: string,
+    gateAddress: string,
+    roomId: string,
+    archetype: ArchetypeClass,
+    level: number,
+    downed: boolean,
+  ): void {
+    const packet: NetworkPacket = {
+      packetId: `pkt-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+      senderPeerId: companionId,
+      senderName: name,
+      timestampMs: Date.now(),
+      type: 'GATE_BEACON',
+      gateAddress,
+      roomId,
+      isAstralEcho: true,
+      visitorState: { archetype, level, inCombat: false, isAstralEcho: true, downed },
+    };
+    this.markSeen(packet.packetId);
+    const payload = JSON.stringify(packet);
+    for (const link of this.peerLinks.values()) {
+      if (link.role === 'VISITOR') this.sendRaw(link, payload);
+    }
   }
 
   broadcastCombatIntent(

@@ -166,10 +166,14 @@ test.describe('Linked Pocket Realms — Tactical HUD, Perspectives & Drawers E2E
 
     await page.getByTestId('loom-tab-webrtc').click();
     await expect(page.getByTestId('astral-echo-settings-card')).toBeVisible();
-    // Toggle on Astral Echo companion bot to test autonomous portal anchor & mesh traversal
+    // The Astral Echo companion wakes in your own realm.
     await page.getByTestId('toggle-astral-echo-btn').click();
-    await expect(page.getByTestId('astral-echo-badge')).toBeVisible();
-    await page.getByTestId('traverse-portal-peer-astral-echo').click();
+    await expect(page.getByTestId('toggle-astral-echo-btn')).toContainText('ON');
+    await page.getByTestId('close-drawer-btn').first().click();
+
+    // Visit another realm (offline copy) to exercise Customs Gate clamping.
+    await page.getByTestId('terminal-input').fill('portal Δ: Silent Fungal Observatory');
+    await page.getByTestId('terminal-submit-btn').click();
     await expect(page.getByTestId('active-gate-address')).toContainText(
       'Δ: Silent Fungal Observatory',
     );

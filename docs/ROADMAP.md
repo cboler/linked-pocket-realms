@@ -92,7 +92,8 @@ Status of the starter's customization tasks for this project:
 - [x] **Milestone 4.4: Reload Persistence, Mobile Layout & Plain-Language Onboarding**: Defeated monsters and collected loot survive reloads and realm growth (ADR-013); visiting no longer overwrites the home realm; minimap moved out of the 3D view; enemies drawn at their real positions; phone portrait/landscape layouts and 44px touch targets; onboarding rewritten in plain language.
 - [ ] **Milestone 4.5: Combat Difficulty Pass**: The first enemy dies to a single skill (89 damage vs 86 HP). Tune early fights so they teach the ATB gauge and elemental combos. (Deferred by the owner on 2026-11-03.)
 - [x] **Milestone 4.7: Working Host-Authority Mesh** (ADR-014): multi-visitor star links over WebRTC with join/reply codes or the lobby; host decides HP, kills, and loot; heartbeats, timeouts, rejoin, validation; slim presence with ghost-trail breadcrumbs; frugal, capped broker use; plain Wi-Fi/mobile connectivity note. Verified by unit tests and a two-browser Playwright test over real WebRTC.
-- [ ] **Milestone 4.8: Deploy the Updated Broker**: deploy `linked-pocket-realms-broker` (mirrors `cloud-function/`) to get 1 call per host heartbeat instead of 2, targeted signal delivery, and the server daily ceiling. The client already works with the current broker.
+- [x] **Milestone 4.8: Deploy the Updated Broker** (deployed 2026-11-03, revision `pocket-realms-broker-00003`): deploy `linked-pocket-realms-broker` (mirrors `cloud-function/`) to get 1 call per host heartbeat instead of 2, targeted signal delivery, and the server daily ceiling. The client already works with the current broker.
+- [x] **Milestone 4.9: Astral Echo Companion, Respawns, Sealed Chests, Campfire Revival** (ADR-015).
 - [ ] **Milestone 4.6: Plain-Language Pass Beyond Onboarding**: Apply the onboarding wording approach to the HUD, drawers, and log (Incursions, Shards, Resonance Loom, Customs Gate, Tri-Chord).
 
 ---
@@ -112,9 +113,11 @@ Use this section to track known simplifications, performance ceilings, or refact
 | _TD-07_ | _WebRTC host holds one link at a time_                           | _—_      | _Resolved by ADR-014 (star mesh, up to 8 visitors)_                                                                                                                                                                                                                             | _Completed_  |
 | _TD-08_ | _Stale peers never expire_                                       | _—_      | _Resolved: 30 s presence expiry and link heartbeats_                                                                                                                                                                                                                            | _Completed_  |
 | _TD-09_ | _Share links are not read on load_                               | _Medium_ | _QR/share URLs use `#spore=<address>`, but `hydrateFromStorage()` only reads `?spore=<dna>`; opening a shared link does nothing unless pasted into the Spore input_                                                                                                             | _Phase 5_    |
-| _TD-10_ | _No respawn rule; boss drops left on the floor vanish on reload_ | _Low_    | _Cleared rooms stay cleared (ADR-013); boss drops are created at kill time, not generated from the seed_                                                                                                                                                                        | _Phase 5_    |
+| _TD-10_ | _No respawn rule; boss drops left on the floor vanish on reload_ | _Low_    | _Respawns resolved (ADR-015: 60 min, bosses 24 h). Floor drops and boss drops still vanish on reload if not taken_                                                                                                                                                              | _Phase 5_    |
 | _TD-11_ | _No TURN relay_                                                  | _Medium_ | _Symmetric-NAT networks (many mobile carriers) cannot connect; the UI says so. If added: managed TURN with short-lived credentials from the broker, as a fallback only (ADR-014)_                                                                                               | _Phase 5_    |
 | _TD-12_ | _Only HP, kills, and loot are authoritative_                     | _Low_    | _Statuses, severed anatomy parts, and monster attacks are simulated per player during a visit_                                                                                                                                                                                  | _Phase 5_    |
+| _TD-13_ | _Visitor lockpick rolls are client-side_                         | _Low_    | _In a hosted realm the host checks the visitor's class but trusts their lockpick roll (ADR-015)_                                                                                                                                                                                | _Phase 5_    |
+| _TD-14_ | _Echo balance is untuned_                                        | _Low_    | _Strength (~70% of a player), drop rates, cooldowns, and the 8 h catch-up cap are first guesses in `ECHO_TUNING` and the engine's respawn constants_                                                                                                                            | _Phase 5_    |
 
 ---
 
@@ -135,10 +138,12 @@ Over decades of Usenet discussions, MudDev mailing lists, and roguelike/MUD theo
 - [ ] **Wandering Dungeon Merchants**:
   - NPC merchants traveling along WebRTC / Thunderpass mesh conduits, carrying items traded or sold by distant players across the network.
 
-- [ ] **Astral Echo as a Pawn-Like Companion** (owner's direction, 2026-11-03):
+- [x] **Astral Echo as a Pawn-Like Companion** (owner's direction, 2026-11-03; v1 built, ADR-015):
   - Grow the optional Astral Echo bot into an NPC companion in the spirit of a pawn: it levels up, performs behaviors when switched on and left unattended, and is interactable while on.
   - During interaction the player can ask it to do jobs it has learned or been taught (for example, farm your dungeon and hand you the loot).
   - Keep it opt-in and local-first (ADR-012). If it acts in a hosted realm, it should use the same host-authority actions as a visitor (ADR-014).
+- [ ] **Lend Your Echo to Other Players**: send it into another player's realm (or lend it to your visitors) and have it come back with what it learned and found, like a hired pawn.
+- [ ] **More Taught Behaviors**: teach rules beyond routes (flee below X% HP, skip bosses, prefer a monster type), and let the Echo share what it knows about monsters with you.
 
 ### 2. Tactical Combat, Monster Ecology & Sensory Depth
 

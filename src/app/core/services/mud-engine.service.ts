@@ -15,6 +15,9 @@ import {
   CoreAttributes,
   CoreLegendType,
   DeclarativeTrigger,
+  EchoAwayReport,
+  EchoCompanion,
+  EchoJobKind,
   DerivedCombatStats,
   DrawerTab,
   EquipmentItem,
@@ -23,6 +26,7 @@ import {
   GuestbookGravestoneEntry,
   HeatmapMode,
   LinkedMechanismData,
+  LockedChest,
   MonsterEntity,
   NetworkPacket,
   NetworkPeerVisitor,
@@ -52,11 +56,29 @@ import {
   formatHeraldGreeting,
   rollRandomHeraldGreeting,
 } from '../models/domain.models';
-import { ChaosGateService, createMulberry32 } from './chaos-gate.service';
+import {
+  CHEST_SEAL_RULES,
+  ChaosGateService,
+  SERVER_ERAS,
+  createMulberry32,
+  hashChaosGateSeed,
+  lockpickChance,
+} from './chaos-gate.service';
 import { LegendRegistryService } from './legend-registry.service';
 import { SoundFxService } from './sound-fx.service';
 import { StorageService } from './storage.service';
 import { LinkEvent, TransportService } from './transport.service';
+import {
+  ECHO_PEER_ID,
+  ECHO_TUNING,
+  EchoWorldEffect,
+  createEcho,
+  emptyTally,
+  jobUnlocked,
+  makeRouteJob,
+  nextHop,
+  stepEcho,
+} from './astral-echo';
 
 export const ARCHETYPE_CATALOG: Record<
   ArchetypeClass,
@@ -361,6 +383,19 @@ const VISIT_HELLO_TIMEOUT_MS = 8_000;
 /** Host-side floor between accepted hits from one visitor. */
 const MIN_VISITOR_HIT_INTERVAL_MS = 300;
 
+/** Cleared rooms refill: regular monsters after an hour, bosses after a day. */
+export const MONSTER_RESPAWN_MS = 60 * 60_000;
+export const BOSS_RESPAWN_MS = 24 * 60 * 60_000;
+const RESPAWN_CHECK_MS = 60_000;
+/** Regular monsters sometimes drop loot (seeded, so it's the same for everyone). */
+const MONSTER_DROP_CHANCE = 0.25;
+const LOCKPICK_DROP_CHANCE = 0.1;
+/** Hexblades and Artificers start with a few picks. */
+const STARTING_LOCKPICKS = 3;
+/** A downed player waits this long for someone to carry them before waking at the entrance. */
+const PLAYER_DOWNED_TIMEOUT_MS = 3 * 60_000;
+const ECHO_SAVE_EVERY_MS = 10_000;
+
 function initAstralEchoBotSetting(): boolean {
   try {
     if (typeof localStorage !== 'undefined') {
@@ -396,16 +431,54 @@ export class MudEngineService implements OnDestroy {
 
   // Astral Echo Companion Bot State
   readonly astralEchoBotEnabled = signal<boolean>(initAstralEchoBotSetting());
-  readonly hasActiveAstralEcho = computed<boolean>(() => {
-    return this.transport
-      .activeVisitorsList()
-      .some((v) => v.isAstralEcho || v.peerId === 'peer-astral-echo');
+  /** Your companion (null until first switched on). Kept while switched off. */
+  readonly astralEcho = signal<EchoCompanion | null>(null);
+  /** Shown after catching up on time away. */
+  readonly echoAwayReport = signal<EchoAwayReport | null>(null);
+  /** "Watch me": the route being recorded for the Echo to learn. */
+  readonly echoWatch = signal<{ rooms: string[]; fought: boolean; looted: boolean } | null>(null);
+  /** Which network-drawer tab to open next (set by "Talk" on the Echo). */
+  readonly pendingLoomTab = signal<'ECHO' | null>(null);
+  /** You fell and are waiting for help (or for the prompt at a campfire). */
+  readonly playerDowned = signal<{
+    roomId: string;
+    sinceMs: number;
+    carriedBy?: { id: string; name: string };
+    campfireOffer?: { roomId: string; byName: string };
+  } | null>(null);
+  /** Another player I'm carrying to a campfire. */
+  readonly carryingPeer = signal<{ peerId: string; name: string } | null>(null);
+  private echoIntervalId: ReturnType<typeof setInterval> | null = null;
+  private echoRng = createMulberry32(0x5eed1e55);
+  private echoSavedAtMs = 0;
+  private downedTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** The Echo as a presence in the room, so it renders like another traveler. */
+  readonly localEchoPeer = computed<NetworkPeerVisitor | null>(() => {
+    const echo = this.astralEcho();
+    if (!echo || !this.astralEchoBotEnabled()) return null;
+    return {
+      peerId: ECHO_PEER_ID,
+      playerName: echo.name,
+      archetype: echo.archetype,
+      level: echo.level,
+      gateAddress: this.homeGateAddress().formatted,
+      currentRoomId: echo.roomId,
+      inCombat: echo.mode === 'WORKING',
+      lastSeenMs: echo.lastSimulatedMs,
+      transport: 'BroadcastChannel',
+      currentHp: echo.hp,
+      maxHp: echo.maxHp,
+      isAstralEcho: true,
+      downed: echo.mode === 'DOWNED',
+    };
   });
-  readonly astralEchoCount = computed<number>(() => {
-    return this.transport
-      .activeVisitorsList()
-      .filter((v) => v.isAstralEcho || v.peerId === 'peer-astral-echo').length;
-  });
+  readonly astralEchoCount = computed<number>(
+    () =>
+      (this.localEchoPeer() ? 1 : 0) +
+      this.transport.activeVisitorsList().filter((v) => v.isAstralEcho).length,
+  );
+  readonly hasActiveAstralEcho = computed<boolean>(() => this.astralEchoCount() > 0);
 
   // UI Perspective & Active Drawer State
   readonly perspective = signal<PerspectiveRole>('EXPLORER');
@@ -487,8 +560,26 @@ export class MudEngineService implements OnDestroy {
   );
   /** Host side: visitors currently in my realm. */
   readonly realmVisitors = signal<
-    Record<string, { peerId: string; name: string; level: number; joinedAtMs: number }>
+    Record<
+      string,
+      {
+        peerId: string;
+        name: string;
+        level: number;
+        archetype: ArchetypeClass;
+        joinedAtMs: number;
+      }
+    >
   >({});
+  /** Fresh copies of generated monsters, used when a room refills. */
+  private readonly pristineMonsters = new Map<string, MonsterEntity>();
+  /** Host side: kills made by visitors (live only, not saved), so those rooms refill too. */
+  private readonly liveDefeatedAt = new Map<string, number>();
+  private readonly pendingChestOpens = new Map<
+    string,
+    { roomId: string; chestId: string; usedPick: boolean; staminaCost: number }
+  >();
+  private respawnIntervalId: ReturnType<typeof setInterval> | null = null;
   readonly isHostingLive = computed<boolean>(
     () => !this.isVisitingExternalRealm() && Object.keys(this.realmVisitors()).length > 0,
   );
@@ -547,9 +638,19 @@ export class MudEngineService implements OnDestroy {
     const curId = this.character().currentRoomId;
     if (!curId) return [];
     const now = Date.now();
-    return this.transport
+    const gate = this.activeGateAddress().formatted;
+    // Same room id in a different realm is a different room.
+    const peers = this.transport
       .activeVisitorsList()
-      .filter((v) => v.currentRoomId === curId && now - v.lastSeenMs < 45000);
+      .filter(
+        (v) =>
+          v.currentRoomId === curId &&
+          (!v.gateAddress || v.gateAddress === gate) &&
+          (v.isAstralEcho || now - v.lastSeenMs < 45000),
+      );
+    const echo = this.localEchoPeer();
+    if (echo && !this.isVisitingExternalRealm() && echo.currentRoomId === curId) peers.push(echo);
+    return peers;
   });
 
   // Floating peer chat messages for speech bubbles in 2.5D viewport
@@ -668,47 +769,17 @@ export class MudEngineService implements OnDestroy {
     this.linkSub = this.transport.linkEvents$.subscribe((ev) => this.handleLinkEvent(ev));
     this.peerGoneSub = this.transport.peerGone$.subscribe((id) => this.handlePeerGone(id));
 
-    // Seed a simulated neighboring Chaos Gate beacon only if the Astral Echo companion bot is enabled (Default: OFF)
-    if (this.astralEchoBotEnabled()) {
-      this.spawnAstralEchoBeacon();
-    }
-
     this.startAtbLoop();
   }
 
   /**
-   * Inject the simulated Astral Echo companion beacon into the P2P mesh
-   */
-  spawnAstralEchoBeacon(): void {
-    const demoNeighborAddress = this.chaosGate.createAddress(
-      'Δ',
-      'Silent',
-      'Fungal',
-      'Observatory',
-    );
-    this.transport.injectSimulatedPeerBeacon({
-      peerId: 'peer-astral-echo',
-      playerName: 'Kite_Zero',
-      archetype: 'Chronomancer',
-      level: 4,
-      gateAddress: demoNeighborAddress.formatted,
-      currentRoomId: 'room-2',
-      inCombat: true,
-      lastSeenMs: Date.now(),
-      transport: 'BroadcastChannel',
-      heraldGreeting: 'Beware: Eldritch Shadow lurks ahead.',
-      isAstralEcho: true,
-    });
-  }
-
-  /**
-   * Toggle the simulated Astral Echo companion bot on or off with persistence
+   * Switch the Astral Echo on or off. The first time, a companion is created; after that,
+   * switching it off just pauses it (no catch-up for time it was off).
    */
   toggleAstralEchoBot(enable?: boolean): boolean {
     const current = this.astralEchoBotEnabled();
     const next = enable !== undefined ? enable : !current;
     this.astralEchoBotEnabled.set(next);
-
     try {
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem(STORAGE_KEY_ASTRAL_ECHO_BOT, String(next));
@@ -717,22 +788,38 @@ export class MudEngineService implements OnDestroy {
       // storage error
     }
 
+    const now = Date.now();
     if (next) {
-      this.spawnAstralEchoBeacon();
+      const char = this.character();
+      const existing = this.astralEcho();
+      const echo = existing
+        ? { ...existing, lastSimulatedMs: now }
+        : createEcho(char.archetype, char.level, now);
+      this.astralEcho.set(echo);
+      const room = this.rooms().find((r) => r.id === echo.roomId);
       this.appendFeed(
         'NETWORK',
-        "🤖 [Astral Echo Awakened] Autonomous echo bot 'Kite_Zero' is now active in Δ: Silent Fungal Observatory.",
+        `🤖 [Astral Echo] ${echo.name} the ${echo.archetype} is awake in ${room?.title ?? 'your dungeon'}. Tap it to talk, or type "echo" for options.`,
       );
       this.soundFx.playConvergenceChime();
     } else {
-      this.transport.removeDiscoveredPeer('peer-astral-echo');
+      this.echoWatch.set(null);
       this.appendFeed(
         'NETWORK',
-        '🤖 [Astral Echo Deactivated] Autonomous echo bot has been recalled from the realm mesh.',
+        `🤖 [Astral Echo] ${this.astralEcho()?.name ?? 'Your Echo'} is resting. Switch it back on any time.`,
       );
     }
-
+    this.saveEcho(true);
     return next;
+  }
+
+  private saveEcho(force = false): void {
+    const echo = this.astralEcho();
+    if (!echo) return;
+    const now = Date.now();
+    if (!force && now - this.echoSavedAtMs < ECHO_SAVE_EVERY_MS) return;
+    this.echoSavedAtMs = now;
+    void this.storage.saveEchoState(echo);
   }
 
   private async hydrateFromStorage(): Promise<void> {
@@ -765,9 +852,17 @@ export class MudEngineService implements OnDestroy {
       if (!savedChar.heraldGreeting) {
         savedChar.heraldGreeting = formatHeraldGreeting(0, 'Radiant', 'Beacon', 'triumph');
       }
+      if (savedChar.lockpicks === undefined) {
+        savedChar.lockpicks =
+          savedChar.archetype === 'Hexblade' || savedChar.archetype === 'Artificer'
+            ? STARTING_LOCKPICKS
+            : 0;
+      }
       this.character.set(savedChar);
       this.sanctumVaultShards.set(savedChar.sanctumVaultShards || 0);
       this.needsOnboarding.set(false);
+      const savedEcho = await this.storage.loadEchoState();
+      if (savedEcho) this.astralEcho.set(savedEcho);
     } else {
       this.needsOnboarding.set(true);
     }
@@ -841,7 +936,12 @@ export class MudEngineService implements OnDestroy {
       this.inActiveCombat(),
       char.heraldGreeting?.formatted,
       crumbs,
+      {
+        downed: this.playerDowned() !== null,
+        carriedBy: this.playerDowned()?.carriedBy?.id,
+      },
     );
+    this.sendEchoPresence();
   }
 
   private handleLinkEvent(ev: LinkEvent): void {
@@ -872,6 +972,9 @@ export class MudEngineService implements OnDestroy {
       );
     }
     if (this.pendingVisit?.peerId === peerId) this.clearPendingVisit();
+    const d = this.playerDowned();
+    if (d?.carriedBy?.id === peerId) this.playerDowned.set({ ...d, carriedBy: undefined });
+    if (this.carryingPeer()?.peerId === peerId) this.carryingPeer.set(null);
     if (this.realmVisitors()[peerId]) {
       this.realmVisitors.update((all) => {
         const next = { ...all };
@@ -951,6 +1054,8 @@ export class MudEngineService implements OnDestroy {
 
   /** Runs before every gate change: leave the current host, and stop hosting when leaving home. */
   private beforeGateChange(newGate: string, asGuest: boolean): void {
+    if (this.carryingPeer()) this.dropCarriedPeer();
+    if (this.echoWatch()) this.cancelEchoWatch();
     const host = this.authorityHost();
     if (host && host.gateAddress !== newGate) {
       this.transport.sendTo(host.peerId, {
@@ -980,6 +1085,7 @@ export class MudEngineService implements OnDestroy {
       roomId: room.id,
       monsters: room.monsters.map((m) => ({ id: m.id, hp: m.hp })),
       items: room.items,
+      openedChestIds: (room.chests ?? []).filter((c) => c.opened).map((c) => c.id),
     };
   }
 
@@ -1015,6 +1121,9 @@ export class MudEngineService implements OnDestroy {
               : { ...m, hp: Math.max(0, Math.min(m.maxHp, Math.round(hp))) };
           }),
           items: Array.isArray(st.items) ? st.items.slice(0, 30) : r.items,
+          chests: Array.isArray(st.openedChestIds)
+            ? r.chests?.map((c) => (st.openedChestIds!.includes(c.id) ? { ...c, opened: true } : c))
+            : r.chests,
         };
       }),
     );
@@ -1072,6 +1181,9 @@ export class MudEngineService implements OnDestroy {
       case 'ACTION_TAKE':
         if (this.isAddressedToMe(pkt)) this.hostHandleTake(pkt);
         return true;
+      case 'ACTION_OPEN_CHEST':
+        if (this.isAddressedToMe(pkt)) this.hostHandleOpenChest(pkt);
+        return true;
       case 'REALM_SNAPSHOT':
         if (this.isAddressedToMe(pkt)) {
           this.visitorHandleSnapshot(pkt);
@@ -1092,7 +1204,7 @@ export class MudEngineService implements OnDestroy {
         return true;
       case 'ACTION_RESULT':
         if (this.isFromAuthorityHost(pkt) && this.isAddressedToMe(pkt)) {
-          this.visitorHandleTakeResult(pkt);
+          if (!this.visitorHandleChestResult(pkt)) this.visitorHandleTakeResult(pkt);
         }
         return true;
       case 'HOST_AWAY': {
@@ -1137,6 +1249,7 @@ export class MudEngineService implements OnDestroy {
         peerId: pkt.senderPeerId,
         name: pkt.senderName,
         level,
+        archetype: pkt.authority?.visitor?.archetype ?? 'Vanguard',
         joinedAtMs: Date.now(),
       },
     }));
@@ -1191,6 +1304,9 @@ export class MudEngineService implements OnDestroy {
     );
     this.creditDamage(roomId, monsterId, visitor.peerId);
     if (result.defeated) {
+      this.liveDefeatedAt.set(this.monsterKey(roomId, monsterId), now);
+      const drop = this.rollMonsterDrop(roomId, result.defeated, now);
+      if (drop.item) this.dropToFloor(roomId, drop.item);
       void this.resolveVisitorKill(roomId, result.defeated, visitor.name);
     }
     this.broadcastRoomState(roomId);
@@ -1391,22 +1507,69 @@ export class MudEngineService implements OnDestroy {
     void this.storage.saveRealmDelta(delta, isHome);
   }
 
-  /** Marks monsters or items in freshly generated rooms as already cleared. */
-  private withRealmProgress(rooms: RoomNode[]): RoomNode[] {
+  private monsterKey(roomId: string, monsterId: string): string {
+    return `${roomId}/${monsterId}`;
+  }
+
+  private respawnCooldownMs(mob: MonsterEntity): number {
+    return mob.isBoss ? BOSS_RESPAWN_MS : MONSTER_RESPAWN_MS;
+  }
+
+  /** When this monster was last defeated here, if that still counts. */
+  private defeatedAtFor(roomId: string, mob: MonsterEntity, now: number): number | undefined {
+    const key = this.monsterKey(roomId, mob.id);
+    const t = this.realmProgress.defeatedAt?.[key] ?? this.liveDefeatedAt.get(key);
+    return t !== undefined && now - t < this.respawnCooldownMs(mob) ? t : undefined;
+  }
+
+  /** Keep a fresh copy of every generated monster so a refilled room is good as new. */
+  private rememberPristine(rooms: RoomNode[]): void {
+    const gate = this.activeGateAddress().formatted;
+    for (const r of rooms) {
+      for (const m of r.monsters) {
+        const key = `${gate}|${r.id}/${m.id}`;
+        if (!this.pristineMonsters.has(key) && m.hp > 0) {
+          this.pristineMonsters.set(key, structuredClone(m));
+        }
+      }
+    }
+  }
+
+  /** Marks cleared monsters, collected items, and opened chests in freshly generated rooms. */
+  private withRealmProgress(rooms: RoomNode[], now = Date.now()): RoomNode[] {
+    this.rememberPristine(rooms);
     // In a live host's realm the host's state is the truth, not my own old progress.
     if (this.authorityHost()) return rooms;
     const progress = this.realmProgress;
     if (progress.gateAddress !== this.activeGateAddress().formatted) return rooms;
-    if (progress.defeatedMonsterKeys.length === 0 && progress.takenItemKeys.length === 0) {
+    const taken = new Set(progress.takenItemKeys);
+    const opened = new Set(progress.openedChestKeys ?? []);
+    if (
+      Object.keys(progress.defeatedAt ?? {}).length === 0 &&
+      this.liveDefeatedAt.size === 0 &&
+      taken.size === 0 &&
+      opened.size === 0
+    ) {
       return rooms;
     }
-    const defeated = new Set(progress.defeatedMonsterKeys);
-    const taken = new Set(progress.takenItemKeys);
-    return rooms.map((r) => ({
-      ...r,
-      monsters: r.monsters.map((m) => (defeated.has(`${r.id}/${m.id}`) ? { ...m, hp: 0 } : m)),
-      items: r.items.filter((i) => !taken.has(`${r.id}/${i.id}`)),
-    }));
+    return rooms.map((r) => {
+      const chests = r.chests?.map((c) =>
+        opened.has(this.monsterKey(r.id, c.id)) ? { ...c, opened: true } : c,
+      );
+      // Untaken loot from opened chests stays on the floor.
+      const chestLoot = (chests ?? [])
+        .filter((c) => c.opened)
+        .flatMap((c) => c.items)
+        .filter((i) => !r.items.some((existing) => existing.id === i.id));
+      return {
+        ...r,
+        chests,
+        monsters: r.monsters.map((m) =>
+          this.defeatedAtFor(r.id, m, now) !== undefined ? { ...m, hp: 0 } : m,
+        ),
+        items: [...r.items, ...chestLoot].filter((i) => !taken.has(this.monsterKey(r.id, i.id))),
+      };
+    });
   }
 
   /** Loads saved progress for the active gate and applies it to the current rooms. */
@@ -1414,19 +1577,802 @@ export class MudEngineService implements OnDestroy {
     const gate = this.activeGateAddress().formatted;
     const saved = await this.storage.loadRealmProgress(gate);
     if (this.activeGateAddress().formatted !== gate) return;
+    const now = Date.now();
     // Keep anything cleared while the load was in flight.
     const current = this.realmProgress.gateAddress === gate ? this.realmProgress : null;
+    const defeatedAt: Record<string, number> = {
+      ...(saved.defeatedAt ?? {}),
+      ...(current?.defeatedAt ?? {}),
+    };
+    // Older saves have keys without times: start their cooldown now.
+    for (const key of [...saved.defeatedMonsterKeys, ...(current?.defeatedMonsterKeys ?? [])]) {
+      if (defeatedAt[key] === undefined) defeatedAt[key] = now;
+    }
     this.realmProgress = {
       gateAddress: gate,
-      defeatedMonsterKeys: [
-        ...new Set([...saved.defeatedMonsterKeys, ...(current?.defeatedMonsterKeys ?? [])]),
-      ],
+      defeatedMonsterKeys: [],
+      defeatedAt,
       takenItemKeys: [...new Set([...saved.takenItemKeys, ...(current?.takenItemKeys ?? [])])],
+      openedChestKeys: [
+        ...new Set([...(saved.openedChestKeys ?? []), ...(current?.openedChestKeys ?? [])]),
+      ],
     };
     this.rooms.set(this.withRealmProgress(this.rooms()));
+    this.onRealmProgressRestored();
   }
 
-  private recordRealmProgress(kind: 'monster' | 'item', roomId: string, ids: string[]): void {
+  /** Hook for systems that need the realm's saved state in place (the Astral Echo). */
+  private onRealmProgressRestored(): void {
+    // Home realm is in place: let the Echo catch up on the time it was left alone.
+    if (!this.isVisitingExternalRealm()) this.advanceEcho(Date.now());
+  }
+
+  // ===========================================================================
+  // Astral Echo: live loop, catch-up, and applying its work to the world
+  // ===========================================================================
+
+  /**
+   * Run the Echo up to `now`. Short gaps are one live step; longer gaps (tab closed,
+   * throttled, or you were away) are simulated in coarse steps, capped at 8 hours,
+   * with a "while you were away" report.
+   */
+  advanceEcho(now = Date.now()): void {
+    let echo = this.astralEcho();
+    if (!echo || !this.astralEchoBotEnabled()) return;
+    if (this.isVisitingExternalRealm() || this.authorityHost()) return;
+    const elapsed = now - echo.lastSimulatedMs;
+    if (elapsed < 500) return;
+    const capped = elapsed > ECHO_TUNING.CATCHUP_CAP_MS;
+    const dt = Math.min(elapsed, ECHO_TUNING.CATCHUP_CAP_MS);
+    const startRoom = echo.roomId;
+    const startLevel = echo.level;
+
+    if (dt <= ECHO_TUNING.LIVE_STEP_MS * 3) {
+      const result = stepEcho(echo, this.echoWorld(now, true), dt, this.echoRng);
+      this.astralEcho.set(result.echo);
+      this.applyEchoEffects(result.effects, now);
+    } else {
+      const tally = emptyTally();
+      const startMs = now - dt;
+      const steps = Math.ceil(dt / ECHO_TUNING.CATCHUP_STEP_MS);
+      for (let i = 1; i <= steps; i++) {
+        const simNow = Math.min(now, startMs + i * ECHO_TUNING.CATCHUP_STEP_MS);
+        const stepDt = simNow - (startMs + (i - 1) * ECHO_TUNING.CATCHUP_STEP_MS);
+        this.respawnDueMonsters(simNow, true);
+        echo = this.astralEcho()!;
+        const result = stepEcho(echo, this.echoWorld(simNow, false), stepDt, this.echoRng);
+        this.astralEcho.set(result.echo);
+        this.applyEchoEffects(result.effects, simNow);
+        for (const k of Object.keys(tally) as (keyof typeof tally)[]) tally[k] += result.tally[k];
+      }
+      if (dt >= ECHO_TUNING.REPORT_THRESHOLD_MS) {
+        const report: EchoAwayReport = {
+          simulatedMs: dt,
+          capped,
+          ...tally,
+          levelsGained: this.astralEcho()!.level - startLevel,
+        };
+        this.echoAwayReport.set(report);
+        this.appendFeed('NETWORK', `🤖 ${this.describeAwayReport(report)}`);
+      }
+    }
+    const after = this.astralEcho()!;
+    if (after.roomId !== startRoom) this.sendEchoPresence();
+    this.saveEcho(dt > ECHO_TUNING.LIVE_STEP_MS * 3);
+  }
+
+  describeAwayReport(r: EchoAwayReport): string {
+    const name = this.astralEcho()?.name ?? 'Your Echo';
+    const hours = Math.floor(r.simulatedMs / 3_600_000);
+    const mins = Math.round((r.simulatedMs % 3_600_000) / 60_000);
+    const span = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+    const bits = [
+      `${r.kills} kill(s)`,
+      `${r.roomsScouted} room(s) scouted`,
+      `${r.itemsFound} item(s) found`,
+      `${r.gold} gold`,
+    ];
+    if (r.levelsGained > 0) bits.push(`${r.levelsGained} level(s) gained`);
+    if (r.downedTimes > 0) bits.push(`knocked down ${r.downedTimes} time(s)`);
+    return `While you were away (${span}${r.capped ? ', the most it can catch up on' : ''}), ${name}: ${bits.join(', ')}.`;
+  }
+
+  private echoWorld(now: number, live: boolean) {
+    const char = this.character();
+    return {
+      rooms: this.rooms(),
+      playerRoomId: live && !this.playerDowned() ? char.currentRoomId : null,
+      playerTargetId: live ? this.selectedTargetId() : null,
+      visitedRoomIds: char.visitedRoomIds,
+      nowMs: now,
+    };
+  }
+
+  /** Apply what the Echo did: through the same paths a player's actions use. */
+  private applyEchoEffects(effects: EchoWorldEffect[], atMs: number): void {
+    if (effects.length === 0) return;
+    const changed = new Set<string>();
+    for (const eff of effects) {
+      changed.add(eff.roomId);
+      if (eff.kind === 'DAMAGE') {
+        this.rooms.update((all) =>
+          all.map((r) =>
+            r.id !== eff.roomId
+              ? r
+              : {
+                  ...r,
+                  monsters: r.monsters.map((m) =>
+                    m.id === eff.monsterId ? { ...m, hp: Math.max(0, m.hp - eff.damage) } : m,
+                  ),
+                },
+          ),
+        );
+        if (this.isHostingLive()) this.creditDamage(eff.roomId, eff.monsterId, ECHO_PEER_ID);
+      } else if (eff.kind === 'KILL') {
+        const mob = this.rooms()
+          .find((r) => r.id === eff.roomId)
+          ?.monsters.find((m) => m.id === eff.monsterId);
+        this.rooms.update((all) =>
+          all.map((r) =>
+            r.id !== eff.roomId
+              ? r
+              : {
+                  ...r,
+                  monsters: r.monsters.map((m) => (m.id === eff.monsterId ? { ...m, hp: 0 } : m)),
+                },
+          ),
+        );
+        this.recordRealmProgress('monster', eff.roomId, [eff.monsterId], atMs);
+        if (mob) {
+          const drop = this.rollMonsterDrop(eff.roomId, mob, atMs);
+          this.astralEcho.update((e) => {
+            if (!e) return e;
+            const satchel =
+              drop.item && e.satchel.length < ECHO_TUNING.SATCHEL_CAP
+                ? [...e.satchel, drop.item]
+                : e.satchel;
+            return { ...e, satchel, lockpicks: e.lockpicks + drop.lockpicks };
+          });
+        }
+        if (this.isHostingLive()) {
+          const credits = this.takeCredits(eff.roomId, eff.monsterId);
+          this.transport.sendPacket({
+            senderName: this.astralEcho()?.name ?? 'Astral Echo',
+            type: 'MONSTER_DEFEATED',
+            gateAddress: this.activeGateAddress().formatted,
+            roomId: eff.roomId,
+            authority: { monsterId: eff.monsterId, creditPeerIds: [...credits] },
+          });
+        }
+      } else if (eff.kind === 'REVEAL') {
+        this.character.update((c) =>
+          c.visitedRoomIds.includes(eff.roomId)
+            ? c
+            : { ...c, visitedRoomIds: [...c.visitedRoomIds, eff.roomId] },
+        );
+      } else if (eff.kind === 'TAKE') {
+        const ids = new Set(eff.itemIds);
+        this.rooms.update((all) =>
+          all.map((r) =>
+            r.id === eff.roomId ? { ...r, items: r.items.filter((i) => !ids.has(i.id)) } : r,
+          ),
+        );
+        this.recordRealmProgress('item', eff.roomId, eff.itemIds, atMs);
+      } else if (eff.kind === 'OPEN_CHEST') {
+        // The Echo already put the contents in its satchel.
+        this.rooms.update((all) =>
+          all.map((r) =>
+            r.id !== eff.roomId || !r.chests
+              ? r
+              : {
+                  ...r,
+                  chests: r.chests.map((c) => (c.id === eff.chestId ? { ...c, opened: true } : c)),
+                },
+          ),
+        );
+        this.recordRealmProgress('chest', eff.roomId, [eff.chestId], atMs);
+      }
+    }
+    for (const roomId of changed) this.broadcastRoomState(roomId);
+  }
+
+  /** Hosting: show my Echo to my visitors. */
+  private sendEchoPresence(): void {
+    const echo = this.localEchoPeer();
+    if (!echo || !this.isHostingLive()) return;
+    this.transport.announceCompanionBeacon(
+      `${this.transport.localPeerId}-echo`,
+      echo.playerName,
+      echo.gateAddress,
+      echo.currentRoomId,
+      echo.archetype,
+      echo.level,
+      echo.downed === true,
+    );
+  }
+
+  // ----- Echo commands -------------------------------------------------------------
+
+  private requireEcho(): EchoCompanion | null {
+    const echo = this.astralEcho();
+    if (!echo || !this.astralEchoBotEnabled()) {
+      this.appendFeed('SYSTEM', 'Your Astral Echo is off. Type "echo on" to wake it.');
+      return null;
+    }
+    return echo;
+  }
+
+  echoStatusLine(): string {
+    const echo = this.astralEcho();
+    if (!echo) return 'You have no Astral Echo yet. Type "echo on".';
+    const room = this.rooms().find((r) => r.id === echo.roomId)?.title ?? echo.roomId;
+    const job = echo.jobs.find((j) => j.id === echo.activeJobId);
+    const mode: Record<EchoCompanion['mode'], string> = {
+      IDLE: 'idle',
+      WORKING: 'working',
+      RESTING: 'resting',
+      DOWNED: 'down',
+    };
+    return `${echo.name}: Lv.${echo.level} ${echo.archetype}, HP ${echo.hp}/${echo.maxHp}, ${mode[echo.mode]} in ${room}. Job: ${job?.name ?? 'none'}. Satchel: ${echo.satchel.length}/${ECHO_TUNING.SATCHEL_CAP} items, ${echo.gold} gold, ${echo.lockpicks} lockpick(s).`;
+  }
+
+  /** Give the Echo a job by kind, or a taught route by id or name. Null stops it. */
+  setEchoJob(kindOrId: EchoJobKind | string | null): void {
+    const echo = this.requireEcho();
+    if (!echo) return;
+    if (kindOrId === null) {
+      this.astralEcho.set({
+        ...echo,
+        activeJobId: null,
+        mode: echo.mode === 'DOWNED' ? 'DOWNED' : 'IDLE',
+      });
+      this.appendFeed('NETWORK', `🤖 ${echo.name} stops and waits.`);
+      this.saveEcho(true);
+      return;
+    }
+    const key = kindOrId.toLowerCase();
+    const job =
+      echo.jobs.find((j) => j.id === kindOrId) ??
+      echo.jobs.find((j) => j.kind !== 'ROUTE' && j.kind.toLowerCase() === key) ??
+      echo.jobs.find((j) => j.kind === 'ROUTE' && j.name.toLowerCase().startsWith(key));
+    if (!job) {
+      this.appendFeed('SYSTEM', `${echo.name} doesn't know a job called "${kindOrId}".`);
+      return;
+    }
+    if (!jobUnlocked(echo, job)) {
+      this.appendFeed(
+        'SYSTEM',
+        `${echo.name} can farm from level ${ECHO_TUNING.FARM_UNLOCK_LEVEL} (it's level ${echo.level}).`,
+      );
+      return;
+    }
+    this.astralEcho.set({
+      ...echo,
+      activeJobId: job.id,
+      routeIndex: 0,
+      mode: echo.mode === 'DOWNED' ? 'DOWNED' : 'WORKING',
+    });
+    const what: Record<EchoJobKind, string> = {
+      FOLLOW: "I'll stay with you and fight your target.",
+      SCOUT: "I'll explore rooms you haven't seen and mark them on your map.",
+      FARM: "I'll clear rooms and bring back what I find.",
+      ROUTE: `I'll run "${job.name}" for you.`,
+    };
+    this.appendFeed('NETWORK', `🤖 ${echo.name}: "${what[job.kind]}"`);
+    this.saveEcho(true);
+  }
+
+  /** Open the network drawer on the Echo tab (used by "Talk"). */
+  openEchoPanel(): void {
+    this.pendingLoomTab.set('ECHO');
+    this.activeDrawer.set('NETWORK');
+  }
+
+  /** Move everything in the satchel (items and gold) to you. Lockpicks stay with the Echo. */
+  takeEchoSatchel(): void {
+    const echo = this.requireEcho();
+    if (!echo) return;
+    if (echo.satchel.length === 0 && echo.gold === 0) {
+      this.appendFeed('NARRATIVE', `${echo.name}'s satchel is empty.`);
+      return;
+    }
+    this.character.update((c) => ({
+      ...c,
+      inventory: [...c.inventory, ...echo.satchel],
+      gold: c.gold + echo.gold,
+      resonanceShards: c.resonanceShards + echo.shards,
+    }));
+    this.appendFeed(
+      'NARRATIVE',
+      `🤖 ${echo.name} hands you ${echo.satchel.length} item(s) and ${echo.gold} gold.`,
+    );
+    this.astralEcho.set({ ...echo, satchel: [], gold: 0, shards: 0 });
+    this.saveEcho(true);
+    void this.storage.saveCharacterState(this.character());
+  }
+
+  giveEchoLockpick(): void {
+    const echo = this.requireEcho();
+    if (!echo) return;
+    if ((this.character().lockpicks ?? 0) <= 0) {
+      this.appendFeed('SYSTEM', "You don't have a lockpick to give.");
+      return;
+    }
+    this.character.update((c) => ({ ...c, lockpicks: (c.lockpicks ?? 0) - 1 }));
+    this.astralEcho.set({ ...echo, lockpicks: echo.lockpicks + 1 });
+    this.appendFeed(
+      'NARRATIVE',
+      `You give ${echo.name} a lockpick (it has ${echo.lockpicks + 1}).`,
+    );
+    this.saveEcho(true);
+    void this.storage.saveCharacterState(this.character());
+  }
+
+  renameEcho(name: string): void {
+    const echo = this.requireEcho();
+    const clean = name.trim().replace(/\s+/g, '_').slice(0, 24);
+    if (!echo || !clean) return;
+    this.astralEcho.set({ ...echo, name: clean });
+    this.appendFeed('NETWORK', `🤖 Your Echo is now called ${clean}.`);
+    this.saveEcho(true);
+  }
+
+  setEchoClass(archetype: ArchetypeClass): void {
+    const echo = this.requireEcho();
+    if (!echo || echo.archetype === archetype) return;
+    this.astralEcho.set({ ...echo, archetype });
+    this.appendFeed('NETWORK', `🤖 ${echo.name} now fights as a ${archetype}.`);
+    this.saveEcho(true);
+  }
+
+  /** Lift your downed Echo when you're in its room. */
+  carryEcho(): void {
+    const echo = this.requireEcho();
+    if (!echo) return;
+    if (echo.mode !== 'DOWNED') {
+      this.appendFeed('SYSTEM', `${echo.name} is on its feet.`);
+      return;
+    }
+    if (echo.roomId !== this.character().currentRoomId || this.isVisitingExternalRealm()) {
+      this.appendFeed('SYSTEM', `${echo.name} is down somewhere else. Go to it first.`);
+      return;
+    }
+    this.astralEcho.set({ ...echo, carried: true });
+    this.appendFeed('NARRATIVE', `You lift ${echo.name}. Bring it to a campfire to revive it.`);
+    if (this.currentRoom().legendType === 'safe-campfire') this.reviveEchoAtCampfire();
+  }
+
+  private reviveEchoAtCampfire(): void {
+    const echo = this.astralEcho();
+    if (!echo || echo.mode !== 'DOWNED') return;
+    const room = this.currentRoom();
+    this.astralEcho.set({
+      ...echo,
+      mode: echo.activeJobId ? 'WORKING' : 'IDLE',
+      hp: Math.round(echo.maxHp * 0.6),
+      carried: false,
+      downedUntilMs: undefined,
+      roomId: room.id,
+      lastSimulatedMs: Date.now(),
+      log: [
+        { atMs: Date.now(), text: 'You brought me to a campfire. Thank you.' },
+        ...echo.log,
+      ].slice(0, ECHO_TUNING.LOG_LIMIT),
+    });
+    this.appendFeed('NARRATIVE', `♨ ${echo.name} gets back up by the campfire in ${room.title}.`);
+    this.saveEcho(true);
+  }
+
+  // ----- Watch me: teach a route --------------------------------------------------
+
+  startEchoWatch(): void {
+    const echo = this.requireEcho();
+    if (!echo) return;
+    if (this.isVisitingExternalRealm()) {
+      this.appendFeed('SYSTEM', `${echo.name} can only learn routes in your own dungeon.`);
+      return;
+    }
+    this.echoWatch.set({ rooms: [this.character().currentRoomId], fought: false, looted: false });
+    this.appendFeed(
+      'NETWORK',
+      `🤖 ${echo.name} is watching. Play the route you want it to learn, then say "echo done <name>" or tap Save as job.`,
+    );
+  }
+
+  finishEchoWatch(name: string): void {
+    const echo = this.requireEcho();
+    const watch = this.echoWatch();
+    if (!echo || !watch) {
+      this.appendFeed('SYSTEM', 'Nothing is being recorded. Start with "echo watch".');
+      return;
+    }
+    if (watch.rooms.length < 2) {
+      this.appendFeed('SYSTEM', 'Walk through at least two rooms first.');
+      return;
+    }
+    const taught = echo.jobs.filter((j) => j.kind === 'ROUTE');
+    if (taught.length >= ECHO_TUNING.MAX_TAUGHT_JOBS) {
+      this.appendFeed(
+        'SYSTEM',
+        `${echo.name} already knows ${ECHO_TUNING.MAX_TAUGHT_JOBS} routes. Forget one first.`,
+      );
+      return;
+    }
+    const job = makeRouteJob(name, watch.rooms, watch.fought, watch.looted, Date.now());
+    this.astralEcho.set({ ...echo, jobs: [...echo.jobs, job] });
+    this.echoWatch.set(null);
+    this.appendFeed(
+      'NETWORK',
+      `🤖 ${echo.name} learned "${job.name}" (${job.route!.length} rooms${job.fight ? ', fights' : ''}${job.loot ? ', loots' : ''}).`,
+    );
+    this.saveEcho(true);
+  }
+
+  cancelEchoWatch(): void {
+    if (!this.echoWatch()) return;
+    this.echoWatch.set(null);
+    this.appendFeed('NETWORK', '🤖 Stopped recording.');
+  }
+
+  forgetEchoJob(jobId: string): void {
+    const echo = this.requireEcho();
+    if (!echo) return;
+    const job = echo.jobs.find((j) => j.id === jobId);
+    if (!job || job.kind !== 'ROUTE') return;
+    this.astralEcho.set({
+      ...echo,
+      jobs: echo.jobs.filter((j) => j.id !== jobId),
+      activeJobId: echo.activeJobId === jobId ? null : echo.activeJobId,
+    });
+    this.appendFeed('NETWORK', `🤖 ${echo.name} forgot "${job.name}".`);
+    this.saveEcho(true);
+  }
+
+  /** Called on every kill you make (for Watch me). */
+  /** Watch me recording, and carrying a downed Echo along with you. */
+  private afterPlayerMoved(roomId: string): void {
+    const watch = this.echoWatch();
+    if (
+      watch &&
+      !this.isVisitingExternalRealm() &&
+      watch.rooms[watch.rooms.length - 1] !== roomId
+    ) {
+      if (watch.rooms.length < ECHO_TUNING.MAX_ROUTE_ROOMS) {
+        this.echoWatch.set({ ...watch, rooms: [...watch.rooms, roomId] });
+      } else if (watch.rooms.length === ECHO_TUNING.MAX_ROUTE_ROOMS) {
+        this.appendFeed(
+          'NETWORK',
+          `🤖 That's as long as a route can be (${ECHO_TUNING.MAX_ROUTE_ROOMS} rooms). Save it now.`,
+        );
+      }
+    }
+    const echo = this.astralEcho();
+    if (echo?.carried && echo.mode === 'DOWNED') {
+      this.astralEcho.set({ ...echo, roomId });
+      if (this.rooms().find((r) => r.id === roomId)?.legendType === 'safe-campfire') {
+        this.reviveEchoAtCampfire();
+      }
+    }
+  }
+
+  private onPlayerKill(): void {
+    const watch = this.echoWatch();
+    if (watch && !watch.fought) this.echoWatch.set({ ...watch, fought: true });
+  }
+
+  private onPlayerLooted(): void {
+    const watch = this.echoWatch();
+    if (watch && !watch.looted) this.echoWatch.set({ ...watch, looted: true });
+  }
+
+  handleEchoCommand(args: string[]): void {
+    const sub = args[0]?.toLowerCase();
+    const rest = args.slice(1).join(' ').trim();
+    switch (sub) {
+      case undefined:
+        if (this.astralEchoBotEnabled()) this.appendFeed('NETWORK', `🤖 ${this.echoStatusLine()}`);
+        else this.toggleAstralEchoBot(true);
+        return;
+      case 'on':
+      case 'enable':
+      case 'start':
+      case '1':
+        this.toggleAstralEchoBot(true);
+        return;
+      case 'off':
+      case 'disable':
+      case '0':
+        this.toggleAstralEchoBot(false);
+        return;
+      case 'status':
+        this.appendFeed('NETWORK', `🤖 ${this.echoStatusLine()}`);
+        return;
+      case 'follow':
+      case 'scout':
+      case 'farm':
+        this.setEchoJob(sub.toUpperCase() as EchoJobKind);
+        return;
+      case 'route':
+      case 'run':
+        this.setEchoJob(rest || 'ROUTE');
+        return;
+      case 'stop':
+      case 'wait':
+        this.setEchoJob(null);
+        return;
+      case 'watch':
+      case 'learn':
+        this.startEchoWatch();
+        return;
+      case 'done':
+      case 'save':
+        this.finishEchoWatch(rest);
+        return;
+      case 'cancel':
+        this.cancelEchoWatch();
+        return;
+      case 'give':
+      case 'take':
+      case 'loot':
+        this.takeEchoSatchel();
+        return;
+      case 'pick':
+      case 'lockpick':
+        this.giveEchoLockpick();
+        return;
+      case 'carry':
+        this.carryEcho();
+        return;
+      case 'name':
+      case 'rename':
+        this.renameEcho(rest);
+        return;
+      default:
+        this.appendFeed(
+          'SYSTEM',
+          'Echo commands: echo on | off | status | follow | scout | farm | route <name> | stop | watch | done <name> | give | lockpick | carry | name <new>',
+        );
+    }
+  }
+
+  // ===========================================================================
+  // Falling, being carried, and getting up at a campfire
+  // ===========================================================================
+
+  private otherPlayersInRealm(): NetworkPeerVisitor[] {
+    const gate = this.activeGateAddress().formatted;
+    return this.transport
+      .activeVisitorsList()
+      .filter((v) => v.gateAddress === gate && !v.isAstralEcho && !v.downed);
+  }
+
+  /** What happens after you fall: your Echo carries you, others can, or you wake at the entrance. */
+  private afterPlayerFell(killerName: string, room: RoomNode): void {
+    const now = Date.now();
+    const echo = this.astralEcho();
+    const echoUp =
+      !!echo &&
+      this.astralEchoBotEnabled() &&
+      echo.mode !== 'DOWNED' &&
+      !this.isVisitingExternalRealm();
+    this.character.update((c) => ({ ...c, hp: 0, atbGauge: 0 }));
+    if (echo?.carried) this.astralEcho.set({ ...echo, carried: false, roomId: room.id });
+
+    if (echoUp && echo) {
+      const fire = nextHop(this.rooms(), room.id, (r) => r.legendType === 'safe-campfire');
+      const fireRoom = fire ? this.rooms().find((r) => r.id === fire.target) : undefined;
+      if (fire && fireRoom) {
+        this.character.update((c) => ({ ...c, currentRoomId: fireRoom.id }));
+        this.astralEcho.set({
+          ...this.astralEcho()!,
+          roomId: fireRoom.id,
+          log: [
+            { atMs: now, text: `I carried you to the campfire in ${fireRoom.title}.` },
+            ...echo.log,
+          ].slice(0, ECHO_TUNING.LOG_LIMIT),
+        });
+        this.playerDowned.set({
+          roomId: fireRoom.id,
+          sinceMs: now,
+          carriedBy: { id: ECHO_PEER_ID, name: echo.name },
+          campfireOffer: { roomId: fireRoom.id, byName: echo.name },
+        });
+        this.appendFeed(
+          'COMBAT',
+          `☠ ${killerName} knocked you down. ${echo.name} carried you to the campfire in ${fireRoom.title}. Get up here?`,
+        );
+        this.emitCurrentRoomNarrative();
+        this.sendPresenceBeacon();
+        return;
+      }
+    }
+
+    if (this.otherPlayersInRealm().length > 0) {
+      this.playerDowned.set({ roomId: room.id, sinceMs: now });
+      this.appendFeed(
+        'COMBAT',
+        `☠ ${killerName} knocked you down in ${room.title}. Another player can carry you to a campfire, or you can return to the entrance.`,
+      );
+      if (this.downedTimer) clearTimeout(this.downedTimer);
+      this.downedTimer = setTimeout(() => {
+        const d = this.playerDowned();
+        if (d && !d.campfireOffer)
+          this.respawnAtEntrance('No one reached you in time. You wake at the entrance.');
+      }, PLAYER_DOWNED_TIMEOUT_MS);
+      this.sendPresenceBeacon();
+      return;
+    }
+
+    this.respawnAtEntrance(`☠ ${killerName} knocked you down. You wake at the entrance.`);
+  }
+
+  private clearDowned(): void {
+    const d = this.playerDowned();
+    if (this.downedTimer) clearTimeout(this.downedTimer);
+    this.downedTimer = null;
+    if (d?.carriedBy && d.carriedBy.id !== ECHO_PEER_ID) {
+      this.transport.sendTo(d.carriedBy.id, {
+        senderName: this.character().name,
+        type: 'CARRY_DROP',
+        gateAddress: this.activeGateAddress().formatted,
+        roomId: this.character().currentRoomId,
+      });
+    }
+    this.playerDowned.set(null);
+  }
+
+  respawnAtEntrance(message: string): void {
+    const stats = this.derivedStats();
+    this.clearDowned();
+    this.character.update((c) => ({
+      ...c,
+      currentRoomId: 'room-0',
+      hp: stats.maxHp,
+      stamina: stats.maxStamina,
+      atbGauge: 0,
+    }));
+    this.appendFeed('COMBAT', message);
+    this.emitCurrentRoomNarrative();
+    this.sendPresenceBeacon();
+  }
+
+  /** Say yes to the campfire prompt. */
+  acceptCampfireRevival(): void {
+    const offer = this.playerDowned()?.campfireOffer;
+    if (!offer) {
+      this.appendFeed('SYSTEM', "There's no campfire here to get up at yet.");
+      return;
+    }
+    const stats = this.derivedStats();
+    const room = this.rooms().find((r) => r.id === offer.roomId);
+    this.clearDowned();
+    this.character.update((c) => ({
+      ...c,
+      currentRoomId: offer.roomId,
+      hp: stats.maxHp,
+      stamina: stats.maxStamina,
+      atbGauge: 0,
+      statuses: [],
+    }));
+    this.soundFx.playCampfireRest();
+    this.appendFeed(
+      'NARRATIVE',
+      `♨ You get up by the campfire in ${room?.title ?? 'the camp'}. Thanks, ${offer.byName}!`,
+    );
+    this.emitCurrentRoomNarrative();
+    this.sendPresenceBeacon();
+  }
+
+  /** Carry another downed player who is in this room. */
+  carryPeer(peerId: string): void {
+    if (this.playerDowned()) {
+      this.appendFeed('SYSTEM', "You can't carry anyone while you're down.");
+      return;
+    }
+    if (peerId === ECHO_PEER_ID) {
+      this.carryEcho();
+      return;
+    }
+    const peer = this.transport.discoveredPeers()[peerId];
+    const here = this.character().currentRoomId;
+    if (!peer?.downed || peer.currentRoomId !== here) {
+      this.appendFeed('SYSTEM', 'There is no one down here to carry.');
+      return;
+    }
+    if (peer.carriedBy && peer.carriedBy !== this.transport.localPeerId) {
+      this.appendFeed('SYSTEM', `Someone is already carrying ${peer.playerName}.`);
+      return;
+    }
+    const sent = this.transport.sendTo(peerId, {
+      senderName: this.character().name,
+      type: 'CARRY_START',
+      gateAddress: this.activeGateAddress().formatted,
+      roomId: here,
+    });
+    if (!sent) {
+      this.appendFeed('SYSTEM', `You can't reach ${peer.playerName} right now.`);
+      return;
+    }
+    this.carryingPeer.set({ peerId, name: peer.playerName });
+    this.appendFeed('NARRATIVE', `You lift ${peer.playerName}. Bring them to a campfire.`);
+  }
+
+  carryPeerByName(name: string): void {
+    const key = name.trim().toLowerCase();
+    const peers = this.peersInCurrentRoom().filter((p) => p.downed);
+    const target =
+      peers.find((p) => p.playerName.toLowerCase().startsWith(key)) ?? (key ? undefined : peers[0]);
+    if (!target) {
+      this.appendFeed('SYSTEM', 'There is no one down here to carry.');
+      return;
+    }
+    this.carryPeer(target.peerId);
+  }
+
+  /** I'm down and being carried: follow my carrier, and offer the campfire when we reach one. */
+  private followCarrier(roomId: string | undefined): void {
+    const d = this.playerDowned();
+    if (!d?.carriedBy || !roomId) return;
+    const room = this.rooms().find((r) => r.id === roomId);
+    if (!room) return;
+    this.character.update((c) => ({ ...c, currentRoomId: roomId }));
+    const atFire = room.legendType === 'safe-campfire';
+    const newOffer = atFire && d.campfireOffer?.roomId !== roomId;
+    this.playerDowned.set({
+      ...d,
+      roomId,
+      campfireOffer: atFire ? { roomId, byName: d.carriedBy.name } : d.campfireOffer,
+    });
+    if (newOffer) {
+      this.appendFeed(
+        'NARRATIVE',
+        `♨ ${d.carriedBy.name} brought you to the campfire in ${room.title}. Get up here?`,
+      );
+    }
+  }
+
+  private handleCarryPacket(pkt: NetworkPacket): void {
+    if (pkt.type === 'CARRY_START') {
+      const d = this.playerDowned();
+      if (!d || pkt.toPeerId !== this.transport.localPeerId) return;
+      if (d.carriedBy && d.carriedBy.id !== pkt.senderPeerId) return;
+      if (pkt.gateAddress !== this.activeGateAddress().formatted) return;
+      this.playerDowned.set({ ...d, carriedBy: { id: pkt.senderPeerId, name: pkt.senderName } });
+      this.appendFeed('NARRATIVE', `${pkt.senderName} is carrying you.`);
+      this.followCarrier(pkt.roomId);
+      this.sendPresenceBeacon();
+    } else if (pkt.type === 'CARRY_DROP') {
+      const d = this.playerDowned();
+      if (d?.carriedBy?.id === pkt.senderPeerId) {
+        this.playerDowned.set({ ...d, carriedBy: undefined });
+        this.appendFeed('NARRATIVE', `${pkt.senderName} put you down.`);
+        this.sendPresenceBeacon();
+      }
+      if (this.carryingPeer()?.peerId === pkt.senderPeerId) {
+        this.carryingPeer.set(null);
+      }
+    }
+  }
+
+  dropCarriedPeer(): void {
+    const carrying = this.carryingPeer();
+    if (!carrying) return;
+    this.transport.sendTo(carrying.peerId, {
+      senderName: this.character().name,
+      type: 'CARRY_DROP',
+      gateAddress: this.activeGateAddress().formatted,
+      roomId: this.character().currentRoomId,
+    });
+    this.carryingPeer.set(null);
+    this.appendFeed('NARRATIVE', `You put ${carrying.name} down.`);
+  }
+
+  private recordRealmProgress(
+    kind: 'monster' | 'item' | 'chest',
+    roomId: string,
+    ids: string[],
+    atMs = Date.now(),
+  ): void {
     if (this.authorityHost()) return;
     const room = this.rooms().find((r) => r.id === roomId);
     // Expedition rifts are temporary and reuse room ids, so they are never recorded.
@@ -1436,12 +2382,280 @@ export class MudEngineService implements OnDestroy {
       this.realmProgress.gateAddress === gate
         ? this.realmProgress
         : { gateAddress: gate, defeatedMonsterKeys: [], takenItemKeys: [] };
-    const keys = ids.map((id) => `${roomId}/${id}`);
-    this.realmProgress =
-      kind === 'monster'
-        ? { ...base, defeatedMonsterKeys: [...new Set([...base.defeatedMonsterKeys, ...keys])] }
-        : { ...base, takenItemKeys: [...new Set([...base.takenItemKeys, ...keys])] };
+    const keys = ids.map((id) => this.monsterKey(roomId, id));
+    if (kind === 'monster') {
+      const defeatedAt = { ...(base.defeatedAt ?? {}) };
+      for (const key of keys) defeatedAt[key] = atMs;
+      this.realmProgress = { ...base, defeatedAt };
+    } else if (kind === 'item') {
+      this.realmProgress = {
+        ...base,
+        takenItemKeys: [...new Set([...base.takenItemKeys, ...keys])],
+      };
+    } else {
+      this.realmProgress = {
+        ...base,
+        openedChestKeys: [...new Set([...(base.openedChestKeys ?? []), ...keys])],
+      };
+    }
     void this.storage.saveRealmProgress(this.realmProgress);
+  }
+
+  /**
+   * Refill rooms whose monsters' cooldowns have passed. Skips the room you're standing in
+   * (unless `includeCurrentRoom`), so monsters don't pop in in front of you.
+   * Returns the number of monsters that came back.
+   */
+  respawnDueMonsters(now = Date.now(), includeCurrentRoom = false): number {
+    if (this.authorityHost()) return 0;
+    const gate = this.activeGateAddress().formatted;
+    const here = this.character().currentRoomId;
+    const changedRooms = new Set<string>();
+    const expiredKeys: string[] = [];
+    let count = 0;
+    const rooms = this.rooms().map((r) => {
+      if (r.isExpedition || (!includeCurrentRoom && r.id === here)) return r;
+      let changed = false;
+      const monsters = r.monsters.map((m) => {
+        if (m.hp > 0) return m;
+        const key = this.monsterKey(r.id, m.id);
+        const t = this.realmProgress.defeatedAt?.[key] ?? this.liveDefeatedAt.get(key);
+        if (t === undefined || now - t < this.respawnCooldownMs(m)) return m;
+        const fresh = this.pristineMonsters.get(`${gate}|${r.id}/${m.id}`);
+        if (!fresh) return m;
+        changed = true;
+        count += 1;
+        expiredKeys.push(key);
+        return structuredClone(fresh);
+      });
+      if (!changed) return r;
+      changedRooms.add(r.id);
+      return { ...r, monsters };
+    });
+    if (count === 0) return 0;
+    this.rooms.set(rooms);
+    if (expiredKeys.length > 0) {
+      const defeatedAt = { ...(this.realmProgress.defeatedAt ?? {}) };
+      for (const key of expiredKeys) {
+        delete defeatedAt[key];
+        this.liveDefeatedAt.delete(key);
+      }
+      this.realmProgress = { ...this.realmProgress, defeatedAt };
+      void this.storage.saveRealmProgress(this.realmProgress);
+    }
+    for (const roomId of changedRooms) this.broadcastRoomState(roomId);
+    return count;
+  }
+
+  /** Seeded drop for a regular monster kill: maybe an item, maybe a lockpick. */
+  rollMonsterDrop(
+    roomId: string,
+    mob: MonsterEntity,
+    atMs: number,
+  ): { item: EquipmentItem | null; lockpicks: number } {
+    if (mob.isBoss) return { item: null, lockpicks: 0 };
+    const addr = this.activeGateAddress();
+    const prng = createMulberry32(
+      hashChaosGateSeed(`${addr.formatted}|drop|${roomId}/${mob.id}|${Math.floor(atMs / 60_000)}`),
+    );
+    const item =
+      prng() < MONSTER_DROP_CHANCE
+        ? this.chaosGate.createDeterministicItem(
+            `drop-${roomId}-${mob.id}-${atMs.toString(36)}`,
+            addr,
+            SERVER_ERAS[addr.era],
+            prng,
+            false,
+          )
+        : null;
+    return { item, lockpicks: prng() < LOCKPICK_DROP_CHANCE ? 1 : 0 };
+  }
+
+  private dropToFloor(roomId: string, item: EquipmentItem): void {
+    this.rooms.update((all) =>
+      all.map((r) => (r.id === roomId ? { ...r, items: [...r.items, item] } : r)),
+    );
+  }
+
+  // ===========================================================================
+  // Sealed chests: some loot only certain classes can reach
+  // ===========================================================================
+
+  /** Why this character can't open this chest right now, or null if they can try. */
+  chestBlockReason(
+    chest: LockedChest,
+    who: { archetype: ArchetypeClass; lockpicks: number; stamina: number },
+  ): string | null {
+    const rule = CHEST_SEAL_RULES[chest.seal];
+    if (chest.opened) return 'It is already open.';
+    if (!rule.classes.includes(who.archetype)) {
+      return `Only a ${rule.classes.join(' or ')} can open this ${chest.name.toLowerCase()}.`;
+    }
+    if (rule.needsLockpick && who.lockpicks <= 0) return 'You need a lockpick.';
+    if (who.stamina < rule.staminaCost) {
+      return `Not enough stamina (needs ${rule.staminaCost}).`;
+    }
+    return null;
+  }
+
+  /** The current room's first sealed chest (or the one asked for). */
+  private findChest(chestId?: string): { room: RoomNode; chest: LockedChest } | null {
+    const room = this.currentRoom();
+    const chest = (room.chests ?? []).find((c) => !c.opened && (!chestId || c.id === chestId));
+    return chest ? { room, chest } : null;
+  }
+
+  /** Try to open a sealed chest with your class skill. */
+  openChest(chestId?: string): void {
+    const found = this.findChest(chestId);
+    if (!found) {
+      this.appendFeed('SYSTEM', 'There is no sealed chest here.');
+      return;
+    }
+    const { room, chest } = found;
+    const char = this.character();
+    const rule = CHEST_SEAL_RULES[chest.seal];
+    const blocked = this.chestBlockReason(chest, {
+      archetype: char.archetype,
+      lockpicks: char.lockpicks ?? 0,
+      stamina: char.stamina,
+    });
+    if (blocked) {
+      const echo = this.echoHint(chest);
+      this.appendFeed('NARRATIVE', `${rule.icon} ${blocked}${echo}`);
+      return;
+    }
+    if (rule.needsLockpick) {
+      const attrs = this.effectiveAttributes();
+      const chance = lockpickChance(attrs.DEX, attrs.PER, chest.tier);
+      if (this.combatRng() > chance) {
+        this.character.update((c) => ({ ...c, lockpicks: Math.max(0, (c.lockpicks ?? 0) - 1) }));
+        this.appendFeed(
+          'NARRATIVE',
+          `🔒 The pick snaps in the ${chest.name.toLowerCase()}. (${this.character().lockpicks ?? 0} left, ${Math.round(chance * 100)}% chance per try)`,
+        );
+        void this.storage.saveCharacterState(this.character());
+        return;
+      }
+    }
+    if (rule.staminaCost > 0) {
+      this.character.update((c) => ({ ...c, stamina: Math.max(0, c.stamina - rule.staminaCost) }));
+    }
+
+    const host = this.authorityHost();
+    if (host) {
+      this.actionCounter += 1;
+      const requestId = `chest-${this.actionCounter}-${Date.now()}`;
+      this.pendingChestOpens.set(requestId, {
+        roomId: room.id,
+        chestId: chest.id,
+        usedPick: rule.needsLockpick,
+        staminaCost: rule.staminaCost,
+      });
+      this.transport.sendTo(host.peerId, {
+        senderName: char.name,
+        type: 'ACTION_OPEN_CHEST',
+        gateAddress: host.gateAddress,
+        roomId: room.id,
+        authority: { requestId, chestId: chest.id },
+      });
+      this.appendFeed('NARRATIVE', `${rule.icon} You work at the ${chest.name.toLowerCase()}…`);
+      return;
+    }
+
+    const lockpicks = this.openChestInWorld(room.id, chest.id);
+    if (lockpicks > 0) {
+      this.character.update((c) => ({ ...c, lockpicks: (c.lockpicks ?? 0) + lockpicks }));
+    }
+    this.recordRealmProgress('chest', room.id, [chest.id]);
+    this.onPlayerLooted();
+    this.appendFeed(
+      'NARRATIVE',
+      `${rule.icon} ${rule.action}: the ${chest.name.toLowerCase()} opens!${lockpicks > 0 ? ` You find ${lockpicks} lockpick(s).` : ''} Its loot is on the floor.`,
+    );
+    void this.storage.saveCharacterState(this.character());
+  }
+
+  private echoHint(chest: LockedChest): string {
+    const echo = this.astralEcho();
+    if (!echo || !this.astralEchoBotEnabled()) return '';
+    return CHEST_SEAL_RULES[chest.seal].classes.includes(echo.archetype)
+      ? ` ${echo.name} (${echo.archetype}) could open it on a Farm or Route job.`
+      : '';
+  }
+
+  /** Marks a chest open and puts its items on the floor. Returns the lockpicks inside. */
+  private openChestInWorld(roomId: string, chestId: string): number {
+    let lockpicks = 0;
+    this.rooms.update((all) =>
+      all.map((r) => {
+        if (r.id !== roomId || !r.chests) return r;
+        const loot: EquipmentItem[] = [];
+        const chests = r.chests.map((c) => {
+          if (c.id !== chestId || c.opened) return c;
+          loot.push(...c.items);
+          lockpicks = c.lockpicks;
+          return { ...c, opened: true };
+        });
+        return { ...r, chests, items: [...r.items, ...loot] };
+      }),
+    );
+    this.broadcastRoomState(roomId);
+    return lockpicks;
+  }
+
+  private hostHandleOpenChest(pkt: NetworkPacket): void {
+    if (this.isVisitingExternalRealm()) return;
+    const visitor = this.realmVisitors()[pkt.senderPeerId];
+    const requestId = pkt.authority?.requestId;
+    const chestId = pkt.authority?.chestId;
+    const roomId = pkt.roomId;
+    if (!visitor || !requestId || !chestId || !roomId) return;
+    const chest = this.rooms()
+      .find((r) => r.id === roomId)
+      ?.chests?.find((c) => c.id === chestId);
+    let reason: string | undefined;
+    if (!chest || chest.opened) reason = 'Someone already opened it.';
+    else if (!CHEST_SEAL_RULES[chest.seal].classes.includes(visitor.archetype)) {
+      reason = 'Your class cannot open that.';
+    }
+    const lockpicks = reason ? 0 : this.openChestInWorld(roomId, chestId);
+    this.transport.sendTo(visitor.peerId, {
+      senderName: this.character().name,
+      type: 'ACTION_RESULT',
+      gateAddress: this.activeGateAddress().formatted,
+      roomId,
+      authority: { requestId, ok: !reason, reason, lockpicks, chestId },
+    });
+    if (!reason && chest) {
+      this.appendFeed('NETWORK', `${visitor.name} opened the ${chest.name.toLowerCase()}.`);
+    }
+  }
+
+  private visitorHandleChestResult(pkt: NetworkPacket): boolean {
+    const requestId = pkt.authority?.requestId;
+    const pending = requestId ? this.pendingChestOpens.get(requestId) : undefined;
+    if (!requestId || !pending) return false;
+    this.pendingChestOpens.delete(requestId);
+    if (!pkt.authority?.ok) {
+      // Refund what the attempt cost.
+      this.character.update((c) => ({
+        ...c,
+        stamina: c.stamina + pending.staminaCost,
+      }));
+      this.appendFeed('NARRATIVE', pkt.authority?.reason ?? 'The host said no.');
+      return true;
+    }
+    const found = Math.max(0, Math.min(10, Number(pkt.authority?.lockpicks) || 0));
+    if (found > 0) {
+      this.character.update((c) => ({ ...c, lockpicks: (c.lockpicks ?? 0) + found }));
+    }
+    this.appendFeed(
+      'NARRATIVE',
+      `The chest opens (confirmed by the host).${found > 0 ? ` You find ${found} lockpick(s).` : ''} Its loot is on the floor.`,
+    );
+    void this.storage.saveCharacterState(this.character());
+    return true;
   }
 
   startAtbLoop(): void {
@@ -1454,6 +2668,8 @@ export class MudEngineService implements OnDestroy {
     // Presence beacon to other tabs and direct links. The lobby heartbeat lives in the
     // transport and is opt-in, so this loop never calls the broker.
     this.beaconIntervalId = setInterval(() => this.sendPresenceBeacon(), BEACON_INTERVAL_MS);
+    this.respawnIntervalId = setInterval(() => this.respawnDueMonsters(), RESPAWN_CHECK_MS);
+    this.echoIntervalId = setInterval(() => this.advanceEcho(), ECHO_TUNING.LIVE_STEP_MS);
   }
 
   stopAtbLoop(): void {
@@ -1464,6 +2680,14 @@ export class MudEngineService implements OnDestroy {
     if (this.beaconIntervalId) {
       clearInterval(this.beaconIntervalId);
       this.beaconIntervalId = null;
+    }
+    if (this.respawnIntervalId) {
+      clearInterval(this.respawnIntervalId);
+      this.respawnIntervalId = null;
+    }
+    if (this.echoIntervalId) {
+      clearInterval(this.echoIntervalId);
+      this.echoIntervalId = null;
     }
   }
 
@@ -1614,6 +2838,13 @@ export class MudEngineService implements OnDestroy {
    * to the next log line so players organically learn power-user commands.
    */
   dispatchCommandIntent(intent: CommandIntent): void {
+    if (this.playerDowned() && intent.type !== 'LOOK' && intent.type !== 'CHAT_MESSAGE') {
+      this.appendFeed(
+        'SYSTEM',
+        "You're down. Wait for someone to carry you to a campfire, or return to the entrance.",
+      );
+      return;
+    }
     if (intent.source === 'HUD' && intent.rawInput) {
       this.pendingSyntaxEcho = `[cmd: ${intent.rawInput}]`;
     } else {
@@ -2180,14 +3411,30 @@ export class MudEngineService implements OnDestroy {
     }
 
     if (verb === 'bot' || verb === '@bot' || verb === 'echo' || verb === '@echo') {
-      const sub = parts[1]?.toLowerCase();
-      if (sub === 'on' || sub === 'enable' || sub === '1' || sub === 'start') {
-        this.toggleAstralEchoBot(true);
-      } else if (sub === 'off' || sub === 'disable' || sub === '0' || sub === 'stop') {
-        this.toggleAstralEchoBot(false);
-      } else {
-        this.toggleAstralEchoBot();
-      }
+      this.handleEchoCommand(parts.slice(1));
+      return { type: 'LOOK', rawInput: trimmed, source: 'TERMINAL' };
+    }
+
+    if (
+      ['pick', 'unlock', 'lockpick', 'dispel', 'force'].includes(verb) ||
+      (verb === 'open' && parts[1]?.toLowerCase().startsWith('chest'))
+    ) {
+      this.openChest();
+      return { type: 'LOOK', rawInput: trimmed, source: 'TERMINAL' };
+    }
+
+    if (verb === 'carry' || verb === 'lift') {
+      this.carryPeerByName(parts.slice(1).join(' '));
+      return { type: 'LOOK', rawInput: trimmed, source: 'TERMINAL' };
+    }
+
+    if (verb === 'getup' || verb === 'revive' || (verb === 'get' && parts[1] === 'up')) {
+      this.acceptCampfireRevival();
+      return { type: 'LOOK', rawInput: trimmed, source: 'TERMINAL' };
+    }
+
+    if (verb === 'respawn' && this.playerDowned()) {
+      this.respawnAtEntrance('You go back to the entrance.');
       return { type: 'LOOK', rawInput: trimmed, source: 'TERMINAL' };
     }
 
@@ -2281,6 +3528,7 @@ export class MudEngineService implements OnDestroy {
   }
 
   private executePlayerCombatMove(intent: CommandIntent): void {
+    if (this.playerDowned()) return;
     const monsters = this.livingRoomMonsters();
     if (monsters.length === 0) return;
 
@@ -2613,6 +3861,8 @@ export class MudEngineService implements OnDestroy {
   }
 
   private executeMonsterCounterAttack(mob: MonsterEntity): void {
+    // Monsters leave fallen players alone.
+    if (this.playerDowned()) return;
     const char = this.character();
     const stats = this.derivedStats();
     const roll = Math.max(1, Math.min(100, Math.floor(this.combatRng() * 100) + 1));
@@ -2712,8 +3962,26 @@ export class MudEngineService implements OnDestroy {
 
   private async onMonsterDefeated(mob: MonsterEntity): Promise<void> {
     const roomId = this.currentRoom().id;
-    this.recordRealmProgress('monster', roomId, [mob.id]);
+    const now = Date.now();
+    this.recordRealmProgress('monster', roomId, [mob.id], now);
     const { xpGain, goldGain } = this.awardMonsterRewards(mob);
+    this.onPlayerKill();
+    const drop = this.rollMonsterDrop(roomId, mob, now);
+    if (drop.item) {
+      this.dropToFloor(roomId, drop.item);
+      this.appendFeed('NARRATIVE', `${mob.name} dropped [${drop.item.name}].`, [
+        {
+          label: `Take ${drop.item.name}`,
+          targetId: drop.item.id,
+          actionType: 'TAKE_ITEM',
+          colorHex: '#fbbf24',
+        },
+      ]);
+    }
+    if (drop.lockpicks > 0) {
+      this.character.update((c) => ({ ...c, lockpicks: (c.lockpicks ?? 0) + drop.lockpicks }));
+      this.appendFeed('NARRATIVE', `You find a lockpick on ${mob.name}.`);
+    }
 
     // Defeating room hostiles/guardians awards Realm Vitality XP
     this.addVitalityXP(15, `Defeated ${mob.name}`);
@@ -2790,7 +4058,6 @@ export class MudEngineService implements OnDestroy {
     const char = this.character();
     const room = this.currentRoom();
     const addr = this.activeGateAddress();
-    const stats = this.derivedStats();
 
     const gravestone: GuestbookGravestoneEntry = {
       id: `grave-${Date.now()}`,
@@ -2854,20 +4121,11 @@ export class MudEngineService implements OnDestroy {
       tombstone,
     });
 
-    // Respawn player at Anchor Portal (room-0)
-    this.character.update((c) => ({
-      ...c,
-      currentRoomId: 'room-0',
-      hp: stats.maxHp,
-      stamina: stats.maxStamina,
-      atbGauge: 0,
-    }));
-
     this.appendFeed(
       'COMBAT',
-      `☠ Critical Failure! ${char.name} fell to ${killer.name}. A Gravestone chronicle was etched into [${room.title}]. Emergency reconstruction completed at Anchor Portal.`,
+      `☠ ${char.name} fell to ${killer.name}. A gravestone was left in [${room.title}].`,
     );
-    this.emitCurrentRoomNarrative();
+    this.afterPlayerFell(killer.name, room);
   }
 
   private recordReplayFrame(actorName: string, narrativeLine: string): void {
@@ -2979,6 +4237,10 @@ export class MudEngineService implements OnDestroy {
   }
 
   moveToRoom(targetRoomId: string, direction?: ExitDirection): void {
+    if (this.playerDowned()) {
+      this.appendFeed('SYSTEM', "You're down and can't move.");
+      return;
+    }
     const prevRoomId = this.character().currentRoomId;
     const elapsedMs = Math.max(500, Date.now() - this.roomEnteredAtMs);
     this.roomEnteredAtMs = Date.now();
@@ -3042,6 +4304,7 @@ export class MudEngineService implements OnDestroy {
       heraldGreeting: this.character().heraldGreeting?.formatted,
     };
     this.phantomTrails.update((crumbs) => [localCrumb, ...crumbs].slice(0, 50));
+    this.afterPlayerMoved(targetRoomId);
     this.sendPresenceBeacon();
 
     // Check for foreign phantom wanderer presence in target chamber
@@ -3347,6 +4610,7 @@ export class MudEngineService implements OnDestroy {
       'NARRATIVE',
       `Collected [${processedItem.name}] (${processedItem.provenance}) into inventory${remainderNote}.`,
     );
+    this.onPlayerLooted();
     this.broadcastRoomState(room.id);
     void this.storage.saveCharacterState(this.character());
   }
@@ -3415,6 +4679,7 @@ export class MudEngineService implements OnDestroy {
     }
 
     this.soundFx.playConvergenceChime();
+    this.onPlayerLooted();
     this.broadcastRoomState(room.id);
     void this.storage.saveCharacterState(this.character());
   }
@@ -3475,6 +4740,9 @@ export class MudEngineService implements OnDestroy {
     this.character.update((c) => ({
       ...c,
       name: cleanName,
+      lockpicks:
+        c.lockpicks ??
+        (archetype === 'Hexblade' || archetype === 'Artificer' ? STARTING_LOCKPICKS : 0),
       heraldGreeting:
         heraldGreeting ??
         c.heraldGreeting ??
@@ -3687,6 +4955,10 @@ export class MudEngineService implements OnDestroy {
       'NARRATIVE',
       '♨ You rest beside the sanctuary embers. HP and Stamina fully restored.',
     );
+    const echo = this.astralEcho();
+    if (echo?.mode === 'DOWNED' && echo.roomId === this.character().currentRoomId) {
+      this.reviveEchoAtCampfire();
+    }
   }
 
   switchArchetype(archetype: ArchetypeClass): void {
@@ -4760,7 +6032,8 @@ export class MudEngineService implements OnDestroy {
   listAdventurersInRealm(): void {
     const char = this.character();
     const room = this.currentRoom();
-    const visitors = this.transport.activeVisitorsList();
+    const echoPeer = this.isVisitingExternalRealm() ? null : this.localEchoPeer();
+    const visitors = [...this.transport.activeVisitorsList(), ...(echoPeer ? [echoPeer] : [])];
     const echoCount = this.astralEchoCount();
     const echoSuffix = echoCount > 0 ? ` [${echoCount} Astral Echo]` : '';
 
@@ -4804,6 +6077,20 @@ export class MudEngineService implements OnDestroy {
 
   private onNetworkPacket(pkt: NetworkPacket): void {
     if (this.handleAuthorityPacket(pkt)) return;
+    if (pkt.type === 'CARRY_START' || pkt.type === 'CARRY_DROP') {
+      this.handleCarryPacket(pkt);
+      return;
+    }
+    if (pkt.type === 'GATE_BEACON') {
+      // My carrier moved: I move with them.
+      if (this.playerDowned()?.carriedBy?.id === pkt.senderPeerId) this.followCarrier(pkt.roomId);
+      // The player I'm carrying got up.
+      const carrying = this.carryingPeer();
+      if (carrying?.peerId === pkt.senderPeerId && !pkt.visitorState?.downed) {
+        this.carryingPeer.set(null);
+        this.appendFeed('NARRATIVE', `${carrying.name} is back on their feet.`);
+      }
+    }
 
     // Ghost trails only make sense in the realm they were walked in.
     if (
@@ -6118,5 +7405,7 @@ export class MudEngineService implements OnDestroy {
     this.linkSub?.unsubscribe();
     this.peerGoneSub?.unsubscribe();
     this.clearPendingVisit();
+    if (this.downedTimer) clearTimeout(this.downedTimer);
+    this.saveEcho(true);
   }
 }

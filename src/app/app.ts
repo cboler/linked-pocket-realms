@@ -9,6 +9,7 @@ import {
   DeclarativeTrigger,
   DrawerTab,
   EquipmentItem,
+  LockedChest,
   ExitDirection,
   GuestbookGravestoneEntry,
   HeatmapMode,
@@ -32,11 +33,14 @@ import {
 import {
   ATMOSPHERE_PREFIXES,
   BIOME_NOUNS,
+  CHEST_SEAL_RULES,
+  CLASS_UTILITY,
   ChaosGateService,
   SERVER_ERAS,
   STRUCTURAL_THEMES,
 } from './core/services/chaos-gate.service';
 import { LegendRegistryService } from './core/services/legend-registry.service';
+import { ECHO_PEER_ID } from './core/services/astral-echo';
 import { ARCHETYPE_CATALOG, MudEngineService } from './core/services/mud-engine.service';
 import { SoundFxService } from './core/services/sound-fx.service';
 import { StorageService } from './core/services/storage.service';
@@ -135,9 +139,32 @@ export class App {
   readonly onboardingTheme = signal<StructuralTheme>('Clockwork');
   readonly onboardingBiome = signal<BiomeNoun>('Catacombs');
   readonly eraInfo = SERVER_ERAS;
+  readonly classUtility = CLASS_UTILITY;
+  readonly echoPeerId = ECHO_PEER_ID;
+  readonly canPickLocks = computed(() =>
+    CHEST_SEAL_RULES.LOCK.classes.includes(this.engine.character().archetype),
+  );
   readonly onboardingElement = computed(() =>
     this.chaosGate.atmosphereElement(this.onboardingAtmosphere()),
   );
+  chestIcon(chest: LockedChest): string {
+    return CHEST_SEAL_RULES[chest.seal].icon;
+  }
+
+  /** What you can do with this chest, in plain words. */
+  chestActionLabel(chest: LockedChest): string {
+    const rule = CHEST_SEAL_RULES[chest.seal];
+    const char = this.engine.character();
+    if (!rule.classes.includes(char.archetype)) return `${rule.classes.join(' or ')} only`;
+    if (rule.needsLockpick) {
+      const picks = char.lockpicks ?? 0;
+      return picks > 0
+        ? `${rule.action} (${picks} pick${picks === 1 ? '' : 's'})`
+        : 'Needs a lockpick';
+    }
+    return `${rule.action} (${rule.staminaCost} stamina)`;
+  }
+
   /** One plain-language line per class for the new-game screen. */
   readonly classBlurbs: Record<ArchetypeClass, string> = {
     Vanguard: 'Sturdy fighter. Most strength and health.',

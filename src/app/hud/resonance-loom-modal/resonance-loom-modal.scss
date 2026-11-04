@@ -439,3 +439,13 @@
   font-size: 0.74rem;
   line-height: 1.4;
 }
+
+.echo-satchel-list,
+.echo-log-list {
+  margin: 0.3rem 0;
+  padding-left: 1rem;
+  font-size: 0.74rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
