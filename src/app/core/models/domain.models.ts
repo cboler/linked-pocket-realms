@@ -838,6 +838,10 @@ export type NetworkPacketType =
   // Downed players: another player carries them to a campfire
   | 'CARRY_START'
   | 'CARRY_DROP'
+  // Lending your Astral Echo to a friend's realm
+  | 'ECHO_LEND'
+  | 'ECHO_RETURN'
+  | 'ECHO_RECALL'
   // Host authority: the realm owner's browser decides monster HP, kills, and loot
   | 'VISITOR_HELLO'
   | 'ACTION_OPEN_CHEST'
@@ -877,6 +881,10 @@ export interface AuthorityPayload {
   chestId?: string;
   /** ACTION_RESULT for a chest: lockpicks found inside */
   lockpicks?: number;
+  /** ECHO_LEND / ECHO_RETURN / ECHO_RECALL */
+  echoLoan?: EchoLoanOffer;
+  echoReturn?: EchoLoanReturn;
+  loanId?: string;
   /** ACTION_RESULT */
   ok?: boolean;
   reason?: string;
@@ -989,6 +997,38 @@ export interface EchoJob {
   /** 0–100, grows as the job is done. Faster and safer at higher values. */
   proficiency: number;
   runs: number;
+  /** Tactics the player set for this job. */
+  rules?: EchoJobRules;
+}
+
+export interface EchoJobRules {
+  /** Go rest when HP falls below this percent (10–80). */
+  retreatPct: number;
+  /** Never pick fights with bosses. */
+  skipBosses: boolean;
+  /** Prefer this monster type when choosing a fight. */
+  focusTemplateId: string | null;
+}
+
+/** What a player's Echo brings to a friend's realm. */
+export interface EchoLoanOffer {
+  loanId: string;
+  name: string;
+  archetype: ArchetypeClass;
+  level: number;
+  maxHp: number;
+  knowledge: Record<string, number>;
+  untilMs: number;
+}
+
+/** What comes back when a loan ends. Clamped by the lender on arrival. */
+export interface EchoLoanReturn {
+  loanId: string;
+  xp: number;
+  gold: number;
+  items: EquipmentItem[];
+  knowledge: Record<string, number>;
+  notes: string[];
 }
 
 export interface EchoLogEntry {
@@ -1004,8 +1044,14 @@ export interface EchoCompanion {
   hp: number;
   maxHp: number;
   roomId: string;
-  mode: 'IDLE' | 'WORKING' | 'RESTING' | 'DOWNED';
+  mode: 'IDLE' | 'WORKING' | 'RESTING' | 'DOWNED' | 'AWAY';
   downedUntilMs?: number;
+  /** Lent to a friend's realm (it isn't home while this is set). */
+  lentTo?: { loanId: string; peerId: string; name: string; sinceMs: number; untilMs: number };
+  /** While you host: the visitor it escorts. */
+  escortPeerId?: string | null;
+  /** Names and weaknesses of monsters it has fought, keyed by template. */
+  knowledgeNotes?: Record<string, { name: string; weakness?: string }>;
   /** True while the player carries the downed Echo. */
   carried?: boolean;
   activeJobId: string | null;

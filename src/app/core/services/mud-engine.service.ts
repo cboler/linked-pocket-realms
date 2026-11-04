@@ -18,6 +18,8 @@ import {
   EchoAwayReport,
   EchoCompanion,
   EchoJobKind,
+  EchoJobRules,
+  EchoLoanReturn,
   DerivedCombatStats,
   DrawerTab,
   EquipmentItem,
@@ -69,10 +71,16 @@ import { SoundFxService } from './sound-fx.service';
 import { StorageService } from './storage.service';
 import { LinkEvent, TransportService } from './transport.service';
 import {
+  ECHO_LOAN,
   ECHO_PEER_ID,
   ECHO_TUNING,
   EchoWorldEffect,
+  applyLoanReturn,
+  buildLoanReturn,
   createEcho,
+  guestEchoFromOffer,
+  jobRules,
+  makeLoanOffer,
   emptyTally,
   jobUnlocked,
   makeRouteJob,
@@ -376,6 +384,21 @@ export const ARCHETYPE_CATALOG: Record<
 
 const STORAGE_KEY_ASTRAL_ECHO_BOT = 'linked_pocket_realms_astral_echo_bot';
 
+/** A friend's Echo staying in my realm, and what it started with (to compute its gains). */
+export interface GuestEchoRecord {
+  loanId: string;
+  lenderId: string;
+  lenderName: string;
+  echo: EchoCompanion;
+  startXp: number;
+  startKnowledge: Record<string, number>;
+  untilMs: number;
+  /** Set when the loan ended but the lender wasn't reachable yet. */
+  pendingReturn?: EchoLoanReturn;
+}
+
+const MAX_GUEST_ECHOES = 3;
+
 /** Presence beacon cadence (local bus and direct links only; never the broker). */
 const BEACON_INTERVAL_MS = 10_000;
 /** How long a visitor waits for the host's realm before falling back to an offline copy. */
@@ -446,6 +469,10 @@ export class MudEngineService implements OnDestroy {
     carriedBy?: { id: string; name: string };
     campfireOffer?: { roomId: string; byName: string };
   } | null>(null);
+  /** Host side: Echoes friends lent me. They follow me and fight beside me. */
+  readonly guestEchoes = signal<GuestEchoRecord[]>([]);
+  private guestsSavedAtMs = 0;
+
   /** Another player I'm carrying to a campfire. */
   readonly carryingPeer = signal<{ peerId: string; name: string } | null>(null);
   private echoIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -456,7 +483,7 @@ export class MudEngineService implements OnDestroy {
   /** The Echo as a presence in the room, so it renders like another traveler. */
   readonly localEchoPeer = computed<NetworkPeerVisitor | null>(() => {
     const echo = this.astralEcho();
-    if (!echo || !this.astralEchoBotEnabled()) return null;
+    if (!echo || !this.astralEchoBotEnabled() || echo.mode === 'AWAY') return null;
     return {
       peerId: ECHO_PEER_ID,
       playerName: echo.name,
@@ -650,6 +677,26 @@ export class MudEngineService implements OnDestroy {
       );
     const echo = this.localEchoPeer();
     if (echo && !this.isVisitingExternalRealm() && echo.currentRoomId === curId) peers.push(echo);
+    if (!this.isVisitingExternalRealm()) {
+      for (const g of this.guestEchoes()) {
+        if (g.pendingReturn || g.echo.roomId !== curId) continue;
+        peers.push({
+          peerId: `guest-echo-${g.lenderId}`,
+          playerName: `${g.echo.name} (${g.lenderName}'s)`,
+          archetype: g.echo.archetype,
+          level: g.echo.level,
+          gateAddress: gate,
+          currentRoomId: g.echo.roomId,
+          inCombat: g.echo.mode === 'WORKING',
+          lastSeenMs: g.echo.lastSimulatedMs,
+          transport: 'WebRTC',
+          currentHp: g.echo.hp,
+          maxHp: g.echo.maxHp,
+          isAstralEcho: true,
+          downed: g.echo.mode === 'DOWNED',
+        });
+      }
+    }
     return peers;
   });
 
@@ -863,6 +910,8 @@ export class MudEngineService implements OnDestroy {
       this.needsOnboarding.set(false);
       const savedEcho = await this.storage.loadEchoState();
       if (savedEcho) this.astralEcho.set(savedEcho);
+      const savedGuests = await this.storage.getItem<GuestEchoRecord[]>('guest_echoes');
+      if (Array.isArray(savedGuests)) this.guestEchoes.set(savedGuests);
     } else {
       this.needsOnboarding.set(true);
     }
@@ -981,6 +1030,11 @@ export class MudEngineService implements OnDestroy {
         delete next[peerId];
         return next;
       });
+    }
+    const echo = this.astralEcho();
+    if (echo?.escortPeerId === peerId) {
+      this.astralEcho.set({ ...echo, escortPeerId: null });
+      this.appendFeed('NETWORK', `🤖 ${echo.name} comes back to you.`);
     }
   }
 
@@ -1619,6 +1673,13 @@ export class MudEngineService implements OnDestroy {
   advanceEcho(now = Date.now()): void {
     let echo = this.astralEcho();
     if (!echo || !this.astralEchoBotEnabled()) return;
+    if (echo.mode === 'AWAY') {
+      // No word from the friend long after the loan ended: it walks home on its own.
+      if (echo.lentTo && now > echo.lentTo.untilMs + ECHO_LOAN.SELF_RETURN_GRACE_MS) {
+        this.bringEchoHome(null);
+      }
+      return;
+    }
     if (this.isVisitingExternalRealm() || this.authorityHost()) return;
     const elapsed = now - echo.lastSimulatedMs;
     if (elapsed < 500) return;
@@ -1679,6 +1740,18 @@ export class MudEngineService implements OnDestroy {
 
   private echoWorld(now: number, live: boolean) {
     const char = this.character();
+    // Escorting a visitor: follow them instead of you.
+    const escortId = this.astralEcho()?.escortPeerId;
+    const escort = escortId ? this.transport.discoveredPeers()[escortId] : undefined;
+    if (live && escort && this.realmVisitors()[escortId!]) {
+      return {
+        rooms: this.rooms(),
+        playerRoomId: escort.currentRoomId,
+        playerTargetId: null,
+        visitedRoomIds: char.visitedRoomIds,
+        nowMs: now,
+      };
+    }
     return {
       rooms: this.rooms(),
       playerRoomId: live && !this.playerDowned() ? char.currentRoomId : null,
@@ -1689,7 +1762,16 @@ export class MudEngineService implements OnDestroy {
   }
 
   /** Apply what the Echo did: through the same paths a player's actions use. */
-  private applyEchoEffects(effects: EchoWorldEffect[], atMs: number): void {
+  /**
+   * `guestLenderId` set: the effects come from a friend's Echo staying with me. Its kills
+   * count only in my live state (like a visitor's), and its loot goes to its own satchel.
+   */
+  private applyEchoEffects(
+    effects: EchoWorldEffect[],
+    atMs: number,
+    guestLenderId: string | null = null,
+  ): void {
+    const actorId = guestLenderId ? `guest-echo-${guestLenderId}` : ECHO_PEER_ID;
     if (effects.length === 0) return;
     const changed = new Set<string>();
     for (const eff of effects) {
@@ -1707,7 +1789,7 @@ export class MudEngineService implements OnDestroy {
                 },
           ),
         );
-        if (this.isHostingLive()) this.creditDamage(eff.roomId, eff.monsterId, ECHO_PEER_ID);
+        if (this.isHostingLive()) this.creditDamage(eff.roomId, eff.monsterId, actorId);
       } else if (eff.kind === 'KILL') {
         const mob = this.rooms()
           .find((r) => r.id === eff.roomId)
@@ -1722,20 +1804,34 @@ export class MudEngineService implements OnDestroy {
                 },
           ),
         );
-        this.recordRealmProgress('monster', eff.roomId, [eff.monsterId], atMs);
+        if (guestLenderId) {
+          this.liveDefeatedAt.set(this.monsterKey(eff.roomId, eff.monsterId), atMs);
+        } else {
+          this.recordRealmProgress('monster', eff.roomId, [eff.monsterId], atMs);
+        }
         if (mob) {
           const drop = this.rollMonsterDrop(eff.roomId, mob, atMs);
-          this.astralEcho.update((e) => {
-            if (!e) return e;
-            const satchel =
+          const addDrop = (e: EchoCompanion): EchoCompanion => ({
+            ...e,
+            satchel:
               drop.item && e.satchel.length < ECHO_TUNING.SATCHEL_CAP
                 ? [...e.satchel, drop.item]
-                : e.satchel;
-            return { ...e, satchel, lockpicks: e.lockpicks + drop.lockpicks };
+                : e.satchel,
+            lockpicks: e.lockpicks + drop.lockpicks,
           });
+          if (guestLenderId) {
+            this.guestEchoes.update((all) =>
+              all.map((g) => (g.lenderId === guestLenderId ? { ...g, echo: addDrop(g.echo) } : g)),
+            );
+          } else {
+            this.astralEcho.update((e) => (e ? addDrop(e) : e));
+          }
         }
         if (this.isHostingLive()) {
           const credits = this.takeCredits(eff.roomId, eff.monsterId);
+          // An escorted visitor shares in the kills of the Echo guarding them.
+          const escort = this.astralEcho()?.escortPeerId;
+          if (!guestLenderId && escort && this.realmVisitors()[escort]) credits.add(escort);
           this.transport.sendPacket({
             senderName: this.astralEcho()?.name ?? 'Astral Echo',
             type: 'MONSTER_DEFEATED',
@@ -1744,6 +1840,19 @@ export class MudEngineService implements OnDestroy {
             authority: { monsterId: eff.monsterId, creditPeerIds: [...credits] },
           });
         }
+      } else if (eff.kind === 'HEAL') {
+        this.rooms.update((all) =>
+          all.map((r) =>
+            r.id !== eff.roomId
+              ? r
+              : {
+                  ...r,
+                  monsters: r.monsters.map((m) =>
+                    m.id === eff.monsterId && m.hp > 0 ? { ...m, hp: m.maxHp } : m,
+                  ),
+                },
+          ),
+        );
       } else if (eff.kind === 'REVEAL') {
         this.character.update((c) =>
           c.visitedRoomIds.includes(eff.roomId)
@@ -1757,7 +1866,7 @@ export class MudEngineService implements OnDestroy {
             r.id === eff.roomId ? { ...r, items: r.items.filter((i) => !ids.has(i.id)) } : r,
           ),
         );
-        this.recordRealmProgress('item', eff.roomId, eff.itemIds, atMs);
+        if (!guestLenderId) this.recordRealmProgress('item', eff.roomId, eff.itemIds, atMs);
       } else if (eff.kind === 'OPEN_CHEST') {
         // The Echo already put the contents in its satchel.
         this.rooms.update((all) =>
@@ -1770,7 +1879,7 @@ export class MudEngineService implements OnDestroy {
                 },
           ),
         );
-        this.recordRealmProgress('chest', eff.roomId, [eff.chestId], atMs);
+        if (!guestLenderId) this.recordRealmProgress('chest', eff.roomId, [eff.chestId], atMs);
       }
     }
     for (const roomId of changed) this.broadcastRoomState(roomId);
@@ -1793,10 +1902,17 @@ export class MudEngineService implements OnDestroy {
 
   // ----- Echo commands -------------------------------------------------------------
 
-  private requireEcho(): EchoCompanion | null {
+  private requireEcho(allowAway = false): EchoCompanion | null {
     const echo = this.astralEcho();
     if (!echo || !this.astralEchoBotEnabled()) {
       this.appendFeed('SYSTEM', 'Your Astral Echo is off. Type "echo on" to wake it.');
+      return null;
+    }
+    if (echo.mode === 'AWAY' && !allowAway) {
+      this.appendFeed(
+        'SYSTEM',
+        `${echo.name} is away helping ${echo.lentTo?.name ?? 'a friend'}. Recall it first.`,
+      );
       return null;
     }
     return echo;
@@ -1807,11 +1923,15 @@ export class MudEngineService implements OnDestroy {
     if (!echo) return 'You have no Astral Echo yet. Type "echo on".';
     const room = this.rooms().find((r) => r.id === echo.roomId)?.title ?? echo.roomId;
     const job = echo.jobs.find((j) => j.id === echo.activeJobId);
+    if (echo.mode === 'AWAY' && echo.lentTo) {
+      return `${echo.name}: Lv.${echo.level} ${echo.archetype}, away helping ${echo.lentTo.name} until ${new Date(echo.lentTo.untilMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`;
+    }
     const mode: Record<EchoCompanion['mode'], string> = {
       IDLE: 'idle',
       WORKING: 'working',
       RESTING: 'resting',
       DOWNED: 'down',
+      AWAY: 'away',
     };
     return `${echo.name}: Lv.${echo.level} ${echo.archetype}, HP ${echo.hp}/${echo.maxHp}, ${mode[echo.mode]} in ${room}. Job: ${job?.name ?? 'none'}. Satchel: ${echo.satchel.length}/${ECHO_TUNING.SATCHEL_CAP} items, ${echo.gold} gold, ${echo.lockpicks} lockpick(s).`;
   }
@@ -2065,6 +2185,343 @@ export class MudEngineService implements OnDestroy {
     if (watch && !watch.looted) this.echoWatch.set({ ...watch, looted: true });
   }
 
+  // ----- Tactics and knowledge ------------------------------------------------------
+
+  /** Change the tactics of a job (the active one by default). */
+  setEchoJobRules(changes: Partial<EchoJobRules>, jobId?: string): void {
+    const echo = this.requireEcho(true);
+    if (!echo) return;
+    const id = jobId ?? echo.activeJobId;
+    const job = echo.jobs.find((j) => j.id === id);
+    if (!job) {
+      this.appendFeed('SYSTEM', `Give ${echo.name} a job first, then set its tactics.`);
+      return;
+    }
+    const rules: EchoJobRules = { ...jobRules(job), ...changes };
+    rules.retreatPct = Math.max(10, Math.min(80, Math.round(rules.retreatPct)));
+    this.astralEcho.set({
+      ...echo,
+      jobs: echo.jobs.map((j) => (j.id === job.id ? { ...j, rules } : j)),
+    });
+    const focusName = rules.focusTemplateId
+      ? (echo.knowledgeNotes?.[rules.focusTemplateId]?.name ?? rules.focusTemplateId)
+      : 'anything';
+    this.appendFeed(
+      'NETWORK',
+      `🤖 ${echo.name} (${job.name}): rests below ${rules.retreatPct}% HP, ${rules.skipBosses ? 'avoids bosses' : 'fights bosses it can handle'}, focuses on ${focusName}.`,
+    );
+    this.saveEcho(true);
+  }
+
+  /** Monster types the Echo has fought, for the focus picker. */
+  readonly echoKnownFoes = computed(() => {
+    const echo = this.astralEcho();
+    if (!echo)
+      return [] as { templateId: string; name: string; kills: number; weakness?: string }[];
+    return Object.entries(echo.knowledge)
+      .map(([templateId, kills]) => ({
+        templateId,
+        kills,
+        name: echo.knowledgeNotes?.[templateId]?.name ?? templateId,
+        weakness: echo.knowledgeNotes?.[templateId]?.weakness,
+      }))
+      .sort((a, b) => b.kills - a.kills);
+  });
+
+  /** The Echo tells you what it knows; monsters it has beaten 3+ times join your bestiary. */
+  shareEchoKnowledge(): void {
+    const echo = this.requireEcho(true);
+    if (!echo) return;
+    const foes = this.echoKnownFoes();
+    if (foes.length === 0) {
+      this.appendFeed('NETWORK', `🤖 ${echo.name}: "I haven't fought anything yet."`);
+      return;
+    }
+    const taught = foes.filter((f) => f.kills >= 3);
+    if (taught.length > 0) {
+      this.character.update((c) => {
+        const bestiary = { ...c.bestiaryUnlocked };
+        for (const f of taught) {
+          const prev = bestiary[f.templateId] ?? { kills: 0, inspectedLevel: 0 };
+          bestiary[f.templateId] = { ...prev, inspectedLevel: Math.max(prev.inspectedLevel, 2) };
+        }
+        return { ...c, bestiaryUnlocked: bestiary };
+      });
+      void this.storage.saveCharacterState(this.character());
+    }
+    const lines = foes
+      .slice(0, 6)
+      .map(
+        (f) =>
+          `${f.name} (${f.kills} beaten${f.weakness && f.kills >= 3 ? `, weak to ${f.weakness}` : ''})`,
+      );
+    this.appendFeed(
+      'NETWORK',
+      `🤖 ${echo.name}: "Here's what I know: ${lines.join('; ')}."${taught.length > 0 ? ` You learned the weaknesses of ${taught.length} monster type(s).` : ' Beat a type 3 times and I can teach you its weakness.'}`,
+    );
+  }
+
+  // ----- Escort: lend your Echo to a visitor in your realm -------------------------
+
+  setEchoEscort(peerId: string | null): void {
+    const echo = this.requireEcho();
+    if (!echo) return;
+    if (peerId === null) {
+      this.astralEcho.set({ ...echo, escortPeerId: null });
+      this.appendFeed('NETWORK', `🤖 ${echo.name} comes back to you.`);
+      this.saveEcho(true);
+      return;
+    }
+    const visitor = this.realmVisitors()[peerId];
+    if (!visitor || this.isVisitingExternalRealm()) {
+      this.appendFeed('SYSTEM', 'Your Echo can only escort visitors who are in your dungeon.');
+      return;
+    }
+    const follow = echo.jobs.find((j) => j.kind === 'FOLLOW')!;
+    this.astralEcho.set({ ...echo, escortPeerId: peerId, activeJobId: follow.id, mode: 'WORKING' });
+    this.appendFeed('NETWORK', `🤖 ${echo.name} will guard ${visitor.name} while they explore.`);
+    this.saveEcho(true);
+  }
+
+  escortByName(name: string): void {
+    const key = name.trim().toLowerCase();
+    if (!key || key === 'off' || key === 'none' || key === 'stop') {
+      this.setEchoEscort(null);
+      return;
+    }
+    const visitor = Object.values(this.realmVisitors()).find((v) =>
+      v.name.toLowerCase().startsWith(key),
+    );
+    if (!visitor) {
+      this.appendFeed('SYSTEM', `No visitor called "${name}" is in your dungeon.`);
+      return;
+    }
+    this.setEchoEscort(visitor.peerId);
+  }
+
+  // ----- Loans: send your Echo to a friend's realm --------------------------------
+
+  /** Lend your Echo to a connected friend for a few hours. */
+  lendEchoTo(peerId: string, hours = 1): void {
+    const echo = this.requireEcho();
+    if (!echo) return;
+    if (echo.mode === 'DOWNED') {
+      this.appendFeed('SYSTEM', `${echo.name} is down. Revive it first.`);
+      return;
+    }
+    const peer = this.transport.discoveredPeers()[peerId];
+    const reachable = this.transport.isLinkOpen(peerId) || peer?.transport === 'BroadcastChannel';
+    if (!peer || peer.isAstralEcho || !reachable) {
+      this.appendFeed('SYSTEM', 'You can only lend your Echo to someone you are connected to.');
+      return;
+    }
+    const h = (ECHO_LOAN.DURATIONS_H as readonly number[]).includes(hours) ? hours : 1;
+    const now = Date.now();
+    const offer = makeLoanOffer(echo, h, now);
+    const sent = this.transport.sendTo(peerId, {
+      senderName: this.character().name,
+      type: 'ECHO_LEND',
+      gateAddress: this.homeGateAddress().formatted,
+      authority: { echoLoan: offer },
+    });
+    if (!sent) {
+      this.appendFeed('SYSTEM', `Couldn't reach ${peer.playerName}.`);
+      return;
+    }
+    this.astralEcho.set({
+      ...echo,
+      mode: 'AWAY',
+      escortPeerId: null,
+      lentTo: {
+        loanId: offer.loanId,
+        peerId,
+        name: peer.playerName,
+        sinceMs: now,
+        untilMs: offer.untilMs,
+      },
+      lastSimulatedMs: now,
+    });
+    this.echoWatch.set(null);
+    this.appendFeed(
+      'NETWORK',
+      `🤖 ${echo.name} sets off to help ${peer.playerName} for ${h} hour(s). It comes back with what it finds, even if you're offline when the loan ends.`,
+    );
+    this.saveEcho(true);
+  }
+
+  lendEchoByName(args: string[]): void {
+    const hours = Number(args[args.length - 1]);
+    const nameParts = Number.isFinite(hours) ? args.slice(0, -1) : args;
+    const key = nameParts.join(' ').trim().toLowerCase();
+    const peer = this.transport
+      .activeVisitorsList()
+      .find((p) => !p.isAstralEcho && p.playerName.toLowerCase().startsWith(key));
+    if (!peer) {
+      this.appendFeed('SYSTEM', `No connected player called "${nameParts.join(' ')}".`);
+      return;
+    }
+    this.lendEchoTo(peer.peerId, Number.isFinite(hours) ? hours : 1);
+  }
+
+  /** Ask for your Echo back early (or let it walk home if the friend is gone for good). */
+  recallEcho(): void {
+    const echo = this.requireEcho(true);
+    if (!echo?.lentTo) {
+      this.appendFeed('SYSTEM', 'Your Echo is home.');
+      return;
+    }
+    const sent = this.transport.sendTo(echo.lentTo.peerId, {
+      senderName: this.character().name,
+      type: 'ECHO_RECALL',
+      gateAddress: this.homeGateAddress().formatted,
+      authority: { loanId: echo.lentTo.loanId },
+    });
+    if (sent) {
+      this.appendFeed('NETWORK', `🤖 You call ${echo.name} home from ${echo.lentTo.name}'s realm.`);
+    } else {
+      this.appendFeed(
+        'NETWORK',
+        `🤖 ${echo.lentTo.name} isn't connected, so ${echo.name} walks home empty-handed.`,
+      );
+      this.bringEchoHome(null);
+    }
+  }
+
+  private bringEchoHome(ret: EchoLoanReturn | null): void {
+    const echo = this.astralEcho();
+    if (!echo || echo.mode !== 'AWAY') return;
+    const ruleset = this.homeRealmDelta?.ruleset ?? this.activeRealmDelta().ruleset;
+    const { echo: home, summary } = applyLoanReturn(echo, ret, Date.now(), (item) =>
+      this.storage.enforceCustomsGateOnItem(item, { ...ruleset, maxItemStatBudget: 30 }),
+    );
+    this.astralEcho.set(home);
+    this.appendFeed('NETWORK', `🤖 ${summary}`);
+    this.saveEcho(true);
+  }
+
+  // ----- Host side: Echoes lent to me -----------------------------------------------
+
+  private handleEchoLoanPacket(pkt: NetworkPacket): void {
+    if (pkt.relayedBy) return;
+    if (pkt.type === 'ECHO_LEND' && pkt.toPeerId === this.transport.localPeerId) {
+      const offer = pkt.authority?.echoLoan;
+      if (!offer?.loanId) return;
+      const others = this.guestEchoes().filter((g) => g.lenderId !== pkt.senderPeerId);
+      if (others.length >= MAX_GUEST_ECHOES) {
+        this.appendFeed(
+          'NETWORK',
+          `${pkt.senderName} tried to lend you an Echo, but you have ${MAX_GUEST_ECHOES} already.`,
+        );
+        return;
+      }
+      const now = Date.now();
+      const room = this.isVisitingExternalRealm() ? 'room-0' : this.character().currentRoomId;
+      const echo = guestEchoFromOffer(offer, room, now);
+      const untilMs = Math.min(Number(offer.untilMs) || now, now + 8 * 3_600_000);
+      this.guestEchoes.set([
+        ...others,
+        {
+          loanId: offer.loanId,
+          lenderId: pkt.senderPeerId,
+          lenderName: pkt.senderName,
+          echo,
+          startXp: echo.xp,
+          startKnowledge: { ...echo.knowledge },
+          untilMs,
+        },
+      ]);
+      this.appendFeed(
+        'NETWORK',
+        `🤖 ${pkt.senderName} lent you their Echo ${echo.name} (Lv.${echo.level} ${echo.archetype}) until ${new Date(untilMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. It follows you and fights beside you in your dungeon.`,
+      );
+      this.saveGuests(true);
+    } else if (pkt.type === 'ECHO_RECALL' && pkt.toPeerId === this.transport.localPeerId) {
+      const g = this.guestEchoes().find(
+        (x) => x.lenderId === pkt.senderPeerId && x.loanId === pkt.authority?.loanId,
+      );
+      if (g) this.finishGuestLoan(g.lenderId, `${pkt.senderName} called it home`);
+    } else if (pkt.type === 'ECHO_RETURN' && pkt.toPeerId === this.transport.localPeerId) {
+      const echo = this.astralEcho();
+      const ret = pkt.authority?.echoReturn;
+      if (
+        echo?.mode === 'AWAY' &&
+        echo.lentTo?.peerId === pkt.senderPeerId &&
+        ret?.loanId === echo.lentTo.loanId
+      ) {
+        this.bringEchoHome(ret);
+      }
+    }
+  }
+
+  /** Run borrowed Echoes live while I'm home; they don't catch up on time I was away. */
+  private advanceGuestEchoes(now = Date.now()): void {
+    const guests = this.guestEchoes();
+    if (guests.length === 0) return;
+    const home = !this.isVisitingExternalRealm() && !this.authorityHost();
+    for (const g of guests) {
+      if (g.pendingReturn) continue;
+      if (now >= g.untilMs) {
+        this.finishGuestLoan(g.lenderId, 'the loan ended');
+        continue;
+      }
+      if (!home) {
+        this.updateGuest(g.lenderId, { ...g.echo, lastSimulatedMs: now });
+        continue;
+      }
+      const dt = Math.min(now - g.echo.lastSimulatedMs, ECHO_TUNING.LIVE_STEP_MS * 3);
+      if (dt < 500) continue;
+      const result = stepEcho(g.echo, this.echoWorld(now, true), dt, this.echoRng);
+      this.updateGuest(g.lenderId, result.echo);
+      this.applyEchoEffects(result.effects, now, g.lenderId);
+    }
+    this.saveGuests();
+  }
+
+  private updateGuest(lenderId: string, echo: EchoCompanion): void {
+    this.guestEchoes.update((all) =>
+      all.map((g) => (g.lenderId === lenderId ? { ...g, echo } : g)),
+    );
+  }
+
+  /** End a loan: send the Echo home with its gains, or hold them until the lender reconnects. */
+  finishGuestLoan(lenderId: string, reason: string): void {
+    const g = this.guestEchoes().find((x) => x.lenderId === lenderId);
+    if (!g) return;
+    const ret = g.pendingReturn ?? buildLoanReturn(g.loanId, g.echo, g.startXp, g.startKnowledge);
+    const sent = this.transport.sendTo(lenderId, {
+      senderName: this.character().name,
+      type: 'ECHO_RETURN',
+      gateAddress: this.homeGateAddress().formatted,
+      authority: { echoReturn: ret },
+    });
+    if (sent) {
+      this.guestEchoes.update((all) => all.filter((x) => x.lenderId !== lenderId));
+      this.appendFeed('NETWORK', `🤖 ${g.echo.name} heads home to ${g.lenderName} (${reason}).`);
+    } else {
+      this.guestEchoes.update((all) =>
+        all.map((x) => (x.lenderId === lenderId ? { ...x, pendingReturn: ret } : x)),
+      );
+      this.appendFeed(
+        'NETWORK',
+        `🤖 ${g.echo.name}'s loan is over (${reason}). It will go home when ${g.lenderName} reconnects.`,
+      );
+    }
+    this.saveGuests(true);
+  }
+
+  /** A lender is reachable again: deliver any Echo waiting to go home to them. */
+  private deliverPendingReturns(peerId: string): void {
+    const g = this.guestEchoes().find((x) => x.lenderId === peerId && x.pendingReturn);
+    if (g) this.finishGuestLoan(peerId, 'they reconnected');
+  }
+
+  private saveGuests(force = false): void {
+    const now = Date.now();
+    if (!force && now - this.guestsSavedAtMs < ECHO_SAVE_EVERY_MS) return;
+    this.guestsSavedAtMs = now;
+    void this.storage.setItem('guest_echoes', this.guestEchoes());
+  }
+
   handleEchoCommand(args: string[]): void {
     const sub = args[0]?.toLowerCase();
     const rest = args.slice(1).join(' ').trim();
@@ -2127,10 +2584,46 @@ export class MudEngineService implements OnDestroy {
       case 'rename':
         this.renameEcho(rest);
         return;
+      case 'retreat':
+        this.setEchoJobRules({ retreatPct: Number(rest.replace('%', '')) || 35 });
+        return;
+      case 'bosses':
+        this.setEchoJobRules({
+          skipBosses: rest.toLowerCase() === 'off' || rest.toLowerCase() === 'skip',
+        });
+        return;
+      case 'focus': {
+        const key = rest.toLowerCase();
+        const foe = this.echoKnownFoes().find((f) => f.name.toLowerCase().includes(key));
+        this.setEchoJobRules({
+          focusTemplateId:
+            !key || key === 'none' || key === 'off' ? null : (foe?.templateId ?? null),
+        });
+        if (key && key !== 'none' && key !== 'off' && !foe) {
+          this.appendFeed('SYSTEM', `It hasn't fought anything called "${rest}" yet.`);
+        }
+        return;
+      }
+      case 'tell':
+      case 'know':
+      case 'teach':
+        this.shareEchoKnowledge();
+        return;
+      case 'escort':
+      case 'guard':
+        this.escortByName(rest);
+        return;
+      case 'lend':
+        this.lendEchoByName(args.slice(1));
+        return;
+      case 'recall':
+      case 'home':
+        this.recallEcho();
+        return;
       default:
         this.appendFeed(
           'SYSTEM',
-          'Echo commands: echo on | off | status | follow | scout | farm | route <name> | stop | watch | done <name> | give | lockpick | carry | name <new>',
+          'Echo commands: echo on | off | status | follow | scout | farm | route <name> | stop | watch | done <name> | give | lockpick | carry | name <new> | retreat <%> | bosses on|off | focus <monster|none> | tell | escort <visitor|off> | lend <player> [1|4|8] | recall',
         );
     }
   }
@@ -2154,6 +2647,7 @@ export class MudEngineService implements OnDestroy {
       !!echo &&
       this.astralEchoBotEnabled() &&
       echo.mode !== 'DOWNED' &&
+      echo.mode !== 'AWAY' &&
       !this.isVisitingExternalRealm();
     this.character.update((c) => ({ ...c, hp: 0, atbGauge: 0 }));
     if (echo?.carried) this.astralEcho.set({ ...echo, carried: false, roomId: room.id });
@@ -2669,7 +3163,10 @@ export class MudEngineService implements OnDestroy {
     // transport and is opt-in, so this loop never calls the broker.
     this.beaconIntervalId = setInterval(() => this.sendPresenceBeacon(), BEACON_INTERVAL_MS);
     this.respawnIntervalId = setInterval(() => this.respawnDueMonsters(), RESPAWN_CHECK_MS);
-    this.echoIntervalId = setInterval(() => this.advanceEcho(), ECHO_TUNING.LIVE_STEP_MS);
+    this.echoIntervalId = setInterval(() => {
+      this.advanceEcho();
+      this.advanceGuestEchoes();
+    }, ECHO_TUNING.LIVE_STEP_MS);
   }
 
   stopAtbLoop(): void {
@@ -4465,7 +4962,9 @@ export class MudEngineService implements OnDestroy {
         kills: 0,
         inspectedLevel: 0,
       };
-      const canSeeWeakness = attr.PER >= 12 || bestiaryRecord.kills >= 1;
+      // Your Echo can teach you weaknesses (inspectedLevel 2) without you fighting them.
+      const canSeeWeakness =
+        attr.PER >= 12 || bestiaryRecord.kills >= 1 || bestiaryRecord.inspectedLevel >= 2;
       const details = [
         `Level ${mob.level} • Element: ${mob.element} • HP: ${mob.hp}/${mob.maxHp}`,
         `ATK: ${mob.atk} • Mitigation: ${mob.mitigationPct}% • Speed: ${mob.speed}`,
@@ -6081,6 +6580,11 @@ export class MudEngineService implements OnDestroy {
       this.handleCarryPacket(pkt);
       return;
     }
+    if (pkt.type === 'ECHO_LEND' || pkt.type === 'ECHO_RECALL' || pkt.type === 'ECHO_RETURN') {
+      this.handleEchoLoanPacket(pkt);
+      return;
+    }
+    if (pkt.type === 'GATE_BEACON' && !pkt.relayedBy) this.deliverPendingReturns(pkt.senderPeerId);
     if (pkt.type === 'GATE_BEACON') {
       // My carrier moved: I move with them.
       if (this.playerDowned()?.carriedBy?.id === pkt.senderPeerId) this.followCarrier(pkt.roomId);

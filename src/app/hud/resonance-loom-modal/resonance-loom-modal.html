@@ -361,6 +361,167 @@
           </label>
         </div>
 
+        <!-- AWAY ON LOAN -->
+        @if (echo.mode === 'AWAY' && echo.lentTo; as lent) {
+          <div class="telemetry-card" data-testid="echo-away-card">
+            <h3>Away helping {{ lent.name }}</h3>
+            <p class="card-help">
+              Back by {{ lent.untilMs | date: 'shortTime' }}. It returns with what it found and
+              learned, even if you're offline when the loan ends.
+            </p>
+            <button
+              type="button"
+              class="mini-action-btn"
+              (click)="engine.recallEcho()"
+              data-testid="echo-recall-btn"
+            >
+              Call it home
+            </button>
+          </div>
+        }
+
+        @if (echo.mode !== 'AWAY') {
+          <!-- TACTICS for the active job -->
+          @if (activeJob(); as job) {
+            <div class="telemetry-card" data-testid="echo-tactics-card">
+              <h3>Tactics: {{ job.name }}</h3>
+              <label class="diag-label">
+                <span>Rest when HP falls below</span>
+                <select
+                  aria-label="Retreat threshold"
+                  [ngModel]="jobRulesOf(job).retreatPct"
+                  (ngModelChange)="engine.setEchoJobRules({ retreatPct: +$event })"
+                  data-testid="echo-retreat-select"
+                >
+                  @for (pct of retreatOptions; track pct) {
+                    <option [value]="pct">{{ pct }}%</option>
+                  }
+                </select>
+              </label>
+              <label class="diag-label">
+                <span>Focus on</span>
+                <select
+                  aria-label="Preferred monster type"
+                  [ngModel]="jobRulesOf(job).focusTemplateId ?? ''"
+                  (ngModelChange)="engine.setEchoJobRules({ focusTemplateId: $event || null })"
+                >
+                  <option value="">Anything</option>
+                  @for (foe of engine.echoKnownFoes(); track foe.templateId) {
+                    <option [value]="foe.templateId">{{ foe.name }}</option>
+                  }
+                </select>
+              </label>
+              <button
+                type="button"
+                class="toggle-echo-btn"
+                [class.active]="jobRulesOf(job).skipBosses"
+                (click)="engine.setEchoJobRules({ skipBosses: !jobRulesOf(job).skipBosses })"
+                data-testid="echo-skip-bosses-btn"
+              >
+                {{
+                  jobRulesOf(job).skipBosses ? '● Avoids bosses' : '○ Fights bosses it can handle'
+                }}
+              </button>
+            </div>
+          }
+
+          <!-- WHAT IT KNOWS -->
+          <div class="telemetry-card" data-testid="echo-knowledge-card">
+            <h3>What it knows</h3>
+            @if (engine.echoKnownFoes().length === 0) {
+              <p class="card-help">Nothing yet. It learns about each monster type it defeats.</p>
+            } @else {
+              <ul class="echo-log-list">
+                @for (foe of engine.echoKnownFoes().slice(0, 8); track foe.templateId) {
+                  <li>
+                    {{ foe.name }}: {{ foe.kills }} beaten{{
+                      foe.kills >= 3 && foe.weakness ? ', weak to ' + foe.weakness : ''
+                    }}
+                  </li>
+                }
+              </ul>
+              <button
+                type="button"
+                class="mini-action-btn accent"
+                (click)="engine.shareEchoKnowledge()"
+                data-testid="echo-share-knowledge-btn"
+              >
+                Teach me what you know
+              </button>
+            }
+          </div>
+
+          <!-- LEND & ESCORT -->
+          <div class="telemetry-card" data-testid="echo-lend-card">
+            <h3>Lend it out</h3>
+            @if (engine.isHostingLive()) {
+              <p class="card-help">Guard a visitor while they explore your dungeon:</p>
+              <div class="peer-list">
+                @for (v of visitorsInRealm(); track v.peerId) {
+                  <div class="peer-row">
+                    <strong>{{ v.name }}</strong>
+                    @if (echo.escortPeerId === v.peerId) {
+                      <button
+                        type="button"
+                        class="mini-action-btn"
+                        (click)="engine.setEchoEscort(null)"
+                      >
+                        Stop guarding
+                      </button>
+                    } @else {
+                      <button
+                        type="button"
+                        class="mini-action-btn accent"
+                        (click)="engine.setEchoEscort(v.peerId)"
+                        [attr.data-testid]="'echo-escort-' + v.peerId"
+                      >
+                        Guard
+                      </button>
+                    }
+                  </div>
+                }
+              </div>
+            }
+            @if (connectedPlayers().length > 0) {
+              <p class="card-help">
+                Send it to help a connected friend in their dungeon for a while:
+              </p>
+              <label class="diag-label">
+                <span>For</span>
+                <select
+                  aria-label="Loan length"
+                  [ngModel]="lendHours()"
+                  (ngModelChange)="lendHours.set(+$event)"
+                >
+                  @for (h of loanDurations; track h) {
+                    <option [value]="h">{{ h }} hour{{ h === 1 ? '' : 's' }}</option>
+                  }
+                </select>
+              </label>
+              <div class="peer-list">
+                @for (p of connectedPlayers(); track p.peerId) {
+                  <div class="peer-row">
+                    <strong>{{ p.playerName }}</strong>
+                    <button
+                      type="button"
+                      class="mini-action-btn accent"
+                      (click)="engine.lendEchoTo(p.peerId, lendHours())"
+                      [attr.data-testid]="'echo-lend-' + p.peerId"
+                    >
+                      Lend
+                    </button>
+                  </div>
+                }
+              </div>
+            } @else if (!engine.isHostingLive()) {
+              <p class="card-help">
+                Connect with a friend (Play Together tab) to lend them your Echo or have it guard
+                your visitors.
+              </p>
+            }
+          </div>
+        }
+
         <!-- JOBS -->
         <div class="telemetry-card">
           <h3>Jobs</h3>
@@ -515,6 +676,39 @@
           >
             Wake your Echo
           </button>
+        </div>
+      }
+
+      <!-- BORROWED: friends' Echoes staying with me -->
+      @if (engine.guestEchoes().length > 0) {
+        <div class="telemetry-card" data-testid="guest-echoes-card">
+          <h3>Borrowed Echoes</h3>
+          <div class="peer-list">
+            @for (g of engine.guestEchoes(); track g.loanId) {
+              <div class="peer-row">
+                <div>
+                  <strong>{{ g.echo.name }} ({{ g.lenderName }}'s)</strong>
+                  <div class="peer-sub">
+                    Lv.{{ g.echo.level }} {{ g.echo.archetype }} •
+                    @if (g.pendingReturn) {
+                      waiting to go home
+                    } @else {
+                      until {{ g.untilMs | date: 'shortTime' }}
+                    }
+                  </div>
+                </div>
+                @if (!g.pendingReturn) {
+                  <button
+                    type="button"
+                    class="mini-action-btn"
+                    (click)="engine.finishGuestLoan(g.lenderId, 'you sent it home')"
+                  >
+                    Send home
+                  </button>
+                }
+              </div>
+            }
+          </div>
         </div>
       }
     </div>

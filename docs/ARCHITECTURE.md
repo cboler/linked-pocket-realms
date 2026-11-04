@@ -228,6 +228,10 @@ With a live link, the host's snapshot builds the realm (`authorityHost` is set).
 - `MudEngineService.advanceEcho()` runs one live step every 2 s while you're home; after a longer gap (closed tab, throttled tab, coming back from a visit) it simulates up to 8 hours in 30 s steps, letting rooms refill at simulated times, and shows a report. `applyEchoEffects()` applies its kills, pickups, chest openings, and scouting through the normal paths.
 - It appears via `localEchoPeer` in `peersInCurrentRoom` (which now also matches the realm, not just the room id). Talk opens the **Echo** tab in the Play Together drawer. Commands: `echo on | off | status | follow | scout | farm | route <name> | stop | watch | done <name> | give | lockpick | carry | name <new>`.
 - It never calls the network; while hosting, its presence goes to visitors over direct links only.
+- **Tactics** (`EchoJob.rules`): retreat threshold, avoid bosses, focus a monster type. **Knowledge**: `knowledgeNotes` (names, weaknesses); `shareEchoKnowledge()` teaches you weaknesses of types it has beaten 3+ times.
+- **Escort**: while hosting, `setEchoEscort(peerId)` makes it follow a visitor's room; they share its kills.
+- **Loans** (ADR-016): `lendEchoTo()` sends `ECHO_LEND`; the friend keeps a `GuestEchoRecord` (saved as `guest_echoes`), runs it live with the same `stepEcho()`, and returns gains with `ECHO_RETURN` when the loan ends, holding them until you reconnect if needed. `applyLoanReturn()` clamps what comes back. While lent, your Echo is `AWAY` and isn't simulated at home.
+- **Balance** is checked by `echo-balance.spec.ts`, which runs the real simulation in real dungeons for every era and class. Monsters recover when the Echo backs off a fight you aren't in.
 
 ### Falling and revival
 

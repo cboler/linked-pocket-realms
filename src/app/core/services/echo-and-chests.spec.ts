@@ -409,6 +409,77 @@ describe('Astral Echo companion', () => {
     expect(engine.astralEcho()!.lockpicks).toBe(2);
   });
 
+  it('follows its tactics: skip bosses, focus a type, rest earlier', () => {
+    const echo = engine.astralEcho()!;
+    engine.setEchoJob('FOLLOW');
+    engine.setEchoJobRules({ skipBosses: true, retreatPct: 65, focusTemplateId: 'x-type' });
+    const rules = engine
+      .astralEcho()!
+      .jobs.find((j) => j.id === engine.astralEcho()!.activeJobId)!.rules!;
+    expect(rules).toEqual({ skipBosses: true, retreatPct: 65, focusTemplateId: 'x-type' });
+    // Out-of-range values are clamped.
+    engine.setEchoJobRules({ retreatPct: 500 });
+    expect(engine.astralEcho()!.jobs.find((j) => j.id === echo.jobs[0].id)!.rules!.retreatPct).toBe(
+      80,
+    );
+
+    // A boss in the room is ignored with skipBosses on.
+    const here = engine.character().currentRoomId;
+    const boss = engine
+      .rooms()
+      .flatMap((r) => r.monsters)
+      .find((m) => m.isBoss)!;
+    engine.astralEcho.update((e) => (e ? { ...e, level: 60, roomId: here } : e));
+    engine.rooms.update((all) =>
+      all.map((r) => (r.id === here ? { ...r, monsters: [{ ...boss, hp: boss.maxHp }] } : r)),
+    );
+    rewind(ECHO_TUNING.LIVE_STEP_MS);
+    engine.advanceEcho();
+    expect(engine.rooms().find((r) => r.id === here)!.monsters[0].hp).toBe(boss.maxHp);
+  });
+
+  it('teaches you monster weaknesses it has learned', () => {
+    const mob = engine
+      .rooms()
+      .flatMap((r) => r.monsters)
+      .find((m) => !m.isBoss)!;
+    engine.astralEcho.update((e) =>
+      e
+        ? {
+            ...e,
+            knowledge: { [mob.templateId]: 4 },
+            knowledgeNotes: { [mob.templateId]: { name: mob.name, weakness: mob.weakness } },
+          }
+        : e,
+    );
+    engine.shareEchoKnowledge();
+    expect(engine.character().bestiaryUnlocked[mob.templateId].inspectedLevel).toBe(2);
+    expect(engine.terminalFeed()[0].text).toContain('weak to');
+  });
+
+  it('walks home on its own if a loan never reports back', () => {
+    const now = Date.now();
+    engine.astralEcho.update((e) =>
+      e
+        ? {
+            ...e,
+            mode: 'AWAY',
+            lentTo: {
+              loanId: 'l1',
+              peerId: 'peer-gone',
+              name: 'Gone',
+              sinceMs: now - 30 * 3_600_000,
+              untilMs: now - 25 * 3_600_000,
+            },
+          }
+        : e,
+    );
+    engine.advanceEcho(now);
+    expect(engine.astralEcho()!.mode).toBe('IDLE');
+    expect(engine.astralEcho()!.lentTo).toBeUndefined();
+    expect(engine.peersInCurrentRoom().some((p) => p.peerId === ECHO_PEER_ID)).toBe(true);
+  });
+
   it('opens chests matching its class on a farm job', () => {
     engine.astralEcho.update((e) => (e ? { ...e, level: 5, xp: 400, archetype: 'Vanguard' } : e));
     const roomId = engine.astralEcho()!.roomId;

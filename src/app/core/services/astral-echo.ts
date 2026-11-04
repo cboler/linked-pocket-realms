@@ -11,6 +11,9 @@ import {
   EchoCompanion,
   EchoJob,
   EchoJobKind,
+  EchoJobRules,
+  EchoLoanOffer,
+  EchoLoanReturn,
   EquipmentItem,
   MonsterEntity,
   RoomNode,
@@ -36,6 +39,27 @@ export const ECHO_TUNING = {
 } as const;
 
 export const ECHO_PEER_ID = 'astral-echo-local';
+
+/** Loans: how long, and the most a returning Echo may bring back per hour away. */
+export const ECHO_LOAN = {
+  DURATIONS_H: [1, 4, 8],
+  MAX_XP_PER_HOUR: 300,
+  MAX_GOLD_PER_HOUR: 150,
+  MAX_ITEMS: 5,
+  MAX_KNOWLEDGE_GAIN: 50,
+  /** If no return arrives, the Echo walks home on its own this long after the loan ends. */
+  SELF_RETURN_GRACE_MS: 24 * 60 * 60_000,
+} as const;
+
+export const DEFAULT_JOB_RULES: EchoJobRules = {
+  retreatPct: 35,
+  skipBosses: false,
+  focusTemplateId: null,
+};
+
+export function jobRules(job: EchoJob | null): EchoJobRules {
+  return { ...DEFAULT_JOB_RULES, ...(job?.rules ?? {}) };
+}
 
 const CLASS_POWER: Record<ArchetypeClass, number> = {
   Vanguard: 1.0,
@@ -118,6 +142,8 @@ export function jobUnlocked(echo: EchoCompanion, job: EchoJob): boolean {
 export type EchoWorldEffect =
   | { kind: 'DAMAGE'; roomId: string; monsterId: string; damage: number }
   | { kind: 'KILL'; roomId: string; monsterId: string }
+  /** Monsters recover when the Echo backs off from a fight (no hit-and-run). */
+  | { kind: 'HEAL'; roomId: string; monsterId: string }
   | { kind: 'REVEAL'; roomId: string }
   | { kind: 'TAKE'; roomId: string; itemIds: string[] }
   | { kind: 'OPEN_CHEST'; roomId: string; chestId: string };
@@ -198,8 +224,26 @@ function canOpen(
   );
 }
 
-function canFight(echo: EchoCompanion, m: MonsterEntity): boolean {
-  return m.hp > 0 && (!m.isBoss || echo.level >= m.level);
+function canFight(echo: EchoCompanion, m: MonsterEntity, job: EchoJob | null = null): boolean {
+  if (m.hp <= 0) return false;
+  if (!m.isBoss) return true;
+  return !jobRules(job).skipBosses && echo.level >= m.level;
+}
+
+/** Choose a fight in this room: your target (Follow), then the focus type, then anything. */
+function pickFoe(
+  echo: EchoCompanion,
+  job: EchoJob,
+  monsters: MonsterEntity[],
+  playerTargetId: string | null,
+): MonsterEntity | undefined {
+  const fightable = monsters.filter((m) => canFight(echo, m, job));
+  const focus = jobRules(job).focusTemplateId;
+  return (
+    (job.kind === 'FOLLOW' ? fightable.find((m) => m.id === playerTargetId) : undefined) ??
+    (focus ? fightable.find((m) => m.templateId === focus) : undefined) ??
+    fightable[0]
+  );
 }
 
 function echoDamage(
@@ -268,6 +312,9 @@ export function stepEcho(
   const visited = new Set(world.visitedRoomIds);
   const campfire = (r: RoomNode): boolean => r.legendType === 'safe-campfire';
 
+  // Lent to a friend: the friend's browser runs it until it comes home.
+  if (echo.mode === 'AWAY') return { echo, effects, tally };
+
   if (echo.mode === 'DOWNED') {
     if (echo.carried) return { echo, effects, tally };
     if (now >= (echo.downedUntilMs ?? 0)) {
@@ -289,10 +336,20 @@ export function stepEcho(
     echo.roomId = here.id;
     const regen = (campfire(here) ? 0.08 : 0.03) * echo.maxHp;
 
-    // Retreat to rest when hurt.
-    if (echo.mode !== 'RESTING' && echo.hp < echo.maxHp * ECHO_TUNING.RETREAT_HP) {
+    // Retreat to rest when hurt (the job's tactics can change the threshold).
+    const retreatAt = Math.max(0.1, Math.min(0.8, jobRules(job).retreatPct / 100));
+    if (echo.mode !== 'RESTING' && echo.hp < echo.maxHp * retreatAt) {
       echo.mode = 'RESTING';
       addLog(echo, 'I am hurt; resting before I go on.', now);
+      // Backing off lets wounded monsters here recover, unless you're still fighting them.
+      if (world.playerRoomId !== here.id) {
+        for (const m of here.monsters) {
+          if (m.hp > 0 && m.hp < m.maxHp) {
+            m.hp = m.maxHp;
+            effects.push({ kind: 'HEAL', roomId: here.id, monsterId: m.id });
+          }
+        }
+      }
     }
     if (echo.mode === 'RESTING') {
       const fire = nextHop(rooms, here.id, campfire);
@@ -313,12 +370,7 @@ export function stepEcho(
     echo.mode = 'WORKING';
 
     // --- What to do in this room -------------------------------------------------
-    const foe =
-      job.fight &&
-      (here.monsters.find(
-        (m) => m.id === world.playerTargetId && job.kind === 'FOLLOW' && canFight(echo, m),
-      ) ??
-        here.monsters.find((m) => canFight(echo, m)));
+    const foe = job.fight && pickFoe(echo, job, here.monsters, world.playerTargetId);
 
     const followAway =
       job.kind === 'FOLLOW' && world.playerRoomId && world.playerRoomId !== here.id;
@@ -337,6 +389,10 @@ export function stepEcho(
         echo.gold += gold;
         tally.gold += gold;
         echo.knowledge[foe.templateId] = (echo.knowledge[foe.templateId] ?? 0) + 1;
+        echo.knowledgeNotes = {
+          ...(echo.knowledgeNotes ?? {}),
+          [foe.templateId]: { name: foe.name, weakness: foe.weakness },
+        };
         bumpProficiency(job);
         addLog(echo, `I defeated ${foe.name} in ${here.title}.`, now);
         gainXp(echo, foe.isBoss ? 120 : 35, tally, now);
@@ -423,13 +479,21 @@ export function stepEcho(
       }
     } else if (job.kind === 'FARM') {
       const space = ECHO_TUNING.SATCHEL_CAP - echo.satchel.length;
-      hop = nextHop(
-        rooms,
-        here.id,
-        (r) =>
-          r.monsters.some((m) => canFight(echo, m)) ||
-          (space > 0 && (r.items.length > 0 || (r.chests ?? []).some((c) => canOpen(echo, c)))),
-      );
+      const focus = jobRules(job).focusTemplateId;
+      // Head for the focus monster type first, then anything worth doing.
+      hop =
+        (focus
+          ? nextHop(rooms, here.id, (r) =>
+              r.monsters.some((m) => m.templateId === focus && canFight(echo, m, job)),
+            )
+          : null) ??
+        nextHop(
+          rooms,
+          here.id,
+          (r) =>
+            r.monsters.some((m) => canFight(echo, m, job)) ||
+            (space > 0 && (r.items.length > 0 || (r.chests ?? []).some((c) => canOpen(echo, c)))),
+        );
       if (!hop) {
         // Nothing left: wait by a campfire for rooms to refill.
         const fire = nextHop(rooms, here.id, campfire);
@@ -484,5 +548,130 @@ export function makeRouteJob(
     loot,
     proficiency: 0,
     runs: 0,
+  };
+}
+
+// =============================================================================
+// Loans: sending your Echo to a friend's realm
+// =============================================================================
+
+export function makeLoanOffer(echo: EchoCompanion, hours: number, nowMs: number): EchoLoanOffer {
+  return {
+    loanId: `loan-${nowMs.toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    name: echo.name,
+    archetype: echo.archetype,
+    level: echo.level,
+    maxHp: echo.maxHp,
+    knowledge: { ...echo.knowledge },
+    untilMs: nowMs + hours * 3_600_000,
+  };
+}
+
+/** The host's working copy of a borrowed Echo. It follows the host and fights beside them. */
+export function guestEchoFromOffer(
+  offer: EchoLoanOffer,
+  roomId: string,
+  nowMs: number,
+): EchoCompanion {
+  const level = Math.max(1, Math.min(60, Math.floor(Number(offer.level) || 1)));
+  const maxHp = echoMaxHp(level);
+  const jobs = builtInJobs();
+  return {
+    name: String(offer.name || 'Echo').slice(0, 24),
+    archetype: offer.archetype,
+    level,
+    xp: (level - 1) * 100,
+    hp: maxHp,
+    maxHp,
+    roomId,
+    mode: 'WORKING',
+    activeJobId: jobs[0].id, // Follow the host
+    jobs,
+    satchel: [],
+    gold: 0,
+    shards: 0,
+    lockpicks: 0,
+    knowledge: Object.fromEntries(
+      Object.entries(offer.knowledge ?? {})
+        .slice(0, 100)
+        .map(([k, v]) => [k, Math.max(0, Math.min(1000, Number(v) || 0))]),
+    ),
+    lastSimulatedMs: nowMs,
+    log: [{ atMs: nowMs, text: 'I arrived to help.' }],
+  };
+}
+
+/** What the host sends back when a loan ends. */
+export function buildLoanReturn(
+  loanId: string,
+  guest: EchoCompanion,
+  startXp: number,
+  startKnowledge: Record<string, number>,
+): EchoLoanReturn {
+  const knowledge: Record<string, number> = {};
+  for (const [k, v] of Object.entries(guest.knowledge)) {
+    const gain = v - (startKnowledge[k] ?? 0);
+    if (gain > 0) knowledge[k] = gain;
+  }
+  return {
+    loanId,
+    xp: Math.max(0, guest.xp - startXp),
+    gold: guest.gold,
+    items: guest.satchel.slice(0, ECHO_LOAN.MAX_ITEMS),
+    knowledge,
+    notes: guest.log.slice(0, 5).map((l) => l.text),
+  };
+}
+
+/**
+ * Bring a lent Echo home with what it earned, clamped so a friend's browser can't hand
+ * back more than the loan could plausibly earn.
+ */
+export function applyLoanReturn(
+  echo: EchoCompanion,
+  ret: EchoLoanReturn | null,
+  nowMs: number,
+  clampItem: (item: EquipmentItem) => EquipmentItem,
+): { echo: EchoCompanion; summary: string } {
+  const next: EchoCompanion = structuredClone(echo);
+  const lent = next.lentTo;
+  next.lentTo = undefined;
+  next.mode = 'IDLE';
+  next.roomId = 'room-0';
+  next.lastSimulatedMs = nowMs;
+  if (!ret || !lent) {
+    addLog(next, 'I came home.', nowMs);
+    return { echo: next, summary: `${next.name} came home.` };
+  }
+  const hours = Math.max(0.25, (Math.min(nowMs, lent.untilMs) - lent.sinceMs) / 3_600_000);
+  const xp = Math.max(
+    0,
+    Math.min(Math.floor(Number(ret.xp) || 0), Math.floor(hours * ECHO_LOAN.MAX_XP_PER_HOUR)),
+  );
+  const gold = Math.max(
+    0,
+    Math.min(Math.floor(Number(ret.gold) || 0), Math.floor(hours * ECHO_LOAN.MAX_GOLD_PER_HOUR)),
+  );
+  const space = ECHO_TUNING.SATCHEL_CAP - next.satchel.length;
+  const items = (Array.isArray(ret.items) ? ret.items : [])
+    .slice(0, Math.min(ECHO_LOAN.MAX_ITEMS, Math.max(0, space)))
+    .map(clampItem);
+  next.satchel.push(...items);
+  next.gold += gold;
+  for (const [k, v] of Object.entries(ret.knowledge ?? {}).slice(0, 100)) {
+    const gain = Math.max(0, Math.min(ECHO_LOAN.MAX_KNOWLEDGE_GAIN, Math.floor(Number(v) || 0)));
+    next.knowledge[k] = (next.knowledge[k] ?? 0) + gain;
+  }
+  const tally = emptyTally();
+  gainXp(next, xp, tally, nowMs);
+  next.hp = next.maxHp;
+  addLog(next, `I'm back from ${lent.name}'s realm.`, nowMs);
+  for (const note of (ret.notes ?? []).slice(0, 5))
+    addLog(next, `(At ${lent.name}'s) ${String(note).slice(0, 120)}`, nowMs);
+  const parts = [`${xp} XP`, `${gold} gold`, `${items.length} item(s)`];
+  if (tally.levelsGained > 0) parts.push(`reached level ${next.level}`);
+  return {
+    echo: next,
+    summary: `${next.name} is back from ${lent.name}'s realm with ${parts.join(', ')}.`,
   };
 }

@@ -421,6 +421,71 @@ describe('Host-authority mesh', () => {
     expect(host.engine.carryingPeer()).toBeNull();
   });
 
+  it('lends an Echo to a friend, who keeps it and sends it home with clamped gains', async () => {
+    link(host, visitor);
+    await settle();
+    // The visitor lends its Echo to the host.
+    visitor.engine.toggleAstralEchoBot(true);
+    const startXp = visitor.engine.astralEcho()!.xp;
+    visitor.engine.lendEchoTo('peer-host', 1);
+    await settle();
+    expect(visitor.engine.astralEcho()!.mode).toBe('AWAY');
+    const guest = host.engine.guestEchoes()[0];
+    expect(guest?.lenderName).toBe('Bea');
+    expect(
+      host.engine.peersInCurrentRoom().some((p) => p.peerId === 'guest-echo-peer-visitor'),
+    ).toBe(true);
+
+    // The host's copy earns something, including an absurd amount of XP.
+    host.engine.guestEchoes.update((all) =>
+      all.map((g) => ({ ...g, echo: { ...g.echo, xp: g.echo.xp + 1_000_000, gold: 40 } })),
+    );
+    host.engine.finishGuestLoan('peer-visitor', 'test');
+    await settle();
+    expect(host.engine.guestEchoes().length).toBe(0);
+    const back = visitor.engine.astralEcho()!;
+    expect(back.mode).toBe('IDLE');
+    // A loan that ended right away counts as 15 minutes: at most 75 XP and 37 gold.
+    expect(back.gold).toBe(37);
+    expect(back.xp - startXp).toBeLessThanOrEqual(75);
+    expect(back.level).toBeLessThan(10);
+    visitor.engine.toggleAstralEchoBot(false);
+  });
+
+  it('holds a borrowed Echo until its owner reconnects', async () => {
+    const [hostEnd] = link(host, visitor);
+    await settle();
+    visitor.engine.toggleAstralEchoBot(true);
+    visitor.engine.lendEchoTo('peer-host', 1);
+    await settle();
+    hostEnd.close();
+    await settle();
+    host.engine.finishGuestLoan('peer-visitor', 'the loan ended');
+    expect(host.engine.guestEchoes()[0]?.pendingReturn).toBeTruthy();
+
+    link(host, visitor);
+    await settle();
+    visitor.engine.sendPresenceBeacon();
+    await settle();
+    expect(host.engine.guestEchoes().length).toBe(0);
+    expect(visitor.engine.astralEcho()!.mode).toBe('IDLE');
+    visitor.engine.toggleAstralEchoBot(false);
+  });
+
+  it('can guard a visitor in the host realm', async () => {
+    link(host, visitor);
+    await settle();
+    host.engine.toggleAstralEchoBot(true);
+    host.engine.setEchoEscort('peer-visitor');
+    const target = host.engine.rooms().find((r) => r.id !== 'room-0' && !r.isExpedition)!;
+    visitor.engine.character.update((c) => ({ ...c, currentRoomId: target.id }));
+    visitor.engine.sendPresenceBeacon();
+    await settle();
+    const world = host.engine['echoWorld'](Date.now(), true);
+    expect(world.playerRoomId).toBe(target.id);
+    host.engine.toggleAstralEchoBot(false);
+  });
+
   it('tells visitors when the host leaves home', async () => {
     link(host, visitor);
     await settle();

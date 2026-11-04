@@ -79,7 +79,7 @@ interface EchoJob {
 - `step(state, world, dtMs, rng) → { state, effects }` is pure and deterministic. Effects are applied through the engine's normal paths (kills recorded in `RealmProgress`, host broadcasts while hosting).
 - **Live**: one step every 2 s while enabled and the tab is open.
 - **Catch-up**: on load, simulate `min(now − lastSimulatedMs, 8 h)` in coarse 30 s steps (≤ 960 steps, a few ms of work), then show the report.
-- **Combat**: simplified duel math from level, class, proficiency, and knowledge. The Echo is deliberately weaker than you (≈70% of a player of the same level) so farming helps without trivializing play. At 0 HP it is **downed** for 5 min, then reappears at the entrance. It never dies permanently and never loses its satchel.
+- **Combat**: simplified duel math from level, class, proficiency, and knowledge. The Echo is deliberately weaker than you (measured later: about a quarter of a player's damage; see ADR-016). At 0 HP it is **downed** for 5 min, then reappears at the entrance. It never dies permanently and never loses its satchel.
 - **Jobs**:
   - **Follow** (unlocked at level 1): stays in your room and attacks your target.
   - **Scout** (level 1): walks to unvisited rooms and reveals them on your map.

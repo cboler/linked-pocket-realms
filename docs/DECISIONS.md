@@ -23,6 +23,7 @@ Each record outlines the context, rationale, consequences, and trade-offs of sig
 - [ADR-013: Per-Player Realm Progress and Home-Safe Realm Saves](#adr-013-per-player-realm-progress-and-home-safe-realm-saves)
 - [ADR-014: Host-Authority Star Mesh, Frugal Broker Use, and No TURN (Yet)](#adr-014-host-authority-star-mesh-frugal-broker-use-and-no-turn-yet)
 - [ADR-015: Astral Echo Pawn Companion, Room Respawns, Class-Sealed Chests, and Campfire Revival](#adr-015-astral-echo-pawn-companion-room-respawns-class-sealed-chests-and-campfire-revival)
+- [ADR-016: Echo Tactics, Knowledge Sharing, Escorts, Loans, and Measured Balance](#adr-016-echo-tactics-knowledge-sharing-escorts-loans-and-measured-balance)
 
 ---
 
@@ -445,13 +446,38 @@ The owner wanted the Astral Echo to become a pawn-like companion: it levels up, 
 
 1. **Respawns.** `RealmProgress` records when each monster fell (`defeatedAt`). Regular monsters return after 60 minutes, bosses after 24 hours, checked every minute (never in the room you're standing in) and on load. Refilled monsters are restored from a pristine copy. Old saves migrate: kills without times start their cooldown at load. Floor items still never come back; new loot comes from seeded drops (25% item, 10% lockpick per regular kill).
 2. **Sealed chests.** Generated per realm and room from the seed (treasure vaults always; other rooms 18%), so host and visitors agree. `LOCK` needs a Hexblade or Artificer plus a lockpick (`lockpickChance` from DEX, PER, and tier; a failure breaks the pick). `ARCANE` needs a Chronomancer (20 stamina). `HEAVY` needs a Vanguard (25 stamina). Opened chests are saved and never refill; their loot goes to the floor. In a hosted realm the host checks the visitor's class and opens it.
-3. **The Echo lives in your home realm.** A pure, deterministic `stepEcho()` (in `astral-echo.ts`) runs live every 2 s and catches up after time away in 30 s steps, capped at 8 hours, with a report when more than 5 minutes passed. Its effects go through the engine's normal paths (kills recorded so rooms refill; broadcasts while hosting). Jobs: Follow, Scout, Farm (level 3+), and Routes taught with "Watch me". It is about 70% as strong as a player, retreats to rest when hurt, keeps lockpicks for chests its class can open, and hands over its satchel on request. It never uses the network. It's saved at `astral_echo_state`.
+3. **The Echo lives in your home realm.** A pure, deterministic `stepEcho()` (in `astral-echo.ts`) runs live every 2 s and catches up after time away in 30 s steps, capped at 8 hours, with a report when more than 5 minutes passed. Its effects go through the engine's normal paths (kills recorded so rooms refill; broadcasts while hosting). Jobs: Follow, Scout, Farm (level 3+), and Routes taught with "Watch me". It hits for roughly a quarter of what a player does (measured by the balance harness, ADR-016), retreats to rest when hurt, keeps lockpicks for chests its class can open, and hands over its satchel on request. It never uses the network. It's saved at `astral_echo_state`.
 4. **Downed and carried.** A fallen Echo is down for 5 minutes, or revives at once if carried to a campfire. A fallen player: if their Echo is up, it carries them to the nearest campfire; if other players are in the realm, the player stays down where they fell (monsters ignore them) and anyone can carry them; otherwise they wake at the entrance as before. Arriving at a campfire with a carrier prompts the fallen player to get up there or go to the entrance. Carrying between players uses targeted `CARRY_START` / `CARRY_DROP` packets and presence beacons (`downed`, `carriedBy`); a downed player waits up to 3 minutes for help.
 
 ### Consequences
 
 - **Positive**: Farming and the Echo give the dungeon a reason to revisit; class choice matters for loot; dying in company becomes a cooperative moment instead of a teleport.
 - **Trade-offs**: Respawns mean cleared rooms refill for everyone. Catch-up is an approximation (coarse steps). Floor drops that aren't taken vanish on reload (they aren't part of the seed). A visitor's lockpick roll happens on the visitor's side (the host checks the class, not the roll). Balance values are first guesses kept as named constants (`ECHO_TUNING`, respawn and drop constants).
+
+---
+
+## ADR-016: Echo Tactics, Knowledge Sharing, Escorts, Loans, and Measured Balance
+
+### Status
+
+Accepted
+
+### Context
+
+Left over from ADR-015: teaching the Echo more than routes, lending it to other players (like hired pawns), and tuning its balance, which had only been guessed.
+
+### Decision
+
+1. **Tactics per job** (`EchoJob.rules`): rest below a chosen HP percent (10–80), avoid bosses, and focus a monster type it has fought. Farm heads for the focus type first.
+2. **Knowledge sharing**: the Echo keeps names and weaknesses of what it has beaten. "Teach me what you know" marks types it has beaten 3+ times in your bestiary (`inspectedLevel` 2), which reveals their weakness in the inspector without you fighting them.
+3. **Escort**: while you host, your Echo can guard a visitor (it follows their room, and they share in its kills).
+4. **Loans**: lend your Echo to a connected friend for 1, 4, or 8 hours (`ECHO_LEND`). The friend's browser runs a copy that follows them and fights beside them, live only. When the loan ends (or you recall it, or they send it home), they send back its gains (`ECHO_RETURN`). If you're unreachable, they hold the return (saved as `guest_echoes`) and deliver it when you're next connected; if nothing comes back within 24 hours of the loan ending, it walks home empty-handed. Gains are clamped on arrival: ≤ 300 XP and ≤ 150 gold per hour lent (15 minutes minimum), ≤ 5 items (stat budget capped at 30), ≤ 50 kills of knowledge per type. A friend holds at most 3 borrowed Echoes.
+5. **Measured balance** (`echo-balance.spec.ts`): the real simulation runs in real generated dungeons for every era and class. Measured: in its own era it clears a starting dungeon's regular monsters in 1–3 minutes, dropping to 18–51% HP at worst and never going down; it hits for roughly a quarter of a player's damage, and its hourly output is limited by respawns, not strength. The harness found a hit-and-run exploit (a level-3 Echo cleared a level-15 dungeon by retreating and returning to wounded monsters), so **monsters now recover when the Echo backs off from a fight you aren't in**.
+
+### Consequences
+
+- **Positive**: Echoes become something to share, with gains that can't be inflated by a modified friend; balance has tests that say what moved when numbers change.
+- **Trade-offs**: A borrowed Echo only works while the friend is home with the tab open. Loan gains are trusted within the clamps. Healing on retreat also applies when the Echo backs off a fight another visitor is in (rare).
 
 ---
 

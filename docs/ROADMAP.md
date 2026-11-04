@@ -94,6 +94,7 @@ Status of the starter's customization tasks for this project:
 - [x] **Milestone 4.7: Working Host-Authority Mesh** (ADR-014): multi-visitor star links over WebRTC with join/reply codes or the lobby; host decides HP, kills, and loot; heartbeats, timeouts, rejoin, validation; slim presence with ghost-trail breadcrumbs; frugal, capped broker use; plain Wi-Fi/mobile connectivity note. Verified by unit tests and a two-browser Playwright test over real WebRTC.
 - [x] **Milestone 4.8: Deploy the Updated Broker** (deployed 2026-11-03, revision `pocket-realms-broker-00003`): deploy `linked-pocket-realms-broker` (mirrors `cloud-function/`) to get 1 call per host heartbeat instead of 2, targeted signal delivery, and the server daily ceiling. The client already works with the current broker.
 - [x] **Milestone 4.9: Astral Echo Companion, Respawns, Sealed Chests, Campfire Revival** (ADR-015).
+- [x] **Milestone 4.10: Echo Tactics, Knowledge, Escorts, Loans, Measured Balance** (ADR-016).
 - [ ] **Milestone 4.6: Plain-Language Pass Beyond Onboarding**: Apply the onboarding wording approach to the HUD, drawers, and log (Incursions, Shards, Resonance Loom, Customs Gate, Tri-Chord).
 
 ---
@@ -117,7 +118,7 @@ Use this section to track known simplifications, performance ceilings, or refact
 | _TD-11_ | _No TURN relay_                                                  | _Medium_ | _Symmetric-NAT networks (many mobile carriers) cannot connect; the UI says so. If added: managed TURN with short-lived credentials from the broker, as a fallback only (ADR-014)_                                                                                               | _Phase 5_    |
 | _TD-12_ | _Only HP, kills, and loot are authoritative_                     | _Low_    | _Statuses, severed anatomy parts, and monster attacks are simulated per player during a visit_                                                                                                                                                                                  | _Phase 5_    |
 | _TD-13_ | _Visitor lockpick rolls are client-side_                         | _Low_    | _In a hosted realm the host checks the visitor's class but trusts their lockpick roll (ADR-015)_                                                                                                                                                                                | _Phase 5_    |
-| _TD-14_ | _Echo balance is untuned_                                        | _Low_    | _Strength (~70% of a player), drop rates, cooldowns, and the 8 h catch-up cap are first guesses in `ECHO_TUNING` and the engine's respawn constants_                                                                                                                            | _Phase 5_    |
+| _TD-14_ | _Echo balance is untuned_                                        | _—_      | _Resolved: measured by `echo-balance.spec.ts` across eras and classes; hit-and-run exploit fixed (ADR-016). Retune against the harness_                                                                                                                                         | _Completed_  |
 
 ---
 
@@ -142,8 +143,8 @@ Over decades of Usenet discussions, MudDev mailing lists, and roguelike/MUD theo
   - Grow the optional Astral Echo bot into an NPC companion in the spirit of a pawn: it levels up, performs behaviors when switched on and left unattended, and is interactable while on.
   - During interaction the player can ask it to do jobs it has learned or been taught (for example, farm your dungeon and hand you the loot).
   - Keep it opt-in and local-first (ADR-012). If it acts in a hosted realm, it should use the same host-authority actions as a visitor (ADR-014).
-- [ ] **Lend Your Echo to Other Players**: send it into another player's realm (or lend it to your visitors) and have it come back with what it learned and found, like a hired pawn.
-- [ ] **More Taught Behaviors**: teach rules beyond routes (flee below X% HP, skip bosses, prefer a monster type), and let the Echo share what it knows about monsters with you.
+- [x] **Lend Your Echo to Other Players** (ADR-016: loans of 1/4/8 h with clamped returns, and escorting your visitors): send it into another player's realm (or lend it to your visitors) and have it come back with what it learned and found, like a hired pawn.
+- [x] **More Taught Behaviors** (ADR-016: retreat threshold, avoid bosses, focus a monster type, and teaching you weaknesses): teach rules beyond routes (flee below X% HP, skip bosses, prefer a monster type), and let the Echo share what it knows about monsters with you.
 
 ### 2. Tactical Combat, Monster Ecology & Sensory Depth
 

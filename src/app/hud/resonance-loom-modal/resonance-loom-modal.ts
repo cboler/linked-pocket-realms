@@ -36,7 +36,7 @@ import {
   TransportService,
 } from '../../core/services/transport.service';
 import { generateQrMatrix, generateQrSvgPath } from '../../core/utils/qr-code.util';
-import { ECHO_TUNING, jobUnlocked } from '../../core/services/astral-echo';
+import { ECHO_LOAN, ECHO_TUNING, jobRules, jobUnlocked } from '../../core/services/astral-echo';
 
 @Component({
   selector: 'app-resonance-loom-modal',
@@ -62,6 +62,29 @@ export class ResonanceLoomModalComponent implements OnDestroy {
   readonly classUtility = CLASS_UTILITY;
   readonly satchelCap = ECHO_TUNING.SATCHEL_CAP;
   readonly farmUnlockLevel = ECHO_TUNING.FARM_UNLOCK_LEVEL;
+  readonly retreatOptions = [20, 35, 50, 65];
+  readonly loanDurations = ECHO_LOAN.DURATIONS_H;
+  readonly lendHours = signal<number>(1);
+  readonly activeJob = computed(() => {
+    const echo = this.engine.astralEcho();
+    return echo?.jobs.find((j) => j.id === echo.activeJobId) ?? null;
+  });
+  readonly visitorsInRealm = computed(() => Object.values(this.engine.realmVisitors()));
+  /** Real players I can reach right now (not Echoes). */
+  readonly connectedPlayers = computed(() =>
+    this.transport
+      .activeVisitorsList()
+      .filter(
+        (p) =>
+          !p.isAstralEcho &&
+          (p.transport === 'BroadcastChannel' ||
+            this.transport.links().some((l) => l.peerId === p.peerId && l.state === 'OPEN')),
+      ),
+  );
+
+  jobRulesOf(job: EchoJob) {
+    return jobRules(job);
+  }
   readonly shareConfirmationMessage = signal<string>('');
   readonly exportedCartridgeText = signal<string>('');
   readonly remoteHandshakeInput = signal<string>('');

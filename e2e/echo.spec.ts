@@ -19,6 +19,12 @@ test('wake the Astral Echo, talk to it, and send it scouting', async ({ page }) 
   await expect(page.getByTestId('echo-job-job-scout')).toContainText('Working');
   await expect(page.getByTestId('echo-log')).toContainText('scouted', { timeout: 15_000 });
 
+  // Tactics for the running job, and what it knows, are on the same panel.
+  await expect(page.getByTestId('echo-tactics-card')).toBeVisible();
+  await page.getByTestId('echo-skip-bosses-btn').click();
+  await expect(page.getByTestId('echo-skip-bosses-btn')).toContainText('Avoids bosses');
+  await expect(page.getByTestId('echo-knowledge-card')).toBeVisible();
+
   // No horizontal overflow with the panel open.
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth > window.innerWidth,

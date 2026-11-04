@@ -52,7 +52,8 @@ linked-pocket-realms/
 │   │   │   │   ├── sound-fx.service.ts       # Synthesized Web Audio effects
 │   │   │   │   ├── realm-persistence.spec.ts # Reload/visit persistence tests
 │   │   │   │   ├── mesh-authority.spec.ts    # Host authority, relay, link loss, broker budget, carry, chest-via-host tests
-│   │   │   │   └── echo-and-chests.spec.ts   # Respawns, drops, sealed chests, Echo jobs/catch-up/revival tests
+│   │   │   │   ├── echo-and-chests.spec.ts   # Respawns, drops, sealed chests, Echo jobs/catch-up/revival/tactics tests
+│   │   │   │   └── echo-balance.spec.ts      # Balance harness: Echo outcomes per era and class
 │   │   │   └── utils/qr-code.util.ts         # Dependency-free SVG QR generator
 │   │   ├── hud/
 │   │   │   ├── node-map-graph/               # Full SVG dungeon map
