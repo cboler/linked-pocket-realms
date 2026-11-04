@@ -8,7 +8,7 @@
       (click)="setLoomActiveTab('WEBRTC')"
       data-testid="loom-tab-webrtc"
     >
-      🌐 Realm Mesh Collider
+      🌐 Play Together
       @if (transport.nearbyRealmsCount() > 0) {
         <span class="tab-count-pill">({{ transport.nearbyRealmsCount() }})</span>
       }
@@ -281,24 +281,166 @@
     </div>
   }
 
-  <!-- TAB 2: WEBRTC COLLIDER -->
+  <!-- TAB 2: PLAY TOGETHER (direct links, codes, lobby) -->
   @if (loomActiveTab() === 'WEBRTC') {
     <div class="loom-tab-content drawer-split-grid">
-      <!-- MESH COLLIDER & ZERO-CONFIG STATUS -->
+      <!-- LIVE CONNECTIONS -->
       <div class="telemetry-card mesh-hero-card">
+        <h3>Play together</h3>
+        <p class="connectivity-note" data-testid="connectivity-note">📶 {{ connectivityNote }}</p>
+
+        <div class="peer-list" data-testid="peer-links-list">
+          @for (link of transport.links(); track link.peerId) {
+            <div class="peer-row" [attr.data-testid]="'peer-link-' + link.state.toLowerCase()">
+              <div>
+                <strong>{{ link.name }}</strong>
+                <div class="peer-sub">
+                  {{ link.role === 'HOST' ? 'Your host' : 'Visiting you' }} •
+                  {{ linkStateLabel(link.state) }}
+                </div>
+                @if (link.detail && link.state !== 'OPEN') {
+                  <div class="peer-sub">{{ link.detail }}</div>
+                }
+              </div>
+              <div class="arch-row">
+                @if (
+                  link.state === 'OPEN' &&
+                  link.role === 'HOST' &&
+                  engine.authorityHost()?.peerId !== link.peerId
+                ) {
+                  <button
+                    type="button"
+                    class="mini-action-btn accent"
+                    (click)="engine.visitPeerRealm(link.peerId); engine.activeDrawer.set('NONE')"
+                    data-testid="enter-host-realm-btn"
+                  >
+                    Enter their dungeon
+                  </button>
+                }
+                @if (link.state === 'OPEN' || link.state === 'CONNECTING') {
+                  <button
+                    type="button"
+                    class="mini-action-btn"
+                    (click)="transport.disconnectPeer(link.peerId)"
+                  >
+                    Disconnect
+                  </button>
+                }
+              </div>
+            </div>
+          }
+          @if (transport.links().length === 0) {
+            <div class="card-help">No direct connections yet.</div>
+          }
+        </div>
+
+        @if (engine.authorityHost(); as host) {
+          <p class="card-help" data-testid="authority-host-note">
+            You're in {{ host.name }}'s dungeon. Their browser confirms your hits, kills, and loot.
+          </p>
+        }
+        @if (engine.isHostingLive()) {
+          <p class="card-help" data-testid="hosting-live-note">
+            {{ visitorCount() }} visitor(s) in your dungeon. Your browser keeps score for them, so
+            stay in your dungeon while they play.
+          </p>
+        }
+      </div>
+
+      <!-- CONNECT WITH A CODE (no server) -->
+      <div class="telemetry-card" data-testid="manual-codes-card">
+        <h3>Connect with a code</h3>
+        <p class="card-help">
+          No lobby needed. <strong>To visit a friend:</strong> make a join code, send it to them,
+          then paste the reply code they send back. <strong>To host a friend:</strong> paste their
+          join code below and send them the reply code.
+        </p>
+        <div class="arch-row">
+          <button
+            type="button"
+            class="mini-action-btn accent"
+            (click)="generateJoinCode()"
+            data-testid="make-join-code-btn"
+          >
+            Make a join code
+          </button>
+        </div>
+        @if (transport.localSdpPayload()) {
+          <textarea
+            readonly
+            rows="3"
+            aria-label="Your code to send"
+            [value]="transport.localSdpPayload()"
+            data-testid="local-connection-code"
+          ></textarea>
+        }
+        <div class="arch-row">
+          <input
+            type="text"
+            aria-label="Paste a code from your friend"
+            [ngModel]="remoteHandshakeInput()"
+            (ngModelChange)="remoteHandshakeInput.set($event)"
+            placeholder="Paste a join or reply code…"
+            data-testid="remote-connection-code-input"
+          />
+          <button
+            type="button"
+            class="mini-action-btn"
+            (click)="useConnectionCode()"
+            data-testid="use-connection-code-btn"
+          >
+            Use code
+          </button>
+        </div>
+        @if (connectionMessage()) {
+          <p class="card-help" data-testid="connection-message">{{ connectionMessage() }}</p>
+        }
+      </div>
+
+      <!-- LOBBY (optional free server) -->
+      <div class="telemetry-card">
+        <div class="card-header-flex">
+          <h3>Lobby</h3>
+          <div class="arch-row">
+            <button
+              type="button"
+              class="toggle-echo-btn"
+              [class.active]="transport.hostingOpen()"
+              (click)="toggleHosting()"
+              data-testid="toggle-hosting-btn"
+            >
+              {{ transport.hostingOpen() ? '● Open to visitors' : '○ Closed to visitors' }}
+            </button>
+            <button
+              type="button"
+              class="mini-action-btn"
+              (click)="transport.refreshBrokerSessions()"
+              data-testid="refresh-broker-lobbies-btn"
+            >
+              Refresh
+            </button>
+          </div>
+        </div>
+        <p class="card-help">
+          Opening your dungeon lists it on a small free lobby server, checked about every 20 seconds
+          while this tab is open. It pauses when you leave your dungeon, hide the tab, or are idle
+          for 15 minutes.
+        </p>
+
         <div class="mesh-status-indicator" data-testid="realm-mesh-status-indicator">
           @if (transport.brokerMeshStatus() === 'CONNECTED') {
             <span class="mesh-badge connected">
-              🟢 Realm Mesh: Connected — {{ transport.nearbyRealmsCount() }} Active Realm(s) Nearby
+              🟢 Lobby online — {{ transport.nearbyRealmsCount() }} other realm(s) listed
             </span>
           } @else if (transport.brokerMeshStatus() === 'WAKING') {
-            <span class="mesh-badge waking">
-              🟡 Waking Resonance Relay... (1-3s Cloud Function Cold Start)
-            </span>
+            <span class="mesh-badge waking">🟡 Waking the lobby server (a few seconds)…</span>
           } @else {
-            <span class="mesh-badge offline">⚪ Offline / Local Mesh Mode</span>
+            <span class="mesh-badge offline">⚪ Lobby offline (codes still work)</span>
           }
         </div>
+        @if (transport.brokerNotice()) {
+          <p class="card-help" data-testid="broker-notice">{{ transport.brokerNotice() }}</p>
+        }
 
         <div class="one-tap-collide-cluster">
           <button
@@ -308,43 +450,11 @@
             (click)="onCollideWithNearbyRealm()"
             data-testid="collide-nearby-realm-btn"
           >
-            ⚡ Collide with Nearby Realm
+            ⚡ Join someone, or open my dungeon
           </button>
           <p class="collide-subtext">
-            Automatically joins the nearest active adventurer's lobby or broadcasts your gate offer
-            with zero configuration.
+            Joins the first realm in the lobby. If the lobby is empty, opens yours for visitors.
           </p>
-        </div>
-      </div>
-
-      <!-- ACTIVE DISCOVERED LOBBIES -->
-      <div class="telemetry-card">
-        <div class="card-header-flex">
-          <h3>Serverless gcloud Lobby Sessions</h3>
-          <div class="arch-row">
-            <button
-              type="button"
-              class="mini-action-btn accent"
-              (click)="
-                transport.publishBrokerOffer(
-                  engine.character().name,
-                  engine.activeGateAddress().formatted,
-                  engine.character().heraldGreeting?.formatted
-                )
-              "
-              data-testid="create-broker-lobby-btn"
-            >
-              Publish 1-Click Offer
-            </button>
-            <button
-              type="button"
-              class="mini-action-btn"
-              (click)="transport.refreshBrokerSessions()"
-              data-testid="refresh-broker-lobbies-btn"
-            >
-              Refresh Lobbies
-            </button>
-          </div>
         </div>
 
         <div class="peer-list" data-testid="broker-peer-list">
@@ -355,13 +465,9 @@
             ) {
               <div class="peer-row my-lobby-row" data-testid="my-broker-session">
                 <div>
-                  <strong>👑 You / Host: {{ sess.hostName }} ({{ sess.roomCode }})</strong>
-                  <div class="peer-sub">{{ sess.triChord }} • Active & Announcing</div>
-                  @if (sess.heraldGreeting) {
-                    <div class="peer-herald">💬 &ldquo;{{ sess.heraldGreeting }}&rdquo;</div>
-                  }
+                  <strong>👑 You: {{ sess.hostName }} ({{ sess.roomCode }})</strong>
+                  <div class="peer-sub">{{ sess.triChord }} • Open to visitors</div>
                 </div>
-                <span class="online-pill">● Broadcasting</span>
               </div>
             } @else {
               <div class="peer-row" [attr.data-testid]="'remote-session-' + sess.roomCode">
@@ -375,63 +481,58 @@
                 <button
                   type="button"
                   class="mini-action-btn accent"
-                  (click)="
-                    transport.joinBrokerSession(sess.roomCode);
-                    engine.traverseChaosGatePortal(sess.triChord)
-                  "
+                  [disabled]="transport.isBrokerConnecting()"
+                  (click)="joinLobby(sess.roomCode)"
                   [attr.data-testid]="'join-lobby-' + sess.roomCode"
                 >
-                  ◈ Connect & Delve
+                  ◈ Join
                 </button>
               </div>
             }
           }
           @if (transport.brokerSessions().length === 0) {
-            <div class="card-help" style="margin-top: 0.5rem">
-              No active broker lobbies discovered. Connected realms will automatically appear here!
-            </div>
+            <div class="card-help" style="margin-top: 0.5rem">No open realms in the lobby.</div>
           }
         </div>
+        <p class="card-help">
+          Lobby requests today: {{ transport.brokerCallsToday() }} of
+          {{ transport.dailyBrokerCallCap }} (a cap that keeps the server free).
+        </p>
+      </div>
 
-        <!-- ASTRAL ECHO COMPANION BOT SETTING CARD -->
-        <div class="telemetry-card astral-echo-card" data-testid="astral-echo-settings-card">
-          <div class="card-header-flex">
-            <div>
-              <h3>🤖 Astral Echo Companion (Autonomous Bot)</h3>
-              <p class="card-help">
-                Simulate an autonomous Astral Echo bot to inhabit your realm mesh, discover local
-                portals, and prepare for future AFK area-management and time simulation.
-              </p>
-            </div>
-            <button
-              type="button"
-              class="toggle-echo-btn"
-              [class.active]="engine.astralEchoBotEnabled()"
-              (click)="engine.toggleAstralEchoBot()"
-              data-testid="toggle-astral-echo-btn"
-            >
-              {{ engine.astralEchoBotEnabled() ? '● Astral Echo: ON' : '○ Astral Echo: OFF' }}
-            </button>
+      <!-- ASTRAL ECHO COMPANION BOT SETTING CARD -->
+      <div class="telemetry-card astral-echo-card" data-testid="astral-echo-settings-card">
+        <div class="card-header-flex">
+          <div>
+            <h3>🤖 Astral Echo Companion</h3>
+            <p class="card-help">
+              A simulated traveler (Kite_Zero) for trying portals solo. It lives only in this
+              browser.
+            </p>
           </div>
-          <div class="echo-status-hint">
-            <span>
-              Current Status:
-              <strong>
-                {{
-                  engine.astralEchoBotEnabled()
-                    ? 'Active & Tethered (Kite_Zero in Δ: Silent Fungal Observatory)'
-                    : 'Off (Default - Authentic solo mesh)'
-                }}
-              </strong>
-            </span>
-            <span class="echo-cli-hint"
-              >CLI: type <code>bot on</code> or <code>bot off</code> in terminal ticker
-              anytime.</span
-            >
-          </div>
+          <button
+            type="button"
+            class="toggle-echo-btn"
+            [class.active]="engine.astralEchoBotEnabled()"
+            (click)="engine.toggleAstralEchoBot()"
+            data-testid="toggle-astral-echo-btn"
+          >
+            {{ engine.astralEchoBotEnabled() ? '● Astral Echo: ON' : '○ Astral Echo: OFF' }}
+          </button>
         </div>
+        <div class="echo-status-hint">
+          <span class="echo-cli-hint"
+            >Or type <code>bot on</code> / <code>bot off</code> in the command box.</span
+          >
+        </div>
+      </div>
 
-        <h4 style="margin-top: 1rem">BroadcastChannel Local Anchor Portals</h4>
+      <!-- SAME-BROWSER TABS & SIMULATED PEERS -->
+      <div class="telemetry-card">
+        <h3>Nearby travelers</h3>
+        <p class="card-help">
+          Other tabs in this browser, direct connections, and the Astral Echo.
+        </p>
         <div class="peer-list">
           @for (peer of transport.activeVisitorsList(); track peer.peerId) {
             <div class="peer-row" [attr.data-testid]="'peer-portal-' + peer.peerId">
@@ -443,105 +544,42 @@
                   }
                 </strong>
                 <div class="peer-sub">
-                  Gate: {{ peer.gateAddress }} • Sector: {{ peer.currentRoomId }} •
-                  {{ peer.transport }}
+                  {{ peer.gateAddress || 'Unknown realm' }} •
+                  {{ peer.transport === 'WebRTC' ? 'Direct connection' : 'This browser' }}
                 </div>
               </div>
               <button
                 type="button"
                 class="mini-action-btn accent"
-                (click)="
-                  engine.traverseChaosGatePortal(peer.gateAddress); engine.activeDrawer.set('NONE')
-                "
+                [disabled]="!peer.gateAddress"
+                (click)="engine.visitPeerRealm(peer.peerId); engine.activeDrawer.set('NONE')"
                 [attr.data-testid]="'traverse-portal-' + peer.peerId"
               >
-                ◈ Enter Portal
+                ◈ Visit
               </button>
             </div>
           }
           @if (transport.activeVisitorsList().length === 0) {
             <div class="card-help" style="margin-top: 0.5rem">
-              No local anchor portals detected. Open another browser tab or toggle on the Astral
-              Echo companion above!
+              No one nearby. Open another tab, connect with a code, or turn on the Astral Echo.
             </div>
           }
         </div>
 
-        <!-- DEVELOPER DIAGNOSTICS & CUSTOM RELAY OVERRIDE ACCORDION -->
         <details class="diagnostics-accordion" style="margin-top: 1rem">
-          <summary>🛠️ Developer Diagnostics & Relay Override</summary>
+          <summary>🛠️ Lobby server address</summary>
           <div class="diagnostics-body">
             <label class="diag-label">
-              <span>Cloud Function Relay Endpoint</span>
+              <span>Lobby (broker) URL</span>
               <input
                 type="url"
-                placeholder="Cloud Function Broker URL (optional)"
-                aria-label="Serverless Broker Endpoint"
+                placeholder="Broker URL (optional)"
+                aria-label="Lobby broker URL"
                 [ngModel]="transport.brokerUrl()"
                 (ngModelChange)="transport.setBrokerUrl($event); thunderpass.brokerUrl.set($event)"
                 data-testid="broker-url-input"
               />
             </label>
-
-            @if (transport.brokerUrl().trim()) {
-              <div class="broker-status-bar" data-testid="broker-status-bar">
-                <span class="status-dot online">●</span>
-                <span
-                  >Auto-Announcing as <code>{{ transport.myLobbyRoomCode() }}</code></span
-                >
-                <button
-                  type="button"
-                  class="text-btn"
-                  (click)="
-                    transport.announcePresenceToBroker(
-                      engine.character().name,
-                      engine.activeGateAddress().formatted,
-                      engine.character().heraldGreeting?.formatted
-                    )
-                  "
-                  title="Ping presence now"
-                  data-testid="ping-broker-presence-btn"
-                >
-                  📡 Ping Now
-                </button>
-              </div>
-            }
-
-            <div class="diag-sdp-box" style="margin-top: 0.75rem">
-              <h5>Air-Gapped WebRTC SDP Handshake</h5>
-              <div class="arch-row">
-                <button
-                  type="button"
-                  class="mini-action-btn accent"
-                  (click)="generateWebRtcOffer()"
-                  data-testid="webrtc-offer-btn"
-                >
-                  Generate Manual SDP
-                </button>
-                <span class="rtc-status">Status: {{ transport.rtcConnectionState() }}</span>
-              </div>
-              @if (transport.localSdpPayload()) {
-                <textarea
-                  readonly
-                  rows="2"
-                  aria-label="Local WebRTC SDP Token"
-                  [value]="transport.localSdpPayload()"
-                  data-testid="webrtc-sdp-output"
-                ></textarea>
-              }
-              <div class="arch-row">
-                <input
-                  type="text"
-                  aria-label="Remote SDP Handshake Token"
-                  [ngModel]="remoteHandshakeInput()"
-                  (ngModelChange)="remoteHandshakeInput.set($event)"
-                  placeholder="Paste Peer SDP Offer/Answer..."
-                />
-                <button type="button" class="mini-action-btn" (click)="acceptWebRtcHandshake()">
-                  Connect Peer
-                </button>
-              </div>
-            </div>
           </div>
         </details>
       </div>

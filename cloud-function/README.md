@@ -89,3 +89,15 @@ The audit tool checks:
 | `POST` | `/signal`                          | `no-store`           | Exchanges an SDP offer, answer, or ICE candidate for a room code (32KB cap). |
 | `GET`  | `/signal?roomCode=XYZ&sinceMs=123` | `no-store`           | Polls pending signals for a room code.                                       |
 | `POST` | `/thunderpass`                     | `no-store`           | Posts a blinded `zoneHash` and `sporePayload`, returning matches (6-hr TTL). |
+
+---
+
+## Frugality & multi-visitor signaling (2026-11, ADR-014 in the game repo)
+
+The broker is a mailbox, not a game server. Changes are backward compatible with older clients.
+
+- **Targeted signals**: `POST /signal` accepts `to`; `GET /signal?for=<peerId>` returns only untargeted signals and those addressed to that peer. Targeted offers/answers no longer fill the public `sdpOffer`/`sdpAnswer` fields.
+- **Heartbeat = poll**: a host's `ANNOUNCE` with `sinceMs` (and `for`) gets its pending join requests in the same response, so hosting costs 1 request per 20 s heartbeat.
+- **Visitor polls don't keep a lobby alive**: only the owner's own requests refresh a session's `lastSeenMs`.
+- **Daily ceiling**: after 55,000 requests in a UTC day (in memory, per instance), the broker answers `503` with `Retry-After: 600`, and clients pause.
+- **Client discipline** (game repo): hosting is opt-in and pauses when the player leaves home, hides the tab, or is idle 15 min; the lobby list is fetched only while on screen; each browser caps itself at 1,500 broker calls per day.

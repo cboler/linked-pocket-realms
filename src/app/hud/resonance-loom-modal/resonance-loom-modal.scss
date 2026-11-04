@@ -428,3 +428,14 @@
     transform: translateY(0);
   }
 }
+
+.connectivity-note {
+  margin: 0.25rem 0 0.6rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fde68a;
+  font-size: 0.74rem;
+  line-height: 1.4;
+}

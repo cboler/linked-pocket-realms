@@ -33,6 +33,8 @@ import {
   PhantomBreadcrumb,
   ProvenanceRecord,
   RealmDelta,
+  RealmProgress,
+  RoomLiveState,
   ReplayFrame,
   RoomNode,
   ServerEraLetter,
@@ -54,7 +56,7 @@ import { ChaosGateService, createMulberry32 } from './chaos-gate.service';
 import { LegendRegistryService } from './legend-registry.service';
 import { SoundFxService } from './sound-fx.service';
 import { StorageService } from './storage.service';
-import { TransportService } from './transport.service';
+import { LinkEvent, TransportService } from './transport.service';
 
 export const ARCHETYPE_CATALOG: Record<
   ArchetypeClass,
@@ -352,6 +354,13 @@ export const ARCHETYPE_CATALOG: Record<
 
 const STORAGE_KEY_ASTRAL_ECHO_BOT = 'linked_pocket_realms_astral_echo_bot';
 
+/** Presence beacon cadence (local bus and direct links only; never the broker). */
+const BEACON_INTERVAL_MS = 10_000;
+/** How long a visitor waits for the host's realm before falling back to an offline copy. */
+const VISIT_HELLO_TIMEOUT_MS = 8_000;
+/** Host-side floor between accepted hits from one visitor. */
+const MIN_VISITOR_HIT_INTERVAL_MS = 300;
+
 function initAstralEchoBotSetting(): boolean {
   try {
     if (typeof localStorage !== 'undefined') {
@@ -461,6 +470,43 @@ export class MudEngineService implements OnDestroy {
 
   readonly activeRealmDelta = signal<RealmDelta>(this.createInitialRealmDelta());
   readonly rooms = signal<RoomNode[]>([]);
+
+  /** Cleared monsters/items for the active gate; reapplied every time rooms are regenerated. */
+  private realmProgress: RealmProgress = {
+    gateAddress: '',
+    defeatedMonsterKeys: [],
+    takenItemKeys: [],
+  };
+  /** Last saved delta of the player's own realm, reused when returning home from a visit. */
+  private homeRealmDelta: RealmDelta | null = null;
+
+  // Multiplayer: the realm owner's browser is the authority for its realm.
+  /** Visitor side: the host whose realm we're in. Their browser decides HP, kills, and loot. */
+  readonly authorityHost = signal<{ peerId: string; name: string; gateAddress: string } | null>(
+    null,
+  );
+  /** Host side: visitors currently in my realm. */
+  readonly realmVisitors = signal<
+    Record<string, { peerId: string; name: string; level: number; joinedAtMs: number }>
+  >({});
+  readonly isHostingLive = computed<boolean>(
+    () => !this.isVisitingExternalRealm() && Object.keys(this.realmVisitors()).length > 0,
+  );
+  private pendingVisit: {
+    peerId: string;
+    name: string;
+    gateAddress: string;
+    timer: ReturnType<typeof setTimeout>;
+  } | null = null;
+  private readonly pendingTakes = new Map<
+    string,
+    { roomId: string; itemIds: string[]; equip: boolean }
+  >();
+  private readonly damageCredit = new Map<string, Set<string>>();
+  private readonly lastVisitorHitMs = new Map<string, number>();
+  private actionCounter = 0;
+  private linkSub?: Subscription;
+  private peerGoneSub?: Subscription;
   readonly playerFacing = signal<CompassDirection>('N');
 
   // Player Character State
@@ -619,6 +665,8 @@ export class MudEngineService implements OnDestroy {
 
     // Subscribe to P2P transport packets
     this.netSub = this.transport.packets$.subscribe((pkt) => this.onNetworkPacket(pkt));
+    this.linkSub = this.transport.linkEvents$.subscribe((ev) => this.handleLinkEvent(ev));
+    this.peerGoneSub = this.transport.peerGone$.subscribe((id) => this.handlePeerGone(id));
 
     // Seed a simulated neighboring Chaos Gate beacon only if the Astral Echo companion bot is enabled (Default: OFF)
     if (this.astralEchoBotEnabled()) {
@@ -688,9 +736,12 @@ export class MudEngineService implements OnDestroy {
   }
 
   private async hydrateFromStorage(): Promise<void> {
+    // Lines written before the save loaded describe the placeholder sanctum, not the player's room.
+    const placeholderLineIds = new Set(this.terminalFeed().map((l) => l.id));
     await this.storage.ensurePlayerIdentityKeys();
     const savedDelta = await this.storage.loadHomeRealmDelta();
     if (savedDelta && savedDelta.gateAddress) {
+      this.homeRealmDelta = savedDelta;
       this.homeGateAddress.set(savedDelta.gateAddress);
       this.activeGateAddress.set(savedDelta.gateAddress);
       this.activeRealmDelta.set(savedDelta);
@@ -719,6 +770,11 @@ export class MudEngineService implements OnDestroy {
       this.needsOnboarding.set(false);
     } else {
       this.needsOnboarding.set(true);
+    }
+    await this.restoreRealmProgress();
+    if (savedChar && savedChar.name) {
+      this.terminalFeed.update((lines) => lines.filter((l) => !placeholderLineIds.has(l.id)));
+      this.emitCurrentRoomNarrative();
     }
     const savedTel = await this.storage.loadTelemetryLog();
     if (savedTel && savedTel.combatSamples) {
@@ -759,6 +815,635 @@ export class MudEngineService implements OnDestroy {
     }
   }
 
+  // ===========================================================================
+  // Multiplayer: presence, visiting, and host authority
+  // ===========================================================================
+
+  /** Who I am and where I am, plus my last few steps for other players' ghost trails. */
+  sendPresenceBeacon(): void {
+    const char = this.character();
+    const me = this.transport.localPeerId;
+    const crumbs = this.phantomTrails()
+      .filter((c) => c.peerId === me)
+      .slice(0, 5);
+    this.transport.setLocalProfile({
+      name: char.name,
+      gateAddress: this.homeGateAddress().formatted,
+      greeting: char.heraldGreeting?.formatted,
+      atHome: !this.isVisitingExternalRealm(),
+    });
+    this.transport.announceGateBeacon(
+      char.name,
+      this.activeGateAddress().formatted,
+      char.currentRoomId,
+      char.archetype,
+      char.level,
+      this.inActiveCombat(),
+      char.heraldGreeting?.formatted,
+      crumbs,
+    );
+  }
+
+  private handleLinkEvent(ev: LinkEvent): void {
+    if (ev.state === 'OPEN') {
+      this.appendFeed(
+        'NETWORK',
+        ev.role === 'HOST'
+          ? `🔗 Connected to ${ev.name}.`
+          : `🔗 ${ev.name} connected to your dungeon.`,
+      );
+      this.sendPresenceBeacon();
+      // Connecting to a host means you want to visit them.
+      if (ev.role === 'HOST') this.visitPeerRealm(ev.peerId);
+    } else if (ev.state === 'FAILED') {
+      this.appendFeed('NETWORK', `⚠️ ${ev.name}: ${ev.detail ?? "Couldn't connect."}`);
+    } else if (ev.detail !== 'Replaced by a new connection' && !ev.peerId.startsWith('pending-')) {
+      this.appendFeed('NETWORK', `${ev.name} disconnected (${ev.detail ?? 'closed'}).`);
+    }
+  }
+
+  private handlePeerGone(peerId: string): void {
+    const host = this.authorityHost();
+    if (host?.peerId === peerId) {
+      this.authorityHost.set(null);
+      this.appendFeed(
+        'NETWORK',
+        `Lost the connection to ${host.name}. You're now exploring an offline copy; kills and loot here are only yours.`,
+      );
+    }
+    if (this.pendingVisit?.peerId === peerId) this.clearPendingVisit();
+    if (this.realmVisitors()[peerId]) {
+      this.realmVisitors.update((all) => {
+        const next = { ...all };
+        delete next[peerId];
+        return next;
+      });
+    }
+  }
+
+  private clearPendingVisit(): void {
+    if (this.pendingVisit) clearTimeout(this.pendingVisit.timer);
+    this.pendingVisit = null;
+  }
+
+  /**
+   * Visit another player's realm. With a live connection the host sends its real realm and
+   * stays in charge of it; otherwise we explore an offline copy built from the address.
+   */
+  visitPeerRealm(peerId: string): void {
+    const peer = this.transport.discoveredPeers()[peerId];
+    const name = peer?.playerName ?? 'Host';
+    const gate = peer?.gateAddress ?? '';
+    const reachable = this.transport.isLinkOpen(peerId) || peer?.transport === 'BroadcastChannel';
+    if (!reachable || peer?.isAstralEcho) {
+      if (gate) this.visitOfflineCopy(gate, name);
+      return;
+    }
+    this.clearPendingVisit();
+    const char = this.character();
+    const sent = this.transport.sendTo(peerId, {
+      senderName: char.name,
+      type: 'VISITOR_HELLO',
+      gateAddress: gate,
+      authority: { visitor: { level: char.level, archetype: char.archetype } },
+    });
+    if (!sent) {
+      if (gate) this.visitOfflineCopy(gate, name);
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (this.pendingVisit?.peerId !== peerId) return;
+      const fallbackGate = this.pendingVisit.gateAddress;
+      this.pendingVisit = null;
+      this.appendFeed(
+        'NETWORK',
+        `${name} didn't open their gate in time. Exploring an offline copy instead; kills and loot there are only yours.`,
+      );
+      if (fallbackGate) this.visitOfflineCopy(fallbackGate, name);
+    }, VISIT_HELLO_TIMEOUT_MS);
+    this.pendingVisit = { peerId, name, gateAddress: gate, timer };
+    this.appendFeed('NETWORK', `🌀 Asking ${name} to open their gate…`);
+  }
+
+  /** Explore a realm from its address alone. Nothing here is shared with its owner. */
+  visitOfflineCopy(gateAddress: string, ownerName: string): void {
+    const parsed = this.chaosGate.parseAddressString(gateAddress);
+    if (!parsed) {
+      this.appendFeed('NETWORK', `Could not lock onto Chaos Gate "${gateAddress}".`);
+      return;
+    }
+    const guestDelta: RealmDelta = {
+      gateAddress: parsed,
+      ownerName,
+      updatedAtIso: new Date().toISOString(),
+      ruleset: {
+        levelCap: 15,
+        maxItemStatBudget: 12,
+        allowArchitectForgedItems: true,
+        pvpEnabled: false,
+      },
+      customLegendEntries: [],
+      roomOverrides: {},
+      customRoomIds: [],
+    };
+    this.dialChaosGate(parsed.era, parsed.atmosphere, parsed.theme, parsed.biome, true, guestDelta);
+  }
+
+  /** Runs before every gate change: leave the current host, and stop hosting when leaving home. */
+  private beforeGateChange(newGate: string, asGuest: boolean): void {
+    const host = this.authorityHost();
+    if (host && host.gateAddress !== newGate) {
+      this.transport.sendTo(host.peerId, {
+        senderName: this.character().name,
+        type: 'VISITOR_LEAVE',
+        gateAddress: host.gateAddress,
+      });
+      this.authorityHost.set(null);
+    }
+    if (!this.isVisitingExternalRealm() && asGuest && this.isHostingLive()) {
+      this.transport.sendPacket({
+        senderName: this.character().name,
+        type: 'HOST_AWAY',
+        gateAddress: this.activeGateAddress().formatted,
+      });
+      this.realmVisitors.set({});
+      this.damageCredit.clear();
+      this.appendFeed(
+        'NETWORK',
+        'You left your dungeon, so your visitors are now exploring offline copies.',
+      );
+    }
+  }
+
+  private liveRoomState(room: RoomNode): RoomLiveState {
+    return {
+      roomId: room.id,
+      monsters: room.monsters.map((m) => ({ id: m.id, hp: m.hp })),
+      items: room.items,
+    };
+  }
+
+  private broadcastRoomState(roomId: string): void {
+    if (!this.isHostingLive()) return;
+    const room = this.rooms().find((r) => r.id === roomId);
+    if (!room) return;
+    this.transport.sendPacket({
+      senderName: this.character().name,
+      type: 'ROOM_STATE',
+      gateAddress: this.activeGateAddress().formatted,
+      roomId,
+      authority: { rooms: [this.liveRoomState(room)] },
+    });
+  }
+
+  private applyRoomStates(states: RoomLiveState[]): void {
+    if (!Array.isArray(states) || states.length === 0) return;
+    const byId = new Map(states.map((st) => [st.roomId, st]));
+    this.rooms.update((all) =>
+      all.map((r) => {
+        const st = byId.get(r.id);
+        if (!st) return r;
+        const hpById = new Map(
+          (Array.isArray(st.monsters) ? st.monsters : []).map((m) => [m.id, Number(m.hp)]),
+        );
+        return {
+          ...r,
+          monsters: r.monsters.map((m) => {
+            const hp = hpById.get(m.id);
+            return hp === undefined || !Number.isFinite(hp)
+              ? m
+              : { ...m, hp: Math.max(0, Math.min(m.maxHp, Math.round(hp))) };
+          }),
+          items: Array.isArray(st.items) ? st.items.slice(0, 30) : r.items,
+        };
+      }),
+    );
+  }
+
+  private creditDamage(roomId: string, monsterId: string, peerId: string): void {
+    const key = `${roomId}/${monsterId}`;
+    const set = this.damageCredit.get(key) ?? new Set<string>();
+    set.add(peerId);
+    this.damageCredit.set(key, set);
+  }
+
+  private takeCredits(roomId: string, monsterId: string): Set<string> {
+    const key = `${roomId}/${monsterId}`;
+    const set = this.damageCredit.get(key) ?? new Set<string>();
+    this.damageCredit.delete(key);
+    return set;
+  }
+
+  /** Generous ceiling on one visitor hit, so a modified client can't one-shot everything. */
+  private maxVisitorHit(level: number): number {
+    const cap = this.activeRealmDelta().ruleset.levelCap ?? 20;
+    const lvl = Math.max(1, Math.min(Number(level) || 1, cap, 60));
+    return Math.round((40 + lvl * 12) * 6);
+  }
+
+  private isFromAuthorityHost(pkt: NetworkPacket): boolean {
+    const host = this.authorityHost();
+    return !!host && !pkt.relayedBy && pkt.senderPeerId === host.peerId;
+  }
+
+  private isAddressedToMe(pkt: NetworkPacket): boolean {
+    return !pkt.relayedBy && pkt.toPeerId === this.transport.localPeerId;
+  }
+
+  /** Returns true when the packet was a host-authority packet (handled here). */
+  private handleAuthorityPacket(pkt: NetworkPacket): boolean {
+    switch (pkt.type) {
+      case 'VISITOR_HELLO':
+        if (this.isAddressedToMe(pkt)) this.hostHandleHello(pkt);
+        return true;
+      case 'VISITOR_LEAVE':
+        if (this.realmVisitors()[pkt.senderPeerId]) {
+          this.realmVisitors.update((all) => {
+            const next = { ...all };
+            delete next[pkt.senderPeerId];
+            return next;
+          });
+          this.appendFeed('NETWORK', `${pkt.senderName} left your dungeon.`);
+        }
+        return true;
+      case 'ACTION_DAMAGE':
+        if (this.isAddressedToMe(pkt)) this.hostHandleDamage(pkt);
+        return true;
+      case 'ACTION_TAKE':
+        if (this.isAddressedToMe(pkt)) this.hostHandleTake(pkt);
+        return true;
+      case 'REALM_SNAPSHOT':
+        if (this.isAddressedToMe(pkt)) {
+          this.visitorHandleSnapshot(pkt);
+        } else if (this.isFromAuthorityHost(pkt)) {
+          this.visitorRefreshRealm(pkt);
+        }
+        return true;
+      case 'ROOM_STATE':
+        if (
+          this.isFromAuthorityHost(pkt) &&
+          pkt.gateAddress === this.activeGateAddress().formatted
+        ) {
+          this.applyRoomStates(pkt.authority?.rooms ?? []);
+        }
+        return true;
+      case 'MONSTER_DEFEATED':
+        if (this.isFromAuthorityHost(pkt)) this.visitorHandleDefeat(pkt);
+        return true;
+      case 'ACTION_RESULT':
+        if (this.isFromAuthorityHost(pkt) && this.isAddressedToMe(pkt)) {
+          this.visitorHandleTakeResult(pkt);
+        }
+        return true;
+      case 'HOST_AWAY': {
+        const host = this.authorityHost();
+        if (host && this.isFromAuthorityHost(pkt)) {
+          this.authorityHost.set(null);
+          this.appendFeed(
+            'NETWORK',
+            `${host.name} left their dungeon, so you're exploring an offline copy now. Kills and loot here are only yours.`,
+          );
+        } else if (this.pendingVisit?.peerId === pkt.senderPeerId && !pkt.relayedBy) {
+          const pending = this.pendingVisit;
+          this.clearPendingVisit();
+          this.appendFeed(
+            'NETWORK',
+            `${pending.name} isn't in their dungeon right now. Exploring an offline copy instead.`,
+          );
+          if (pending.gateAddress) this.visitOfflineCopy(pending.gateAddress, pending.name);
+        }
+        return true;
+      }
+      default:
+        return false;
+    }
+  }
+
+  private hostHandleHello(pkt: NetworkPacket): void {
+    const me = this.character();
+    if (this.isVisitingExternalRealm()) {
+      this.transport.sendTo(pkt.senderPeerId, {
+        senderName: me.name,
+        type: 'HOST_AWAY',
+        gateAddress: this.activeGateAddress().formatted,
+      });
+      return;
+    }
+    const level = Math.max(1, Math.min(99, Number(pkt.authority?.visitor?.level) || 1));
+    const isNew = !this.realmVisitors()[pkt.senderPeerId];
+    this.realmVisitors.update((all) => ({
+      ...all,
+      [pkt.senderPeerId]: {
+        peerId: pkt.senderPeerId,
+        name: pkt.senderName,
+        level,
+        joinedAtMs: Date.now(),
+      },
+    }));
+    this.transport.sendTo(pkt.senderPeerId, {
+      senderName: me.name,
+      type: 'REALM_SNAPSHOT',
+      gateAddress: this.activeGateAddress().formatted,
+      authority: {
+        realmDeltaBase64: this.storage.exportCartridgeBase64(this.activeRealmDelta()),
+        rooms: this.rooms()
+          .filter((r) => !r.isExpedition)
+          .map((r) => this.liveRoomState(r)),
+      },
+    });
+    if (isNew) {
+      this.appendFeed(
+        'NETWORK',
+        `👣 ${pkt.senderName} entered your dungeon. Your browser keeps score: it confirms their hits, kills, and loot.`,
+      );
+    }
+  }
+
+  private hostHandleDamage(pkt: NetworkPacket): void {
+    if (this.isVisitingExternalRealm()) return;
+    const visitor = this.realmVisitors()[pkt.senderPeerId];
+    if (!visitor) return;
+    const now = Date.now();
+    if (now - (this.lastVisitorHitMs.get(visitor.peerId) ?? 0) < MIN_VISITOR_HIT_INTERVAL_MS) {
+      return;
+    }
+    this.lastVisitorHitMs.set(visitor.peerId, now);
+    const roomId = pkt.roomId;
+    const monsterId = pkt.authority?.monsterId;
+    const raw = Number(pkt.authority?.damage);
+    if (!roomId || !monsterId || !(raw > 0)) return;
+    const damage = Math.min(Math.round(raw), this.maxVisitorHit(visitor.level));
+
+    const result: { defeated: MonsterEntity | null } = { defeated: null };
+    this.rooms.update((all) =>
+      all.map((r) => {
+        if (r.id !== roomId) return r;
+        return {
+          ...r,
+          monsters: r.monsters.map((m) => {
+            if (m.id !== monsterId || m.hp <= 0) return m;
+            const hp = Math.max(0, m.hp - damage);
+            if (hp === 0) result.defeated = { ...m, hp: 0 };
+            return { ...m, hp };
+          }),
+        };
+      }),
+    );
+    this.creditDamage(roomId, monsterId, visitor.peerId);
+    if (result.defeated) {
+      void this.resolveVisitorKill(roomId, result.defeated, visitor.name);
+    }
+    this.broadcastRoomState(roomId);
+  }
+
+  /** A visitor landed the killing blow in my realm: credit everyone who helped. */
+  private async resolveVisitorKill(
+    roomId: string,
+    mob: MonsterEntity,
+    killerName: string,
+  ): Promise<void> {
+    const me = this.transport.localPeerId;
+    const credits = this.takeCredits(roomId, mob.id);
+    this.transport.sendPacket({
+      senderName: this.character().name,
+      type: 'MONSTER_DEFEATED',
+      gateAddress: this.activeGateAddress().formatted,
+      roomId,
+      authority: { monsterId: mob.id, creditPeerIds: [...credits] },
+    });
+    this.appendFeed('NETWORK', `⚔️ ${killerName} defeated ${mob.name} in your dungeon.`);
+    if (credits.has(me)) {
+      this.awardMonsterRewards(mob);
+    }
+    if (mob.isBoss && mob.lootTable.length > 0) {
+      await this.dropBossLoot(roomId, mob);
+    }
+    await this.storage.saveCharacterState(this.character());
+  }
+
+  private hostHandleTake(pkt: NetworkPacket): void {
+    if (this.isVisitingExternalRealm()) return;
+    const visitor = this.realmVisitors()[pkt.senderPeerId];
+    const requestId = pkt.authority?.requestId;
+    const roomId = pkt.roomId;
+    if (!visitor || !requestId || !roomId) return;
+    const wanted = new Set(pkt.authority?.itemIds ?? []);
+    const room = this.rooms().find((r) => r.id === roomId);
+    const granted = room ? room.items.filter((i) => wanted.has(i.id)) : [];
+    if (granted.length > 0) {
+      const grantedIds = new Set(granted.map((i) => i.id));
+      this.rooms.update((all) =>
+        all.map((r) =>
+          r.id === roomId ? { ...r, items: r.items.filter((i) => !grantedIds.has(i.id)) } : r,
+        ),
+      );
+    }
+    this.transport.sendTo(visitor.peerId, {
+      senderName: this.character().name,
+      type: 'ACTION_RESULT',
+      gateAddress: this.activeGateAddress().formatted,
+      roomId,
+      authority: {
+        requestId,
+        ok: granted.length > 0,
+        items: granted,
+        reason: granted.length > 0 ? undefined : 'Someone already took that.',
+      },
+    });
+    if (granted.length > 0) {
+      this.appendFeed(
+        'NETWORK',
+        `${visitor.name} picked up ${granted.map((i) => `[${i.name}]`).join(', ')}.`,
+      );
+      this.broadcastRoomState(roomId);
+    }
+  }
+
+  private visitorHandleSnapshot(pkt: NetworkPacket): void {
+    const pending = this.pendingVisit;
+    if (!pending || pending.peerId !== pkt.senderPeerId) return;
+    this.clearPendingVisit();
+    const delta = this.storage.importCartridgeBase64(pkt.authority?.realmDeltaBase64 ?? '');
+    if (!delta) {
+      this.appendFeed('NETWORK', `${pending.name} sent a realm this version can't read.`);
+      if (pending.gateAddress) this.visitOfflineCopy(pending.gateAddress, pending.name);
+      return;
+    }
+    const addr = delta.gateAddress;
+    // Set before dialing so the gate change keeps this host and skips local progress.
+    this.authorityHost.set({
+      peerId: pkt.senderPeerId,
+      name: pending.name,
+      gateAddress: addr.formatted,
+    });
+    this.dialChaosGate(addr.era, addr.atmosphere, addr.theme, addr.biome, true, delta);
+    this.applyRoomStates(pkt.authority?.rooms ?? []);
+    this.appendFeed(
+      'NETWORK',
+      `◈ Entered ${pending.name}'s dungeon. ${pending.name}'s browser keeps score here: it confirms your hits, kills, and loot.`,
+    );
+  }
+
+  /** The host's realm changed shape (it grew): rebuild rooms in place, keeping my position. */
+  private visitorRefreshRealm(pkt: NetworkPacket): void {
+    const delta = this.storage.importCartridgeBase64(pkt.authority?.realmDeltaBase64 ?? '');
+    if (!delta || delta.gateAddress.formatted !== this.activeGateAddress().formatted) return;
+    this.activeRealmDelta.set(delta);
+    this.legendRegistry.mergeHostCustomLegends(delta.customLegendEntries);
+    this.rooms.set(
+      this.chaosGate.growRealmToStage(delta.gateAddress, delta.growthStage ?? 1, delta),
+    );
+    this.applyRoomStates(pkt.authority?.rooms ?? []);
+    if (!this.rooms().some((r) => r.id === this.character().currentRoomId)) {
+      this.character.update((c) => ({ ...c, currentRoomId: 'room-0' }));
+    }
+  }
+
+  /** Host: send the whole realm to every visitor (after it grows or is reshaped). */
+  private broadcastRealmSnapshot(): void {
+    if (!this.isHostingLive()) return;
+    this.transport.sendPacket({
+      senderName: this.character().name,
+      type: 'REALM_SNAPSHOT',
+      gateAddress: this.activeGateAddress().formatted,
+      authority: {
+        realmDeltaBase64: this.storage.exportCartridgeBase64(this.activeRealmDelta()),
+        rooms: this.rooms()
+          .filter((r) => !r.isExpedition)
+          .map((r) => this.liveRoomState(r)),
+      },
+    });
+  }
+
+  private visitorHandleDefeat(pkt: NetworkPacket): void {
+    const roomId = pkt.roomId;
+    const monsterId = pkt.authority?.monsterId;
+    if (!roomId || !monsterId) return;
+    const mob = this.rooms()
+      .find((r) => r.id === roomId)
+      ?.monsters.find((m) => m.id === monsterId);
+    this.rooms.update((all) =>
+      all.map((r) =>
+        r.id !== roomId
+          ? r
+          : { ...r, monsters: r.monsters.map((m) => (m.id === monsterId ? { ...m, hp: 0 } : m)) },
+      ),
+    );
+    if (mob && (pkt.authority?.creditPeerIds ?? []).includes(this.transport.localPeerId)) {
+      this.awardMonsterRewards(mob);
+      void this.storage.saveCharacterState(this.character());
+      void this.storage.saveTelemetryLog(this.telemetry());
+    }
+  }
+
+  private requestTakeFromHost(roomId: string, itemIds: string[], equip = false): void {
+    const host = this.authorityHost();
+    if (!host || itemIds.length === 0) return;
+    this.actionCounter += 1;
+    const requestId = `take-${this.actionCounter}-${Date.now()}`;
+    this.pendingTakes.set(requestId, { roomId, itemIds, equip });
+    const sent = this.transport.sendTo(host.peerId, {
+      senderName: this.character().name,
+      type: 'ACTION_TAKE',
+      gateAddress: host.gateAddress,
+      roomId,
+      authority: { requestId, itemIds },
+    });
+    this.appendFeed(
+      'NARRATIVE',
+      sent ? `Asking ${host.name} for the loot…` : `Couldn't reach ${host.name} to pick that up.`,
+    );
+  }
+
+  private visitorHandleTakeResult(pkt: NetworkPacket): void {
+    const requestId = pkt.authority?.requestId;
+    const pending = requestId ? this.pendingTakes.get(requestId) : undefined;
+    if (!requestId || !pending) return;
+    this.pendingTakes.delete(requestId);
+    const granted = (pkt.authority?.items ?? []).filter((i) => pending.itemIds.includes(i.id));
+    if (!pkt.authority?.ok || granted.length === 0) {
+      this.appendFeed('NARRATIVE', pkt.authority?.reason ?? 'The host said no.');
+      return;
+    }
+    const ruleset = this.activeRealmDelta().ruleset;
+    const processed = granted.map((i) => this.storage.enforceCustomsGateOnItem(i, ruleset));
+    const ids = new Set(granted.map((i) => i.id));
+    this.rooms.update((all) =>
+      all.map((r) =>
+        r.id === pending.roomId ? { ...r, items: r.items.filter((i) => !ids.has(i.id)) } : r,
+      ),
+    );
+    this.character.update((c) => ({ ...c, inventory: [...c.inventory, ...processed] }));
+    this.appendFeed(
+      'NARRATIVE',
+      `Collected ${processed.map((i) => `[${i.name}]`).join(', ')} (confirmed by the host).`,
+    );
+    if (pending.equip && processed.length === 1) this.equipInventoryItem(processed[0].id);
+    void this.storage.saveCharacterState(this.character());
+  }
+
+  /** Saves a delta, marking it as the home realm only when the player is not visiting. */
+  private persistRealmDelta(delta: RealmDelta): void {
+    const isHome = !this.isVisitingExternalRealm();
+    if (isHome) {
+      this.homeRealmDelta = delta;
+    }
+    void this.storage.saveRealmDelta(delta, isHome);
+  }
+
+  /** Marks monsters or items in freshly generated rooms as already cleared. */
+  private withRealmProgress(rooms: RoomNode[]): RoomNode[] {
+    // In a live host's realm the host's state is the truth, not my own old progress.
+    if (this.authorityHost()) return rooms;
+    const progress = this.realmProgress;
+    if (progress.gateAddress !== this.activeGateAddress().formatted) return rooms;
+    if (progress.defeatedMonsterKeys.length === 0 && progress.takenItemKeys.length === 0) {
+      return rooms;
+    }
+    const defeated = new Set(progress.defeatedMonsterKeys);
+    const taken = new Set(progress.takenItemKeys);
+    return rooms.map((r) => ({
+      ...r,
+      monsters: r.monsters.map((m) => (defeated.has(`${r.id}/${m.id}`) ? { ...m, hp: 0 } : m)),
+      items: r.items.filter((i) => !taken.has(`${r.id}/${i.id}`)),
+    }));
+  }
+
+  /** Loads saved progress for the active gate and applies it to the current rooms. */
+  private async restoreRealmProgress(): Promise<void> {
+    const gate = this.activeGateAddress().formatted;
+    const saved = await this.storage.loadRealmProgress(gate);
+    if (this.activeGateAddress().formatted !== gate) return;
+    // Keep anything cleared while the load was in flight.
+    const current = this.realmProgress.gateAddress === gate ? this.realmProgress : null;
+    this.realmProgress = {
+      gateAddress: gate,
+      defeatedMonsterKeys: [
+        ...new Set([...saved.defeatedMonsterKeys, ...(current?.defeatedMonsterKeys ?? [])]),
+      ],
+      takenItemKeys: [...new Set([...saved.takenItemKeys, ...(current?.takenItemKeys ?? [])])],
+    };
+    this.rooms.set(this.withRealmProgress(this.rooms()));
+  }
+
+  private recordRealmProgress(kind: 'monster' | 'item', roomId: string, ids: string[]): void {
+    if (this.authorityHost()) return;
+    const room = this.rooms().find((r) => r.id === roomId);
+    // Expedition rifts are temporary and reuse room ids, so they are never recorded.
+    if (!room || room.isExpedition || ids.length === 0) return;
+    const gate = this.activeGateAddress().formatted;
+    const base: RealmProgress =
+      this.realmProgress.gateAddress === gate
+        ? this.realmProgress
+        : { gateAddress: gate, defeatedMonsterKeys: [], takenItemKeys: [] };
+    const keys = ids.map((id) => `${roomId}/${id}`);
+    this.realmProgress =
+      kind === 'monster'
+        ? { ...base, defeatedMonsterKeys: [...new Set([...base.defeatedMonsterKeys, ...keys])] }
+        : { ...base, takenItemKeys: [...new Set([...base.takenItemKeys, ...keys])] };
+    void this.storage.saveRealmProgress(this.realmProgress);
+  }
+
   startAtbLoop(): void {
     if (this.atbIntervalId) return;
     // Deterministic 100ms ATB combat & status tick loop
@@ -766,30 +1451,9 @@ export class MudEngineService implements OnDestroy {
       this.processAtbTick();
     }, 100);
 
-    // Periodic P2P Gate Beacon every 4 seconds
-    this.beaconIntervalId = setInterval(() => {
-      const char = this.character();
-      const cartridge = this.storage.exportCartridgeBase64(this.activeRealmDelta());
-      this.transport.announceGateBeacon(
-        char.name,
-        this.activeGateAddress().formatted,
-        char.currentRoomId,
-        char.archetype,
-        char.level,
-        this.inActiveCombat(),
-        cartridge,
-        char.heraldGreeting?.formatted,
-      );
-
-      // Periodically announce to serverless gcloud broker if connected
-      if (this.transport.brokerUrl().trim() && this.transport.isAutoAnnouncing()) {
-        void this.transport.announcePresenceToBroker(
-          char.name,
-          this.activeGateAddress().formatted,
-          char.heraldGreeting?.formatted,
-        );
-      }
-    }, 4000);
+    // Presence beacon to other tabs and direct links. The lobby heartbeat lives in the
+    // transport and is opt-in, so this loop never calls the broker.
+    this.beaconIntervalId = setInterval(() => this.sendPresenceBeacon(), BEACON_INTERVAL_MS);
   }
 
   stopAtbLoop(): void {
@@ -1807,15 +2471,19 @@ export class MudEngineService implements OnDestroy {
       this.soundFx.playCombatHit();
     }
 
-    // Update Monster HP, Statuses, and Anatomy
+    // Update Monster HP, Statuses, and Anatomy. In a live host's realm the host decides
+    // kills: hits apply locally right away but never below 1 HP until the host confirms.
+    const authoritative = this.authorityHost() !== null;
     let monsterDefeated = false;
     this.rooms.update((all) =>
       all.map((r) => {
         if (r.id !== room.id) return r;
         const nextMonsters = r.monsters.map((m) => {
           if (m.id !== target.id) return m;
-          const nextHp = Math.max(0, m.hp - finalDmg);
-          if (nextHp === 0 && m.hp > 0) {
+          const nextHp = authoritative
+            ? Math.max(1, m.hp - finalDmg)
+            : Math.max(0, m.hp - finalDmg);
+          if (!authoritative && nextHp === 0 && m.hp > 0) {
             monsterDefeated = true;
           }
           const nextStatuses: ActiveStatusEffect[] = [...m.statuses];
@@ -1925,6 +2593,20 @@ export class MudEngineService implements OnDestroy {
       intent,
     );
 
+    const host = this.authorityHost();
+    if (host && finalDmg > 0) {
+      this.transport.sendTo(host.peerId, {
+        senderName: char.name,
+        type: 'ACTION_DAMAGE',
+        gateAddress: host.gateAddress,
+        roomId: room.id,
+        authority: { monsterId: target.id, damage: finalDmg },
+      });
+    } else if (this.isHostingLive() && finalDmg > 0) {
+      this.creditDamage(room.id, target.id, this.transport.localPeerId);
+      this.broadcastRoomState(room.id);
+    }
+
     if (monsterDefeated) {
       void this.onMonsterDefeated(target);
     }
@@ -1976,7 +2658,8 @@ export class MudEngineService implements OnDestroy {
     }
   }
 
-  private async onMonsterDefeated(mob: MonsterEntity): Promise<void> {
+  /** XP, gold, and bestiary credit for a kill. Used for my own kills and host-confirmed ones. */
+  private awardMonsterRewards(mob: MonsterEntity): { xpGain: number; goldGain: number } {
     const xpGain = mob.isBoss ? 120 : 35;
     const goldGain = mob.isBoss ? 85 : 20;
 
@@ -2003,30 +2686,54 @@ export class MudEngineService implements OnDestroy {
       'COMBAT',
       `★ ${mob.name} defeated! Earned +${xpGain} XP and +${goldGain} Gold.`,
     );
+    return { xpGain, goldGain };
+  }
+
+  /** Boss kills: sign a Verified Drop and put it on the floor of that room. */
+  private async dropBossLoot(roomId: string, mob: MonsterEntity): Promise<void> {
+    const signedDrop = await this.storage.signVerifiedDrop(mob.lootTable[0]);
+    this.rooms.update((all) =>
+      all.map((r) => (r.id === roomId ? { ...r, items: [...r.items, signedDrop] } : r)),
+    );
+    this.appendFeed(
+      'LORE',
+      `◈ REALM BOSS CONQUERED! SubtleCrypto ECDSA Verified Drop materialized: [${signedDrop.name}] (Sig: ${signedDrop.signatureHex?.slice(0, 14)}...)`,
+      [
+        {
+          label: `Take ${signedDrop.name}`,
+          targetId: signedDrop.id,
+          actionType: 'TAKE_ITEM',
+          colorHex: '#fbbf24',
+        },
+      ],
+    );
+    this.broadcastRoomState(roomId);
+  }
+
+  private async onMonsterDefeated(mob: MonsterEntity): Promise<void> {
+    const roomId = this.currentRoom().id;
+    this.recordRealmProgress('monster', roomId, [mob.id]);
+    const { xpGain, goldGain } = this.awardMonsterRewards(mob);
 
     // Defeating room hostiles/guardians awards Realm Vitality XP
     this.addVitalityXP(15, `Defeated ${mob.name}`);
 
+    // Hosting: tell visitors, and credit everyone who helped.
+    if (this.isHostingLive()) {
+      const credits = this.takeCredits(roomId, mob.id);
+      credits.add(this.transport.localPeerId);
+      this.transport.sendPacket({
+        senderName: this.character().name,
+        type: 'MONSTER_DEFEATED',
+        gateAddress: this.activeGateAddress().formatted,
+        roomId,
+        authority: { monsterId: mob.id, creditPeerIds: [...credits] },
+      });
+    }
+
     // If Boss defeated, sign Verified Drop with SubtleCrypto ECDSA and log Chronicle + Guestbook
     if (mob.isBoss && mob.lootTable.length > 0) {
-      const signedDrop = await this.storage.signVerifiedDrop(mob.lootTable[0]);
-      const roomId = this.currentRoom().id;
-      this.rooms.update((all) =>
-        all.map((r) => (r.id === roomId ? { ...r, items: [...r.items, signedDrop] } : r)),
-      );
-      this.appendFeed(
-        'LORE',
-        `◈ REALM BOSS CONQUERED! SubtleCrypto ECDSA Verified Drop materialized: [${signedDrop.name}] (Sig: ${signedDrop.signatureHex?.slice(0, 14)}...)`,
-        [
-          {
-            label: `Take ${signedDrop.name}`,
-            targetId: signedDrop.id,
-            actionType: 'TAKE_ITEM',
-            colorHex: '#fbbf24',
-          },
-        ],
-      );
-
+      await this.dropBossLoot(roomId, mob);
       this.recordBossClearChronicle(xpGain, goldGain);
     }
 
@@ -2335,6 +3042,7 @@ export class MudEngineService implements OnDestroy {
       heraldGreeting: this.character().heraldGreeting?.formatted,
     };
     this.phantomTrails.update((crumbs) => [localCrumb, ...crumbs].slice(0, 50));
+    this.sendPresenceBeacon();
 
     // Check for foreign phantom wanderer presence in target chamber
     const phantom = this.activeRoomPhantom();
@@ -2592,6 +3300,10 @@ export class MudEngineService implements OnDestroy {
       this.appendFeed('SYSTEM', 'There are no items to collect here.');
       return;
     }
+    if (this.authorityHost()) {
+      this.requestTakeFromHost(room.id, [targetItem.id]);
+      return;
+    }
 
     const ruleset = this.activeRealmDelta().ruleset;
     const processedItem = this.isVisitingExternalRealm()
@@ -2599,6 +3311,7 @@ export class MudEngineService implements OnDestroy {
       : targetItem;
 
     const remainingItems = room.items.filter((i) => i.id !== targetItem.id);
+    this.recordRealmProgress('item', room.id, [targetItem.id]);
 
     this.rooms.update((all) =>
       all.map((r) => (r.id === room.id ? { ...r, items: remainingItems } : r)),
@@ -2634,6 +3347,7 @@ export class MudEngineService implements OnDestroy {
       'NARRATIVE',
       `Collected [${processedItem.name}] (${processedItem.provenance}) into inventory${remainderNote}.`,
     );
+    this.broadcastRoomState(room.id);
     void this.storage.saveCharacterState(this.character());
   }
 
@@ -2644,6 +3358,13 @@ export class MudEngineService implements OnDestroy {
       this.appendFeed('SYSTEM', 'There are no items to collect here.');
       return;
     }
+    if (this.authorityHost()) {
+      this.requestTakeFromHost(
+        room.id,
+        itemsToTake.map((i) => i.id),
+      );
+      return;
+    }
 
     const ruleset = this.activeRealmDelta().ruleset;
     const isExternal = this.isVisitingExternalRealm();
@@ -2652,6 +3373,11 @@ export class MudEngineService implements OnDestroy {
     );
 
     this.rooms.update((all) => all.map((r) => (r.id === room.id ? { ...r, items: [] } : r)));
+    this.recordRealmProgress(
+      'item',
+      room.id,
+      itemsToTake.map((i) => i.id),
+    );
 
     this.character.update((c) => ({
       ...c,
@@ -2689,6 +3415,7 @@ export class MudEngineService implements OnDestroy {
     }
 
     this.soundFx.playConvergenceChime();
+    this.broadcastRoomState(room.id);
     void this.storage.saveCharacterState(this.character());
   }
 
@@ -2697,6 +3424,10 @@ export class MudEngineService implements OnDestroy {
     const targetItem = room.items.find((i) => i.id === itemId);
     if (!targetItem) return;
     this.pendingSyntaxEcho = `[cmd: take ${targetItem.name.toLowerCase()} && equip ${targetItem.name.toLowerCase()}]`;
+    if (this.authorityHost()) {
+      this.requestTakeFromHost(room.id, [itemId], true);
+      return;
+    }
     this.takeRoomItem(itemId);
     this.equipInventoryItem(itemId);
   }
@@ -2996,26 +3727,32 @@ export class MudEngineService implements OnDestroy {
     externalDelta?: RealmDelta,
   ): void {
     const newAddr = this.chaosGate.createAddress(era, atmosphere, theme, biome);
+    this.beforeGateChange(newAddr.formatted, asVisitingGuest);
     this.activeGateAddress.set(newAddr);
     this.isVisitingExternalRealm.set(asVisitingGuest);
 
-    const delta: RealmDelta = externalDelta ?? {
-      gateAddress: newAddr,
-      ownerName: asVisitingGuest ? 'Remote Architect' : this.character().name,
-      updatedAtIso: new Date().toISOString(),
-      ruleset: {
-        levelCap: 20,
-        maxItemStatBudget: asVisitingGuest ? 12 : 30, // Enforce visible Customs Gate clamping when visiting external realms
-        allowArchitectForgedItems: true,
-        pvpEnabled: false,
-      },
-      customLegendEntries: [],
-      roomOverrides: {},
-      customRoomIds: [],
-      growthStage: 1,
-      vitalityXP: 0,
-      lastCultivationTimestampMs: Date.now(),
-    };
+    const savedHomeDelta =
+      !asVisitingGuest && this.homeRealmDelta?.gateAddress.formatted === newAddr.formatted
+        ? this.homeRealmDelta
+        : null;
+    const delta: RealmDelta = externalDelta ??
+      savedHomeDelta ?? {
+        gateAddress: newAddr,
+        ownerName: asVisitingGuest ? 'Remote Architect' : this.character().name,
+        updatedAtIso: new Date().toISOString(),
+        ruleset: {
+          levelCap: 20,
+          maxItemStatBudget: asVisitingGuest ? 12 : 30, // Enforce visible Customs Gate clamping when visiting external realms
+          allowArchitectForgedItems: true,
+          pvpEnabled: false,
+        },
+        customLegendEntries: [],
+        roomOverrides: {},
+        customRoomIds: [],
+        growthStage: 1,
+        vitalityXP: 0,
+        lastCultivationTimestampMs: Date.now(),
+      };
 
     if (!asVisitingGuest) {
       this.homeGateAddress.set(newAddr);
@@ -3028,6 +3765,7 @@ export class MudEngineService implements OnDestroy {
     const targetStage = delta.growthStage ?? 1;
     const generatedRooms = this.chaosGate.growRealmToStage(newAddr, targetStage, delta);
     this.rooms.set(generatedRooms);
+    void this.restoreRealmProgress();
 
     // Apply Customs Gate ruleset enforcement across equipped Paperdoll & inventory items
     this.applyCustomsGateToCharacter(delta.ruleset);
@@ -3042,59 +3780,29 @@ export class MudEngineService implements OnDestroy {
     this.selectedArchitectRoomId.set('room-0');
     this.appendFeed(
       'NETWORK',
-      `◈ Chaos Gate locked onto [${newAddr.formatted}] (Seed: 0x${newAddr.seed.toString(16).toUpperCase()}). Customs Gate ceiling: ${delta.ruleset.maxItemStatBudget} Stat Budget.`,
+      asVisitingGuest
+        ? `◈ Entered [${newAddr.formatted}] as a visitor. Gear stronger than ${delta.ruleset.maxItemStatBudget} power is weakened here.`
+        : `◈ Entered your dungeon [${newAddr.formatted}].`,
     );
     this.emitCurrentRoomNarrative();
-    void this.storage.saveRealmDelta(delta);
+    this.persistRealmDelta(delta);
+    this.sendPresenceBeacon();
   }
 
   traverseChaosGatePortal(addressOrPeerId: string): void {
+    const peers = this.transport.discoveredPeers();
+    const byGate = Object.values(peers).filter(
+      (p) => p.gateAddress.toLowerCase() === addressOrPeerId.toLowerCase(),
+    );
     const peer =
-      this.transport.discoveredPeers()[addressOrPeerId] ??
-      Object.values(this.transport.discoveredPeers()).find(
-        (p) => p.gateAddress.toLowerCase() === addressOrPeerId.toLowerCase(),
-      );
-
-    const addrStr = peer ? peer.gateAddress : addressOrPeerId;
-    const parsed = this.chaosGate.parseAddressString(addrStr);
-    if (!parsed) {
-      this.appendFeed('NETWORK', `Could not lock onto Chaos Gate "${addressOrPeerId}".`);
+      peers[addressOrPeerId] ??
+      byGate.find((p) => this.transport.isLinkOpen(p.peerId)) ??
+      byGate[0];
+    if (peer) {
+      this.visitPeerRealm(peer.peerId);
       return;
     }
-
-    // Add a custom legend entry from the remote host to demonstrate automatic custom legend merging
-    const guestDelta: RealmDelta = {
-      gateAddress: parsed,
-      ownerName: peer?.playerName ?? 'Remote Host',
-      updatedAtIso: new Date().toISOString(),
-      ruleset: {
-        levelCap: 15,
-        maxItemStatBudget: 12, // Clamps high-budget items during the visit
-        allowArchitectForgedItems: true,
-        pvpEnabled: false,
-      },
-      customLegendEntries: [
-        {
-          id: 'host-astral-beacon',
-          classification: 'custom',
-          glyph: '✧',
-          label: `${peer?.playerName ?? 'Host'}'s Resonance Well`,
-          colorHex: '#f472b6',
-          tooltipDescription: 'Custom host legend node merged via Chaos Gate manifest.',
-          isCustom: true,
-        },
-      ],
-      roomOverrides: {
-        'room-2': {
-          roomId: 'room-2',
-          legendType: 'custom',
-          customLegendId: 'host-astral-beacon',
-        },
-      },
-      customRoomIds: [],
-    };
-
-    this.dialChaosGate(parsed.era, parsed.atmosphere, parsed.theme, parsed.biome, true, guestDelta);
+    this.visitOfflineCopy(addressOrPeerId, 'Remote Host');
   }
 
   returnToHomeRealm(): void {
@@ -3263,7 +3971,7 @@ export class MudEngineService implements OnDestroy {
       'ARCHITECT',
       `[@dig] Excavated new chamber [${title}] (${newRoomId}) to the ${dir} and saved to Realm JSON Delta Layer.`,
     );
-    void this.storage.saveRealmDelta(this.activeRealmDelta());
+    this.persistRealmDelta(this.activeRealmDelta());
   }
 
   private handleMooDescribe(payload: Record<string, string>): void {
@@ -3300,7 +4008,7 @@ export class MudEngineService implements OnDestroy {
     }));
 
     this.appendFeed('ARCHITECT', `[@describe] Updated room [${roomId}] in Realm Delta Layer.`);
-    void this.storage.saveRealmDelta(this.activeRealmDelta());
+    this.persistRealmDelta(this.activeRealmDelta());
   }
 
   private handleMooCraft(payload: Record<string, string>): void {
@@ -3389,7 +4097,7 @@ export class MudEngineService implements OnDestroy {
       'ARCHITECT',
       `[@trigger] Wired declarative trigger [WHEN ${newTrigger.when} IF ${newTrigger.ifCondition} DO ${newTrigger.doAction}] on ${roomId}.`,
     );
-    void this.storage.saveRealmDelta(this.activeRealmDelta());
+    this.persistRealmDelta(this.activeRealmDelta());
   }
 
   private handleMooLegend(payload: Record<string, string>): void {
@@ -3434,7 +4142,7 @@ export class MudEngineService implements OnDestroy {
       'ARCHITECT',
       `[@legend] Registered custom Legend symbol [${glyph} ${label}] (${colorHex}) and applied to ${targetRoomId}.`,
     );
-    void this.storage.saveRealmDelta(this.activeRealmDelta());
+    this.persistRealmDelta(this.activeRealmDelta());
   }
 
   /**
@@ -3490,6 +4198,7 @@ export class MudEngineService implements OnDestroy {
 
     const allRooms = [...updatedRooms, ...incursion.newRooms];
     this.rooms.set(allRooms);
+    this.broadcastRealmSnapshot();
 
     // Persist in activeRealmDelta overrides so it survives reloads and disconnects
     const updatedOverrides = { ...delta.roomOverrides };
@@ -3542,7 +4251,7 @@ export class MudEngineService implements OnDestroy {
     };
 
     this.activeRealmDelta.set(newDelta);
-    void this.storage.saveRealmDelta(newDelta);
+    this.persistRealmDelta(newDelta);
 
     this.appendFeed(
       'NETWORK',
@@ -3788,6 +4497,7 @@ export class MudEngineService implements OnDestroy {
 
     const allRooms = [...updatedRooms, ...grafted];
     this.rooms.set(allRooms);
+    this.broadcastRealmSnapshot();
 
     // Remove from inventory
     const updatedInventory = [...char.inventory];
@@ -3829,7 +4539,7 @@ export class MudEngineService implements OnDestroy {
     };
 
     this.activeRealmDelta.set(newDelta);
-    void this.storage.saveRealmDelta(newDelta);
+    this.persistRealmDelta(newDelta);
     void this.storage.saveCharacterState(this.character());
 
     this.addVitalityXP(50, 'Sphere Core Grafted');
@@ -3890,6 +4600,7 @@ export class MudEngineService implements OnDestroy {
       }));
 
     this.rooms.set(updatedRooms);
+    this.broadcastRealmSnapshot();
 
     // Remove from activeRealmDelta overrides
     const delta = this.activeRealmDelta();
@@ -3910,7 +4621,7 @@ export class MudEngineService implements OnDestroy {
       updatedAtIso: new Date().toISOString(),
     };
     this.activeRealmDelta.set(newDelta);
-    void this.storage.saveRealmDelta(newDelta);
+    this.persistRealmDelta(newDelta);
 
     this.appendFeed(
       'NARRATIVE',
@@ -4092,7 +4803,14 @@ export class MudEngineService implements OnDestroy {
   }
 
   private onNetworkPacket(pkt: NetworkPacket): void {
-    if (pkt.breadcrumbs && pkt.breadcrumbs.length > 0) {
+    if (this.handleAuthorityPacket(pkt)) return;
+
+    // Ghost trails only make sense in the realm they were walked in.
+    if (
+      pkt.breadcrumbs &&
+      pkt.breadcrumbs.length > 0 &&
+      pkt.gateAddress === this.activeGateAddress().formatted
+    ) {
       this.phantomTrails.update((curr) => {
         const existingIds = new Set(curr.map((c) => c.id));
         const incoming = pkt.breadcrumbs!.filter((c) => !existingIds.has(c.id));
@@ -4101,13 +4819,6 @@ export class MudEngineService implements OnDestroy {
     }
 
     if (pkt.type === 'GATE_BEACON') {
-      if (pkt.realmCartridgeBase64) {
-        const imported = this.storage.importCartridgeBase64(pkt.realmCartridgeBase64);
-        if (imported?.customLegendEntries?.length) {
-          this.legendRegistry.mergeHostCustomLegends(imported.customLegendEntries);
-        }
-      }
-
       // Mutual realm convergence: when passing by another player or encountering their beacon
       const localAddr = this.activeGateAddress();
       const peerAddr = this.chaosGate.parseAddressString(pkt.gateAddress);
@@ -4230,7 +4941,11 @@ export class MudEngineService implements OnDestroy {
         'NETWORK',
         `[Visitor Chronicle] ${pkt.senderName} left a ${pkt.gravestone.outcome} marker in ${pkt.gravestone.roomTitle}.`,
       );
-    } else if (pkt.type === 'TRADE_OFFER' && pkt.tradeItem) {
+    } else if (
+      pkt.type === 'TRADE_OFFER' &&
+      pkt.tradeItem &&
+      pkt.toPeerId === this.transport.localPeerId
+    ) {
       const ruleset = this.activeRealmDelta().ruleset;
       const clamped = this.storage.enforceCustomsGateOnItem(pkt.tradeItem, ruleset);
       this.character.update((c) => ({
@@ -4279,7 +4994,7 @@ export class MudEngineService implements OnDestroy {
         },
       };
     });
-    void this.storage.saveRealmDelta(this.activeRealmDelta());
+    this.persistRealmDelta(this.activeRealmDelta());
 
     this.soundFx.playInscription();
     this.appendFeed('LORE', `✍ You inscribed chalk message onto the stone floor: "${text}"`);
@@ -5013,7 +5728,7 @@ export class MudEngineService implements OnDestroy {
     };
 
     this.activeRealmDelta.set(updatedDelta);
-    void this.storage.saveRealmDelta(updatedDelta);
+    this.persistRealmDelta(updatedDelta);
 
     if (stagedUp) {
       const grownRooms = this.chaosGate.growRealmToStage(
@@ -5022,7 +5737,8 @@ export class MudEngineService implements OnDestroy {
         updatedDelta,
       );
       const newRooms = grownRooms.filter((gr) => !this.rooms().some((r) => r.id === gr.id));
-      this.rooms.set(grownRooms);
+      this.rooms.set(this.withRealmProgress(grownRooms));
+      this.broadcastRealmSnapshot();
 
       const newTitles = newRooms.map((r) => r.title).join(', ');
       this.appendFeed(
@@ -5399,5 +6115,8 @@ export class MudEngineService implements OnDestroy {
   ngOnDestroy(): void {
     this.stopAtbLoop();
     this.netSub?.unsubscribe();
+    this.linkSub?.unsubscribe();
+    this.peerGoneSub?.unsubscribe();
+    this.clearPendingVisit();
   }
 }

@@ -270,6 +270,8 @@ export class ThunderpassService {
     }
 
     try {
+      // Shares the per-browser daily broker cap with the lobby.
+      if (!this.transport.reserveBrokerCall()) throw new Error('broker budget reached');
       const response = await fetch(`${url}/thunderpass`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

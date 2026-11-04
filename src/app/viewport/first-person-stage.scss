@@ -226,6 +226,41 @@
   }
 }
 
+/* Phones: drop the duplicate room title (the info column shows it) and give the 3D view
+   its natural 5:3 shape instead of whatever height is left over. */
+@media (max-width: 599px), (max-height: 500px) {
+  .chamber-title {
+    display: none;
+  }
+
+  .stage-top-bar {
+    flex-wrap: nowrap;
+    padding: 0.35rem 0.5rem;
+  }
+
+  .compass-nav-controls {
+    flex: 1;
+    justify-content: flex-end;
+  }
+
+  .nav-btn {
+    flex: 1;
+    min-height: var(--touch-target-min, 44px);
+  }
+
+  /* With no target selected the dock only holds the hint; hide it to save space. */
+  .stage-context-dock:has(.stage-idle-hint):not(:has(.prune-pill)) {
+    display: none;
+  }
+}
+
+@media (max-width: 599px) {
+  .stage-canvas-container {
+    flex: 0 0 auto;
+    aspect-ratio: 5 / 3;
+  }
+}
+
 .stage-canvas-container {
   flex: 1 1 auto;
   position: relative;

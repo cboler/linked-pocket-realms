@@ -420,6 +420,11 @@ export function hashChaosGateSeed(formattedAddress: string): number {
   providedIn: 'root',
 })
 export class ChaosGateService {
+  /** The element a dungeon's atmosphere word boosts (e.g. Scorching → Fire). */
+  atmosphereElement(atmosphere: AtmospherePrefix): ElementalAffinity {
+    return ATMOSPHERE_META[atmosphere]?.element ?? 'Physical';
+  }
+
   createAddress(
     era: ServerEraLetter,
     atmosphere: AtmospherePrefix,

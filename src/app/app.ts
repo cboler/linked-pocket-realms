@@ -33,6 +33,7 @@ import {
   ATMOSPHERE_PREFIXES,
   BIOME_NOUNS,
   ChaosGateService,
+  SERVER_ERAS,
   STRUCTURAL_THEMES,
 } from './core/services/chaos-gate.service';
 import { LegendRegistryService } from './core/services/legend-registry.service';
@@ -133,11 +134,21 @@ export class App {
   readonly onboardingAtmosphere = signal<AtmospherePrefix>('Scorching');
   readonly onboardingTheme = signal<StructuralTheme>('Clockwork');
   readonly onboardingBiome = signal<BiomeNoun>('Catacombs');
+  readonly eraInfo = SERVER_ERAS;
+  readonly onboardingElement = computed(() =>
+    this.chaosGate.atmosphereElement(this.onboardingAtmosphere()),
+  );
+  /** One plain-language line per class for the new-game screen. */
+  readonly classBlurbs: Record<ArchetypeClass, string> = {
+    Vanguard: 'Sturdy fighter. Most strength and health.',
+    Chronomancer: 'Spellcaster. Strongest magic, least health.',
+    Hexblade: 'Quick blade with curses. Fastest class.',
+    Artificer: 'Gadgets and ranged tech. Best at spotting secrets.',
+  };
 
   // Mobile-First Viewport & Ergonomic State (Default: Delve Focus with 1st-Person & Mini-Map)
   readonly mobileLayoutMode = signal<'SPLIT' | 'STAGE' | 'MAP'>('STAGE');
   readonly stageLensMode = signal<'FIRST_PERSON' | 'CARD_STAGE'>('FIRST_PERSON');
-  readonly loomActiveTab = signal<'WEAVER' | 'WEBRTC' | 'THUNDERPASS' | 'OVERGROWTH'>('WEAVER');
   readonly gateDialerExpanded = signal<boolean>(false);
   readonly isMinimapCollapsed = signal<boolean>(false);
 
@@ -195,7 +206,6 @@ export class App {
 
   // P2P & Cartridge Import/Export
   readonly exportedCartridgeText = signal<string>('');
-  readonly remoteHandshakeInput = signal<string>('');
 
   // Spore QR Code & Portable Planar Seeds
   readonly shareableSporeUrl = computed<string>(() => {
@@ -735,13 +745,6 @@ export class App {
   setStageLensMode(mode: 'FIRST_PERSON' | 'CARD_STAGE' | 'SPLIT'): void {
     const targetMode = mode === 'SPLIT' ? 'FIRST_PERSON' : mode;
     this.stageLensMode.set(targetMode);
-  }
-
-  setLoomActiveTab(tab: 'WEAVER' | 'WEBRTC' | 'THUNDERPASS' | 'OVERGROWTH'): void {
-    this.loomActiveTab.set(tab);
-    if (tab === 'WEBRTC') {
-      void this.transport.refreshBrokerSessions();
-    }
   }
 
   getFacingRotationAngle(facing: string): number {
@@ -1347,16 +1350,6 @@ export class App {
     const atkSign = diffAtk >= 0 ? `+${diffAtk}` : `${diffAtk}`;
     const spdSign = diffSpd >= 0 ? `+${diffSpd}%` : `${diffSpd}%`;
     return `${atkSign} ATK / ${spdSign} Speed vs. equipped`;
-  }
-
-  async generateWebRtcOffer(): Promise<void> {
-    await this.transport.createWebRtcOffer();
-  }
-
-  async acceptWebRtcHandshake(): Promise<void> {
-    const token = this.remoteHandshakeInput();
-    if (!token.trim()) return;
-    await this.transport.acceptWebRtcHandshake(token);
   }
 
   importRealmCartridge(): void {

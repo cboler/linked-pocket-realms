@@ -8,6 +8,10 @@
  * - Client Cache-Control headers to minimize duplicate network round-trips
  * - Zero stdout logging spam to preserve 50GB/mo Cloud Logging quota
  * - Active de-duplication: senderId single-session guarantee & 60s stale heartbeat TTL
+ * - Daily request ceiling: answers 503 + Retry-After once the day's budget is spent, so
+ *   well-behaved clients back off before the 2M/month free allowance is approached
+ * - Targeted signals (`to`) and combined heartbeat+poll (`POST /signal` with `sinceMs`)
+ *   so a hosting client needs one request per heartbeat
  */
 
 const functions = require('@google-cloud/functions-framework');
@@ -20,12 +24,36 @@ const SPORE_TTL_MS = 6 * 60 * 60 * 1000; // 6-hour TTL for Thunderpass proximity
 const MAX_SESSIONS = 200; // Cap active sessions in RAM
 const MAX_ZONE_BUCKETS = 400; // Cap proximity geohash buckets in RAM
 const MAX_SPORES_PER_ZONE = 8; // Cap density per geohash cell
-const MAX_SIGNALS_PER_SESSION = 20; // Cap pending SDP/ICE signals
+const MAX_SIGNALS_PER_SESSION = 30; // Cap pending SDP/ICE signals
+// ~1.65M/month if hit every day, under the 2M free allowance. In-memory, so it resets when the
+// instance restarts; with --max-instances=1 a busy day keeps one warm instance counting.
+const DAILY_REQUEST_CEILING = 55000;
+const CEILING_RETRY_AFTER_SEC = 600;
 const MAX_PAYLOAD_BYTES = 32 * 1024; // 32 KB payload limit
 
 // In-memory data stores
 const sessions = new Map(); // roomCode -> SessionRecord
 const sporeBuckets = new Map(); // zoneHash -> SporeEntry[]
+let requestDay = '';
+let requestsToday = 0;
+
+/** Counts a request against today's ceiling. Returns false once the ceiling is reached. */
+function withinDailyCeiling() {
+  const day = new Date().toISOString().slice(0, 10);
+  if (day !== requestDay) {
+    requestDay = day;
+    requestsToday = 0;
+  }
+  requestsToday += 1;
+  return requestsToday <= DAILY_REQUEST_CEILING;
+}
+
+/** Signals for one reader: untargeted ones (older clients) plus those addressed to it. */
+function signalsFor(session, sinceMs, readerId) {
+  return session.signals.filter(
+    (s) => s.timestampMs > sinceMs && (!readerId || !s.to || s.to === readerId),
+  );
+}
 
 /**
  * Purges expired sessions and spores to keep heap usage minimal
@@ -132,6 +160,13 @@ functions.http('broker', (req, res) => {
     return;
   }
 
+  if (!withinDailyCeiling()) {
+    setSecurityHeaders(res, 'no-store');
+    res.set('Retry-After', String(CEILING_RETRY_AFTER_SEC));
+    res.status(503).json({ error: 'Daily free-tier request ceiling reached; retry later' });
+    return;
+  }
+
   // Payload size enforcement to prevent memory exhaustion
   const contentLength = parseInt(req.headers['content-length'] || '0', 10);
   if (contentLength > MAX_PAYLOAD_BYTES) {
@@ -185,6 +220,7 @@ functions.http('broker', (req, res) => {
     setSecurityHeaders(res, 'no-store');
     const body = req.body || {};
     const { roomCode, type, payload, senderId, hostName, triChord, heraldGreeting } = body;
+    const to = typeof body.to === 'string' ? body.to : null;
 
     if (!roomCode) {
       res.status(400).json({ error: 'Missing required field: roomCode' });
@@ -239,12 +275,13 @@ functions.http('broker', (req, res) => {
     if (heraldGreeting) session.heraldGreeting = heraldGreeting;
     if (!session.iceCandidates) session.iceCandidates = [];
 
+    // Targeted signals stay in the mailbox only; legacy untargeted ones also fill the old fields.
     if (type === 'OFFER') {
-      session.sdpOffer = payload;
-      session.signals.push({ type: 'OFFER', payload, senderId, timestampMs: now });
+      if (!to) session.sdpOffer = payload;
+      session.signals.push({ type: 'OFFER', payload, senderId, to, timestampMs: now });
     } else if (type === 'ANSWER') {
-      session.sdpAnswer = payload;
-      session.signals.push({ type: 'ANSWER', payload, senderId, timestampMs: now });
+      if (!to) session.sdpAnswer = payload;
+      session.signals.push({ type: 'ANSWER', payload, senderId, to, timestampMs: now });
     } else if (type === 'ICE') {
       session.iceCandidates.push(payload);
       session.signals.push({ type: 'ICE', payload, senderId, timestampMs: now });
@@ -255,12 +292,21 @@ functions.http('broker', (req, res) => {
       session.signals = session.signals.slice(-MAX_SIGNALS_PER_SESSION);
     }
 
-    res.status(200).json({
+    const response = {
       status: 'SIGNAL_RECORDED',
       roomCode,
       type,
       timestampMs: now,
-    });
+    };
+    // Combined heartbeat + poll: a host's ANNOUNCE can collect its pending join requests.
+    if (typeof body.sinceMs === 'number') {
+      response.signals = signalsFor(
+        session,
+        body.sinceMs,
+        typeof body.for === 'string' ? body.for : null,
+      );
+    }
+    res.status(200).json(response);
     return;
   }
 
@@ -281,8 +327,10 @@ functions.http('broker', (req, res) => {
       return;
     }
 
-    session.lastSeenMs = Date.now();
-    const newSignals = session.signals.filter((s) => s.timestampMs > sinceMs);
+    // Polling by visitors must not keep a departed host's lobby entry alive.
+    const readerId = url.searchParams.get('for');
+    if (!readerId || readerId === session.senderId) session.lastSeenMs = Date.now();
+    const newSignals = signalsFor(session, sinceMs, readerId);
     res.status(200).json({
       roomCode,
       hostName: session.hostName,

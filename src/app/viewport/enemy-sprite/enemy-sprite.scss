@@ -1,5 +1,7 @@
+/* The host is an SVG <g> positioned by its transform attribute. Do not use
+   `display: contents` here: it drops the transform and stacks every enemy at x=0. */
 :host {
-  display: contents;
+  display: inline;
 }
 
 .enemy-sprite-root {

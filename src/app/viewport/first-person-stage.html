@@ -29,7 +29,7 @@
         title="Turn Left 90° (Q / A / Left)"
         data-testid="fp-turn-left"
       >
-        ↺ Left [Q]
+        <span>↺ Left <span class="hotkey-hint">[Q]</span></span>
       </button>
       <button
         type="button"
@@ -39,7 +39,7 @@
         title="Step Forward (W / Up)"
         data-testid="fp-step-forward"
       >
-        ⬆ Forward [W]
+        <span>⬆ Forward <span class="hotkey-hint">[W]</span></span>
       </button>
       <button
         type="button"
@@ -48,7 +48,7 @@
         title="Turn Right 90° (E / D / Right)"
         data-testid="fp-turn-right"
       >
-        ↻ Right [E]
+        <span>↻ Right <span class="hotkey-hint">[E]</span></span>
       </button>
       <button
         type="button"
@@ -57,7 +57,7 @@
         title="Turn Around / Step Back (S / Down)"
         data-testid="fp-step-back"
       >
-        ⬇ Back [S]
+        <span>⬇ Back <span class="hotkey-hint">[S]</span></span>
       </button>
     </div>
   </div>
@@ -1374,8 +1374,10 @@
       <!-- Idle Hint / Room Controls -->
       <div class="stage-idle-hint">
         <span class="hint-text">
-          Click doorways to move. Click monsters, chests, or echoes to interact. Hotkeys:
-          <strong>W/A/S/D</strong> or <strong>Arrows</strong>.
+          Click or tap doorways to move, and monsters, chests, or other travelers to interact.
+          <span class="hotkey-hint"
+            >Keys: <strong>W/A/S/D</strong> or <strong>arrows</strong>.</span
+          >
         </span>
         @if (currentRoom().isOvergrowth && engine.livingRoomMonsters().length === 0) {
           <button

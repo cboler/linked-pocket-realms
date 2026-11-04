@@ -716,6 +716,7 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
       ];
 
       const originalFetch = globalThis.fetch;
+      let sessionListCalls = 0;
       try {
         globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
           const urlStr = input.toString();
@@ -728,6 +729,7 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
             return new Response(JSON.stringify({ ok: true }), { status: 200 });
           }
           if (urlStr.endsWith('/sessions')) {
+            sessionListCalls++;
             return new Response(JSON.stringify({ sessions: mockSessions }), { status: 200 });
           }
           return new Response('Not Found', { status: 404 });
@@ -738,6 +740,10 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
           'Ω: Scorching Clockwork Crucible',
           'May the Radiant Beacon guide your journey.',
         );
+        // A heartbeat must not also fetch the lobby list (free-tier frugality).
+        expect(sessionListCalls).toBe(0);
+        await transport.refreshBrokerSessions();
+        expect(sessionListCalls).toBe(1);
 
         expect(transport.brokerSessions().length).toBe(2);
         const mySession = transport
@@ -1950,26 +1956,25 @@ describe('Linked Pocket Realms — Core Systems & HUD Suite', () => {
     });
 
     it('should broadcast packets to multiple concurrent data channels in peerMesh', () => {
-      const mockDc1 = {
+      const mockChannel = () => ({
         readyState: 'open',
         send: vi.fn(),
         close: vi.fn(),
-      } as unknown as RTCDataChannel;
-      const mockDc2 = {
-        readyState: 'open',
-        send: vi.fn(),
-        close: vi.fn(),
-      } as unknown as RTCDataChannel;
+        onopen: null,
+        onclose: null,
+        onmessage: null,
+      });
+      const mockDc1 = mockChannel();
+      const mockDc2 = mockChannel();
 
-      // Register mock data channels in transport
-      (
-        transport as unknown as { setupDataChannel: (dc: RTCDataChannel, id: string) => void }
-      ).setupDataChannel(mockDc1, 'peer-remote-1');
-      (
-        transport as unknown as { setupDataChannel: (dc: RTCDataChannel, id: string) => void }
-      ).setupDataChannel(mockDc2, 'peer-remote-2');
+      // Two visitors linked to this host at once
+      transport.attachChannel('peer-remote-1', 'VISITOR', mockDc1, 'Visitor One');
+      transport.attachChannel('peer-remote-2', 'VISITOR', mockDc2, 'Visitor Two');
 
       expect(transport.activePeerMeshCount()).toBe(2);
+      // Opening links sends presence beacons; count only the packet under test.
+      mockDc1.send.mockClear();
+      mockDc2.send.mockClear();
 
       // Send packet
       transport.sendPacket({

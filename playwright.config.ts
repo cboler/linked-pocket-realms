@@ -11,27 +11,43 @@ export default defineConfig({
     baseURL: 'http://localhost:4200',
     trace: 'on-first-retry',
   },
+  // The multiplayer journey needs two browser contexts and runs once, not per viewport.
   projects: [
     {
+      name: 'multiplayer',
+      testMatch: /multiplayer\.spec\.ts/,
+      use: {
+        viewport: { width: 1280, height: 800 },
+        launchOptions: {
+          // Use real local addresses instead of mDNS names so two headless contexts can reach each other.
+          args: ['--disable-features=WebRtcHideLocalIpsWithMdns'],
+        },
+      },
+    },
+    {
       name: 'phone-portrait',
+      testIgnore: /multiplayer\.spec\.ts/,
       use: {
         viewport: { width: 390, height: 844 },
       },
     },
     {
       name: 'phone-landscape',
+      testIgnore: /multiplayer\.spec\.ts/,
       use: {
         viewport: { width: 844, height: 390 },
       },
     },
     {
       name: 'tablet-portrait',
+      testIgnore: /multiplayer\.spec\.ts/,
       use: {
         viewport: { width: 768, height: 1024 },
       },
     },
     {
       name: 'desktop',
+      testIgnore: /multiplayer\.spec\.ts/,
       use: {
         viewport: { width: 1280, height: 800 },
       },

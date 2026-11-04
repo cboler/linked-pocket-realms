@@ -2,7 +2,7 @@
 
 This document records the architectural decision records (ADRs) for this project.
 
-Each record outlines the context, rationale, consequences, and trade-offs of significant architectural decisions made in the codebase. Downstream projects derived from this starter should append their domain decisions to this log.
+Each record outlines the context, rationale, consequences, and trade-offs of significant architectural decisions made in the codebase. ADR-001 to ADR-005 come from the Angular PWA Starter this project was derived from; ADR-006 onward are Linked Pocket Realms decisions. Append new decisions to this log.
 
 ---
 
@@ -20,6 +20,8 @@ Each record outlines the context, rationale, consequences, and trade-offs of sig
 - [ADR-010: Directional Spatial Audio Panning, Bloodstain Lore Memorials, Delver Grimoires & Synchronized Conjunction Mechanisms](#adr-010-directional-spatial-audio-panning-bloodstain-lore-memorials-delver-grimoires--synchronized-conjunction-mechanisms)
 - [ADR-011: Shadow Bazaar Dungeon Economy, Item Provenance Chains, and Multi-Peer WebRTC DataChannel Mesh](#adr-011-shadow-bazaar-dungeon-economy-item-provenance-chains-and-multi-peer-webrtc-datachannel-mesh)
 - [ADR-012: Astral Echo Companion Bot Toggle Setting and Universal Mesh Labeling](#adr-012-astral-echo-companion-bot-toggle-setting-and-universal-mesh-labeling)
+- [ADR-013: Per-Player Realm Progress and Home-Safe Realm Saves](#adr-013-per-player-realm-progress-and-home-safe-realm-saves)
+- [ADR-014: Host-Authority Star Mesh, Frugal Broker Use, and No TURN (Yet)](#adr-014-host-authority-star-mesh-frugal-broker-use-and-no-turn-yet)
 
 ---
 
@@ -368,6 +370,63 @@ Previously, `MudEngineService` unconditionally injected a simulated peer `Kite_Z
 
 - **Positive**: Eliminates ghost peer confusion while providing a clear toggleable companion bot for testing, portal traversal, and future autonomous AFK zone management routines.
 - **Trade-offs**: Solo players exploring P2P portals without another human delver must toggle on their Astral Echo bot (or use the Wayfinder Rift Loom) to explore remote realms.
+
+---
+
+## ADR-013: Per-Player Realm Progress and Home-Safe Realm Saves
+
+### Status
+
+Accepted
+
+### Context
+
+Rooms are regenerated from the dungeon's seed on every load and every time the realm grows a stage. Nothing recorded which monsters the player had defeated or which items they had picked up, so:
+
+- After a page reload, defeated monsters were back at full health and attacking.
+- Picked-up loot reappeared on the floor while also staying in the inventory, so items could be duplicated (by reloading, or mid-session whenever the realm grew a stage).
+- Visiting another player's realm saved that realm into the `active_home_realm_delta` slot, and "return home" rebuilt the home realm from a blank delta, losing its growth stage, custom rooms, and grafts.
+
+### Decision
+
+1. **`RealmProgress`, separate from `RealmDelta`**: a per-address record of defeated monster keys and collected item keys (`roomId/entityId`), stored at `realm_progress:<address>`. It is never sent to peers: a visitor who clears your rooms should not clear them for you, and peers should not receive your loot history.
+2. **Reapply after every regeneration**: the engine marks recorded monsters as `hp: 0` and removes recorded items whenever rooms are rebuilt (load, gate dial, growth). Loading merges with anything recorded while the load was in flight.
+3. **Expedition rifts are not recorded**: they are temporary and reuse fixed room ids.
+4. **Home-safe saves**: every realm delta save goes through `persistRealmDelta()`. It always writes `realm_delta:<address>`, but writes the home slot only when the player is not visiting. Dialing the home address reuses the saved home delta instead of a blank one.
+5. **Reload narration**: log lines written for the placeholder sanctum before the save loads are dropped, and the saved room is described instead.
+
+### Consequences
+
+- **Positive**: Fights and loot survive reloads; the duplication path is closed; visiting other realms is safe for the home save.
+- **Trade-offs**: Cleared rooms stay cleared. There is no respawn rule yet, so a fully cleared realm only gains new monsters from growth (new rooms). A boss drop that is left on the floor is lost on reload, because the drop is created at kill time rather than generated from the seed. Both are noted in `docs/ROADMAP.md`.
+
+---
+
+## ADR-014: Host-Authority Star Mesh, Frugal Broker Use, and No TURN (Yet)
+
+### Status
+
+Accepted
+
+### Context
+
+Direct play did not work: connection codes were made before ICE gathering, so they carried no network addresses; a host could hold only one link (`createWebRtcOffer()` closed the others); every player fought a private copy of each monster; visiting used a placeholder realm instead of the host's; and every open tab called the broker every 4 seconds (most of the 2M/month free tier for one tab left open for a month). The owner wants a working mesh, the realm owner as the authority, and broker use that never approaches the free-tier limit. Failing on mobile data is acceptable if the UI says so.
+
+### Decision
+
+1. **Star topology per realm.** Visitors link to the realm owner (host); the host relays public packets between its visitors. No visitor-to-visitor links.
+2. **Host authority.** The host decides monster HP, kills (with shared credit), and loot (first request wins). Visitors apply hits optimistically but never kill locally; loot only enters a visitor's inventory on the host's approval. Damage is clamped and rate-limited on the host. The host only hosts its home realm; leaving home tells visitors, who continue in an offline copy.
+3. **Persistence stays per player (ADR-013).** Visitor kills change the host's live state, not the host's saved `RealmProgress`.
+4. **Visitor-initiated, non-trickle handshake.** Join code (offer) from the visitor, reply code (answer) from the host, each made after ICE gathering completes. Works the same by copy-paste or through the broker mailbox, and supports many visitors per host.
+5. **Resilient links.** 5 s pings, 20 s timeout, 30 s connect timeout, automatic rejoin for lobby links, inbound validation and rate limits, sender-must-match-link, and 30 s presence expiry.
+6. **Frugal broker.** Hosting is opt-in and pauses when away from home, hidden, or idle 15 min; 20 s heartbeat that also returns join requests (updated broker); lobby fetched only while on screen; no startup call; per-browser daily cap (1,500) shared with Thunderpass; server daily ceiling (55,000) with `503` + `Retry-After`. Broker changes are backward compatible, so the client works with the currently deployed broker (at 2 calls per heartbeat).
+7. **No TURN for now.** STUN only, with a plain-language note in the network tab and in connection-failure messages.
+
+### Consequences
+
+- **Positive**: Real multi-visitor play with one source of truth per realm; no loot duplication between visitors; small, predictable broker cost; codes work without the broker at all.
+- **Trade-offs**: Host bandwidth and CPU grow with visitors (capped at 8). If the host's tab sleeps, visitors lose authority and fall back to an offline copy. Lobby joins can take up to ~20 s (one host heartbeat). Symmetric-NAT networks cannot connect until a TURN relay exists. The server ceiling is per instance and resets on cold start, so client-side discipline is the main guarantee. Statuses and severed anatomy parts are still simulated per player; only HP, kills, and loot are authoritative.
+- **TURN, if added later**: prefer a managed relay with a free allowance and short-lived credentials minted by the existing broker, used only as an ICE fallback; avoid self-hosting coturn on the free e2-micro, whose 1 GB/month egress allowance is easy to exceed with relayed traffic.
 
 ---
 

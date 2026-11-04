@@ -132,10 +132,12 @@
         data-testid="overgrowth-meter-pill"
       >
         <span class="meter-item overgrowth-item" [class.alert]="engine.overgrowthCount() > 0">
-          🌿 Incursions: <strong>{{ engine.overgrowthCount() }}</strong>
+          🌿 <span class="meter-label">Incursions:</span>
+          <strong>{{ engine.overgrowthCount() }}</strong>
         </span>
         <span class="meter-item shards-item">
-          💎 Shards: <strong>{{ engine.character().resonanceShards || 0 }}</strong>
+          💎 <span class="meter-label">Shards:</span>
+          <strong>{{ engine.character().resonanceShards || 0 }}</strong>
         </span>
         @if (engine.sanctumVaultShards() > 0) {
           <button
@@ -155,7 +157,8 @@
           title="Inspect adventurers currently in realm"
           data-testid="presence-roster-pill"
         >
-          👥 Adventurers: <strong>{{ transport.activeVisitorsList().length + 1 }}</strong>
+          👥 <span class="meter-label">Adventurers:</span>
+          <strong>{{ transport.activeVisitorsList().length + 1 }}</strong>
           @if (engine.hasActiveAstralEcho()) {
             <span class="echo-header-pill" data-testid="echo-header-pill"
               >({{ engine.astralEchoCount() }} Echo)</span
@@ -654,147 +657,6 @@
         <div class="stage-deck-container" [attr.data-lens]="stageLensMode()">
           @if (stageLensMode() === 'FIRST_PERSON') {
             <div class="stage-viewport-deck" data-testid="stage-viewport-deck">
-              <!-- TOPOLOGICAL RADAR MINI-MAP (UPPER-RIGHT CLICK-TO-MOVE CARTOGRAPHY) -->
-              <aside
-                class="dungeon-minimap"
-                [class.collapsed]="isMinimapCollapsed()"
-                aria-label="Topological Radar Mini-Map"
-                data-testid="dungeon-minimap"
-              >
-                <div class="minimap-header">
-                  <span class="minimap-title" [title]="engine.currentRoom().title">
-                    🧭 {{ engine.activeGateAddress().biome }}
-                  </span>
-                  <div class="minimap-actions">
-                    <button
-                      type="button"
-                      class="minimap-btn"
-                      (click)="setMobileLayoutMode('MAP')"
-                      title="Expand Full Observatory Graph (M)"
-                      data-testid="expand-observatory-btn"
-                    >
-                      ⤢ Expand
-                    </button>
-                    <button
-                      type="button"
-                      class="minimap-btn icon-only"
-                      (click)="isMinimapCollapsed.set(!isMinimapCollapsed())"
-                      [title]="isMinimapCollapsed() ? 'Show Radar' : 'Minimize Radar'"
-                      data-testid="toggle-minimap-btn"
-                    >
-                      {{ isMinimapCollapsed() ? '+' : '—' }}
-                    </button>
-                  </div>
-                </div>
-
-                @if (!isMinimapCollapsed()) {
-                  <div class="minimap-body">
-                    <svg
-                      class="minimap-svg"
-                      viewBox="0 0 940 560"
-                      role="img"
-                      aria-label="Minimap Radar Graph"
-                      data-testid="minimap-svg-map"
-                    >
-                      <defs>
-                        <radialGradient id="minimapActiveGlow" cx="50%" cy="50%" r="50%">
-                          <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.6" />
-                          <stop offset="100%" stop-color="#38bdf8" stop-opacity="0" />
-                        </radialGradient>
-                      </defs>
-
-                      <!-- Minimap Topological Edges -->
-                      @for (edge of cartographyEdges(); track edge.id) {
-                        <line
-                          [attr.x1]="edge.x1"
-                          [attr.y1]="edge.y1"
-                          [attr.x2]="edge.x2"
-                          [attr.y2]="edge.y2"
-                          class="minimap-edge"
-                          [class.secret-edge]="edge.isSecret"
-                          [class.locked-edge]="edge.isLocked"
-                        />
-                      }
-
-                      <!-- Minimap Topological Room Nodes (Click-to-Move) -->
-                      @for (node of visibleCartographyNodes(); track node.room.id) {
-                        <g
-                          class="minimap-node-group"
-                          [class.current-node]="node.room.id === engine.character().currentRoomId"
-                          [attr.transform]="'translate(' + node.room.x + ',' + node.room.y + ')'"
-                          (click)="onNodeClick(node.room)"
-                          (mouseenter)="hoveredMapNode.set(node)"
-                          (mouseleave)="hoveredMapNode.set(null)"
-                          [attr.data-testid]="'minimap-node-' + node.room.id"
-                        >
-                          <title>
-                            {{ node.visited ? node.room.title : '[?] ' + node.room.rumorSignal }}
-                          </title>
-
-                          @if (node.room.id === engine.character().currentRoomId) {
-                            <circle
-                              r="46"
-                              fill="url(#minimapActiveGlow)"
-                              class="minimap-active-glow"
-                            />
-                            <!-- Player Facing Arrow in Mini-Map -->
-                            <path
-                              d="M 0,-42 L 7,-28 L -7,-28 Z"
-                              fill="#38bdf8"
-                              [attr.transform]="
-                                'rotate(' + getFacingRotationAngle(engine.playerFacing()) + ')'
-                              "
-                              class="minimap-facing-arrow"
-                              data-testid="minimap-facing-arrow"
-                            />
-                          }
-
-                          <!-- Overgrowth Ring -->
-                          @if (node.room.isOvergrowth) {
-                            <circle
-                              r="36"
-                              fill="none"
-                              stroke="#d946ef"
-                              stroke-width="3"
-                              stroke-dasharray="5 3"
-                            />
-                          }
-
-                          <!-- Node Circle -->
-                          <circle
-                            r="28"
-                            [attr.fill]="
-                              node.room.id === engine.character().currentRoomId
-                                ? '#0369a1'
-                                : '#0f172a'
-                            "
-                            [attr.stroke]="node.colorHex"
-                            stroke-width="3"
-                          />
-
-                          <!-- Semantic Glyph -->
-                          <text
-                            text-anchor="middle"
-                            dominant-baseline="central"
-                            class="minimap-glyph"
-                            [attr.fill]="node.colorHex"
-                          >
-                            {{ node.glyph }}
-                          </text>
-                        </g>
-                      }
-                    </svg>
-
-                    <!-- Minimap Sensor Readout -->
-                    @if (hoveredMapNode(); as hov) {
-                      <div class="minimap-hover-pill">
-                        {{ hov.visited ? hov.room.title : '[?] Unexplored' }}
-                      </div>
-                    }
-                  </div>
-                }
-              </aside>
-
               <app-first-person-stage></app-first-person-stage>
             </div>
           }
@@ -805,6 +667,146 @@
             [class.only-cards]="stageLensMode() === 'CARD_STAGE'"
             data-testid="stage-cards-deck"
           >
+            <!-- MINI-MAP: sits in the info column, never on top of the 3D view -->
+            <aside
+              class="dungeon-minimap"
+              [class.collapsed]="isMinimapCollapsed()"
+              aria-label="Topological Radar Mini-Map"
+              data-testid="dungeon-minimap"
+            >
+              <div class="minimap-header">
+                <span class="minimap-title" [title]="engine.currentRoom().title">
+                  🧭 {{ engine.activeGateAddress().biome }}
+                </span>
+                <div class="minimap-actions">
+                  <button
+                    type="button"
+                    class="minimap-btn"
+                    (click)="setMobileLayoutMode('MAP')"
+                    title="Expand Full Observatory Graph (M)"
+                    data-testid="expand-observatory-btn"
+                  >
+                    ⤢ Expand
+                  </button>
+                  <button
+                    type="button"
+                    class="minimap-btn icon-only"
+                    (click)="isMinimapCollapsed.set(!isMinimapCollapsed())"
+                    [title]="isMinimapCollapsed() ? 'Show Radar' : 'Minimize Radar'"
+                    data-testid="toggle-minimap-btn"
+                  >
+                    {{ isMinimapCollapsed() ? '+' : '—' }}
+                  </button>
+                </div>
+              </div>
+
+              @if (!isMinimapCollapsed()) {
+                <div class="minimap-body">
+                  <svg
+                    class="minimap-svg"
+                    viewBox="0 0 940 560"
+                    role="img"
+                    aria-label="Minimap Radar Graph"
+                    data-testid="minimap-svg-map"
+                  >
+                    <defs>
+                      <radialGradient id="minimapActiveGlow" cx="50%" cy="50%" r="50%">
+                        <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.6" />
+                        <stop offset="100%" stop-color="#38bdf8" stop-opacity="0" />
+                      </radialGradient>
+                    </defs>
+
+                    <!-- Minimap Topological Edges -->
+                    @for (edge of cartographyEdges(); track edge.id) {
+                      <line
+                        [attr.x1]="edge.x1"
+                        [attr.y1]="edge.y1"
+                        [attr.x2]="edge.x2"
+                        [attr.y2]="edge.y2"
+                        class="minimap-edge"
+                        [class.secret-edge]="edge.isSecret"
+                        [class.locked-edge]="edge.isLocked"
+                      />
+                    }
+
+                    <!-- Minimap Topological Room Nodes (Click-to-Move) -->
+                    @for (node of visibleCartographyNodes(); track node.room.id) {
+                      <g
+                        class="minimap-node-group"
+                        [class.current-node]="node.room.id === engine.character().currentRoomId"
+                        [attr.transform]="'translate(' + node.room.x + ',' + node.room.y + ')'"
+                        (click)="onNodeClick(node.room)"
+                        (mouseenter)="hoveredMapNode.set(node)"
+                        (mouseleave)="hoveredMapNode.set(null)"
+                        [attr.data-testid]="'minimap-node-' + node.room.id"
+                      >
+                        <title>
+                          {{ node.visited ? node.room.title : '[?] ' + node.room.rumorSignal }}
+                        </title>
+
+                        @if (node.room.id === engine.character().currentRoomId) {
+                          <circle
+                            r="46"
+                            fill="url(#minimapActiveGlow)"
+                            class="minimap-active-glow"
+                          />
+                          <!-- Player Facing Arrow in Mini-Map -->
+                          <path
+                            d="M 0,-42 L 7,-28 L -7,-28 Z"
+                            fill="#38bdf8"
+                            [attr.transform]="
+                              'rotate(' + getFacingRotationAngle(engine.playerFacing()) + ')'
+                            "
+                            class="minimap-facing-arrow"
+                            data-testid="minimap-facing-arrow"
+                          />
+                        }
+
+                        <!-- Overgrowth Ring -->
+                        @if (node.room.isOvergrowth) {
+                          <circle
+                            r="36"
+                            fill="none"
+                            stroke="#d946ef"
+                            stroke-width="3"
+                            stroke-dasharray="5 3"
+                          />
+                        }
+
+                        <!-- Node Circle -->
+                        <circle
+                          r="28"
+                          [attr.fill]="
+                            node.room.id === engine.character().currentRoomId
+                              ? '#0369a1'
+                              : '#0f172a'
+                          "
+                          [attr.stroke]="node.colorHex"
+                          stroke-width="3"
+                        />
+
+                        <!-- Semantic Glyph -->
+                        <text
+                          text-anchor="middle"
+                          dominant-baseline="central"
+                          class="minimap-glyph"
+                          [attr.fill]="node.colorHex"
+                        >
+                          {{ node.glyph }}
+                        </text>
+                      </g>
+                    }
+                  </svg>
+
+                  <!-- Minimap Sensor Readout -->
+                  @if (hoveredMapNode(); as hov) {
+                    <div class="minimap-hover-pill">
+                      {{ hov.visited ? hov.room.title : '[?] Unexplored' }}
+                    </div>
+                  }
+                </div>
+              }
+            </aside>
             <!-- 1A. ROOM STAGE HEADER -->
             <div class="stage-room-header">
               <div class="stage-title-block">
@@ -1855,7 +1857,10 @@
           title="Toggle automatic basic attacks whenever ATB reaches 100% (Hotkey: Space)"
           data-testid="auto-attack-toggle"
         >
-          ⚔ Auto [Space]: {{ engine.character().autoAttackEnabled ? 'ON' : 'OFF' }}
+          <span
+            >⚔ Auto<span class="hotkey-hint"> [Space]</span>:
+            {{ engine.character().autoAttackEnabled ? 'ON' : 'OFF' }}</span
+          >
         </button>
 
         @for (skill of engine.character().activeSkills; track skill.id; let sIdx = $index) {
@@ -1867,7 +1872,9 @@
             [title]="skill.description + ' (Hotkey: ' + (sIdx + 1) + ')'"
             [attr.data-testid]="'skill-btn-' + skill.commandKey"
           >
-            <span class="sk-name">[{{ sIdx + 1 }}] {{ skill.name }}</span>
+            <span class="sk-name"
+              ><span class="hotkey-hint">[{{ sIdx + 1 }}]</span> {{ skill.name }}</span
+            >
             <span class="sk-meta">
               {{ skill.element }} • {{ skill.staminaCost }} STA
               @if (skill.currentCooldownMs > 0) {
@@ -2246,17 +2253,18 @@
       class="onboarding-modal-backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label="Character and Pocket Realm Awakening"
+      aria-label="Create your character and dungeon"
       data-testid="onboarding-modal"
     >
       <div class="onboarding-modal-card">
         <div class="onboarding-header">
           <div>
-            <span class="era-badge">◈ CHAOS GATE INITIALIZATION</span>
-            <h2>Awaken Your Traveler & Pocket Realm</h2>
+            <span class="era-badge">◈ NEW GAME</span>
+            <h2>Create your character and dungeon</h2>
             <p>
-              Every browser hosts a persistent dungeon in <code>IndexedDB</code>. Choose your Class
-              Core and spin your initial 3-Word Chaos Gate seed.
+              Your dungeon lives in this browser and is saved as you play. Explore it and defeat
+              monsters to make it grow new rooms; its boss waits in the deepest one. Other players
+              can visit your dungeon, and you can visit theirs.
             </p>
           </div>
           <button
@@ -2272,12 +2280,12 @@
         <!-- Step 1: Character Name & 4 Class Core Cards -->
         <div class="onboarding-section">
           <label class="onboard-name-label">
-            <span>1. Traveler Callsign</span>
+            <span>1. Name and class</span>
             <input
               type="text"
               [ngModel]="onboardingName()"
               (ngModelChange)="onboardingName.set($event)"
-              placeholder="Enter Character Name..."
+              placeholder="Your character's name"
               data-testid="onboarding-name-input"
             />
           </label>
@@ -2294,8 +2302,8 @@
               >
                 <div class="cc-top">
                   <strong>{{ arch }}</strong>
-                  <span class="cc-tag">Class Core</span>
                 </div>
+                <p class="cc-blurb">{{ classBlurbs[arch] }}</p>
                 <div class="cc-stats">
                   <span>STR {{ meta.baseAttributes.STR }}</span>
                   <span>DEX {{ meta.baseAttributes.DEX }}</span>
@@ -2316,29 +2324,34 @@
         <!-- Step 2: Spin or Pick 3-Word Chaos Gate Address -->
         <div class="onboarding-section">
           <div class="onboard-gate-header">
-            <span>2. Initial 3-Word Chaos Gate Address</span>
+            <span>2. Your dungeon</span>
             <button
               type="button"
               class="mini-action-btn accent"
               (click)="spinRandomOnboardingGate()"
               data-testid="spin-chaos-gate-btn"
             >
-              🎲 Spin Random Chaos Gate
+              🎲 Random dungeon
             </button>
           </div>
 
+          <p class="section-help-text">
+            Three words decide its element, monsters, and boss room. The same words always build the
+            same dungeon, so you can share them with friends.
+          </p>
+
           <div class="onboard-gate-selectors">
             <select
-              aria-label="Initial Server Era"
+              aria-label="Difficulty"
               [ngModel]="onboardingEra()"
               (ngModelChange)="onboardingEra.set($event)"
             >
               @for (e of serverEras; track e) {
-                <option [value]="e">Era {{ e }}</option>
+                <option [value]="e">{{ e }} · Level {{ eraInfo[e].levelTier }}</option>
               }
             </select>
             <select
-              aria-label="Initial Atmosphere Word"
+              aria-label="First word: element"
               [ngModel]="onboardingAtmosphere()"
               (ngModelChange)="onboardingAtmosphere.set($event)"
             >
@@ -2347,7 +2360,7 @@
               }
             </select>
             <select
-              aria-label="Initial Theme Word"
+              aria-label="Second word: monsters"
               [ngModel]="onboardingTheme()"
               (ngModelChange)="onboardingTheme.set($event)"
             >
@@ -2356,7 +2369,7 @@
               }
             </select>
             <select
-              aria-label="Initial Biome Word"
+              aria-label="Third word: boss room"
               [ngModel]="onboardingBiome()"
               (ngModelChange)="onboardingBiome.set($event)"
             >
@@ -2368,38 +2381,36 @@
 
           <div class="gate-preview-badges">
             <span class="preview-chip">
-              <strong>Address:</strong> {{ onboardingEra() }}: {{ onboardingAtmosphere() }}
+              <strong>Dungeon:</strong> {{ onboardingEra() }}: {{ onboardingAtmosphere() }}
               {{ onboardingTheme() }} {{ onboardingBiome() }}
             </span>
             <span class="preview-chip">
-              <strong>Atmosphere:</strong> {{ onboardingAtmosphere() }} Elemental Mutator
+              <strong>Difficulty:</strong> level {{ eraInfo[onboardingEra()].levelTier }}
             </span>
             <span class="preview-chip">
-              <strong>Architecture:</strong> {{ onboardingTheme() }} Constructs & Traps
+              <strong>Element:</strong> {{ onboardingElement() }} attacks hit harder here
             </span>
             <span class="preview-chip">
-              <strong>Sanctum:</strong> {{ onboardingBiome() }} Boss Chamber
+              <strong>Monsters:</strong> {{ onboardingTheme() }} creatures and traps
             </span>
+            <span class="preview-chip"> <strong>Boss room:</strong> {{ onboardingBiome() }} </span>
           </div>
         </div>
 
-        <!-- Step 3: Traveler's Herald Greeting (StreetPass & Incursion Motto) -->
+        <!-- Step 3: Greeting other players see (Herald Greeting in code) -->
         <div class="onboarding-section" data-testid="onboarding-herald-section">
           <div class="onboard-gate-header">
-            <span>3. Traveler's Herald Greeting (StreetPass & Proximity Motto)</span>
+            <span>3. Greeting (optional)</span>
             <button
               type="button"
               class="mini-action-btn accent"
               (click)="rollHeraldGreeting()"
               data-testid="roll-herald-greeting-btn"
             >
-              🎲 Roll Random Motto
+              🎲 Random greeting
             </button>
           </div>
-          <p class="section-help-text">
-            Clean, short, and sweet. Transmitted to peers who connect to your MUD or cross paths on
-            Thunderpass walks.
-          </p>
+          <p class="section-help-text">A short line other players see when they meet you.</p>
 
           <div class="herald-motto-preview-box" data-testid="herald-motto-preview">
             💬 &ldquo;{{ heraldPreview() }}&rdquo;
@@ -2473,7 +2484,7 @@
             (click)="finishOnboardingModal()"
             data-testid="confirm-awakening-btn"
           >
-            ◈ Materialize in Pocket Realm
+            ◈ Start playing
           </button>
         </div>
       </div>

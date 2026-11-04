@@ -3,6 +3,7 @@ import {
   CharacterState,
   EquipmentItem,
   RealmDelta,
+  RealmProgress,
   RulesetManifest,
   TelemetryLog,
 } from '../models/domain.models';
@@ -91,13 +92,28 @@ export class StorageService {
     });
   }
 
-  async saveRealmDelta(delta: RealmDelta): Promise<void> {
+  /**
+   * Save a realm delta. Only pass `asHomeRealm = false` for realms the player is visiting,
+   * so a visit never overwrites the player's own home realm.
+   */
+  async saveRealmDelta(delta: RealmDelta, asHomeRealm = true): Promise<void> {
     await this.setItem(`realm_delta:${delta.gateAddress.formatted}`, delta);
-    await this.setItem('active_home_realm_delta', delta);
+    if (asHomeRealm) {
+      await this.setItem('active_home_realm_delta', delta);
+    }
   }
 
   async loadHomeRealmDelta(): Promise<RealmDelta | null> {
     return this.getItem<RealmDelta>('active_home_realm_delta');
+  }
+
+  async saveRealmProgress(progress: RealmProgress): Promise<void> {
+    await this.setItem(`realm_progress:${progress.gateAddress}`, progress);
+  }
+
+  async loadRealmProgress(gateAddress: string): Promise<RealmProgress> {
+    const saved = await this.getItem<RealmProgress>(`realm_progress:${gateAddress}`);
+    return saved ?? { gateAddress, defeatedMonsterKeys: [], takenItemKeys: [] };
   }
 
   async saveCharacterState(character: CharacterState): Promise<void> {

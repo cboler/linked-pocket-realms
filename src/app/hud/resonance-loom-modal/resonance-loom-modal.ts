@@ -1,5 +1,5 @@
 import { CommonModule, DatePipe } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
   AtmospherePrefix,
@@ -26,7 +26,11 @@ import { MudEngineService } from '../../core/services/mud-engine.service';
 import { SoundFxService } from '../../core/services/sound-fx.service';
 import { StorageService } from '../../core/services/storage.service';
 import { ThunderpassService } from '../../core/services/thunderpass.service';
-import { TransportService } from '../../core/services/transport.service';
+import {
+  CONNECTIVITY_NOTE,
+  LinkState,
+  TransportService,
+} from '../../core/services/transport.service';
 import { generateQrMatrix, generateQrSvgPath } from '../../core/utils/qr-code.util';
 
 @Component({
@@ -36,7 +40,7 @@ import { generateQrMatrix, generateQrSvgPath } from '../../core/utils/qr-code.ut
   templateUrl: './resonance-loom-modal.html',
   styleUrl: './resonance-loom-modal.scss',
 })
-export class ResonanceLoomModalComponent {
+export class ResonanceLoomModalComponent implements OnDestroy {
   readonly engine = inject(MudEngineService);
   readonly transport = inject(TransportService);
   readonly thunderpass = inject(ThunderpassService);
@@ -50,7 +54,10 @@ export class ResonanceLoomModalComponent {
   readonly shareConfirmationMessage = signal<string>('');
   readonly exportedCartridgeText = signal<string>('');
   readonly remoteHandshakeInput = signal<string>('');
+  readonly connectionMessage = signal<string>('');
   readonly isColliding = signal<boolean>(false);
+  readonly connectivityNote = CONNECTIVITY_NOTE;
+  readonly visitorCount = computed(() => Object.keys(this.engine.realmVisitors()).length);
 
   // Spore QR Code & Planar Seed Sharing
   readonly shareableSporeUrl = computed<string>(() => {
@@ -169,15 +176,56 @@ export class ResonanceLoomModalComponent {
 
   constructor() {
     this.refreshCartridgeText();
+    // The lobby is only fetched while its tab is on screen.
+    this.transport.setLobbyBrowsing(this.loomActiveTab() === 'WEBRTC');
+  }
+
+  ngOnDestroy(): void {
+    this.transport.setLobbyBrowsing(false);
   }
 
   setLoomActiveTab(tab: 'WEAVER' | 'WEBRTC' | 'THUNDERPASS' | 'OVERGROWTH' | 'SPORE'): void {
     this.loomActiveTab.set(tab);
+    this.transport.setLobbyBrowsing(tab === 'WEBRTC');
     if (tab === 'WEAVER') {
       this.refreshCartridgeText();
-    } else if (tab === 'WEBRTC') {
-      void this.transport.refreshBrokerSessions();
     }
+  }
+
+  /** Plain words for a link's state. */
+  linkStateLabel(state: LinkState): string {
+    switch (state) {
+      case 'OPEN':
+        return 'Connected';
+      case 'CONNECTING':
+        return 'Connecting…';
+      case 'FAILED':
+        return "Couldn't connect";
+      default:
+        return 'Disconnected';
+    }
+  }
+
+  toggleHosting(): void {
+    const open = !this.transport.hostingOpen();
+    const char = this.engine.character();
+    this.transport.setLocalProfile({
+      name: char.name,
+      gateAddress: this.engine.homeGateAddress().formatted,
+      greeting: char.heraldGreeting?.formatted,
+      atHome: !this.engine.isVisitingExternalRealm(),
+    });
+    this.transport.setHostingOpen(open);
+  }
+
+  async joinLobby(roomCode: string): Promise<void> {
+    this.connectionMessage.set('');
+    const sent = await this.transport.joinBrokerSession(roomCode);
+    this.connectionMessage.set(
+      sent
+        ? 'Join request sent. Hosts check for visitors about every 20 seconds, so this can take a moment.'
+        : 'Could not send the join request.',
+    );
   }
 
   refreshCartridgeText(): void {
@@ -228,21 +276,16 @@ export class ResonanceLoomModalComponent {
     this.isColliding.set(true);
     try {
       const char = this.engine.character();
-      const addr = this.engine.activeGateAddress().formatted;
+      const addr = this.engine.homeGateAddress().formatted;
       const greeting = char.heraldGreeting?.formatted;
       const result = await this.transport.collideWithNearbyRealm(char.name, addr, greeting);
-      if (result.action === 'JOINED' && result.triChord) {
-        this.engine.traverseChaosGatePortal(result.triChord);
-        this.engine.appendFeed(
-          'NETWORK',
-          `⚡ [Collision] Successfully collided with active lobby ${result.roomCode}! Traversed to ${result.triChord}.`,
-        );
-      } else {
-        this.engine.appendFeed(
-          'NETWORK',
-          `⚡ [Collision] Hosted new broadcast lobby ${result.roomCode} for nearby travelers.`,
-        );
-      }
+      // A joined host's realm opens automatically once the connection is up.
+      this.engine.appendFeed(
+        'NETWORK',
+        result.action === 'JOINED'
+          ? `⚡ Asked ${result.roomCode} (${result.triChord ?? 'a nearby realm'}) to let you in.`
+          : `⚡ No one else is in the lobby, so your dungeon is now open to visitors (${result.roomCode}).`,
+      );
     } finally {
       this.isColliding.set(false);
     }
@@ -269,14 +312,21 @@ export class ResonanceLoomModalComponent {
     );
   }
 
-  async generateWebRtcOffer(): Promise<void> {
-    await this.transport.createWebRtcOffer();
+  async generateJoinCode(): Promise<void> {
+    const code = await this.transport.createJoinCode();
+    this.connectionMessage.set(
+      code
+        ? 'Send this join code to your friend. Then paste the reply code they send back.'
+        : 'This browser does not support direct connections.',
+    );
   }
 
-  async acceptWebRtcHandshake(): Promise<void> {
+  async useConnectionCode(): Promise<void> {
     const token = this.remoteHandshakeInput();
     if (!token.trim()) return;
-    await this.transport.acceptWebRtcHandshake(token);
+    const result = await this.transport.useConnectionCode(token);
+    this.connectionMessage.set(result.message);
+    if (result.ok) this.remoteHandshakeInput.set('');
   }
 
   scanBleRelic(): void {

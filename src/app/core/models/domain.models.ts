@@ -644,6 +644,18 @@ export interface RealmData {
 
 export type RealmDelta = RealmData;
 
+/**
+ * What the local player has cleared in one realm (defeated monsters, collected items).
+ * Kept apart from RealmDelta so it is never shared with peers, and reapplied whenever
+ * rooms are regenerated from the seed (reload, realm growth, revisiting a gate).
+ * Keys are `${roomId}/${entityId}`.
+ */
+export interface RealmProgress {
+  gateAddress: string;
+  defeatedMonsterKeys: string[];
+  takenItemKeys: string[];
+}
+
 export interface RealmDnaPacket {
   triChord: string;
   growthStage: number;
@@ -792,7 +804,49 @@ export type NetworkPacketType =
   | 'MECHANISM_PULLED'
   | 'BAZAAR_LISTED'
   | 'BAZAAR_PURCHASED'
-  | 'PEER_CHAT';
+  | 'PEER_CHAT'
+  // Link keep-alive (never reaches the engine)
+  | 'PING'
+  // Host authority: the realm owner's browser decides monster HP, kills, and loot
+  | 'VISITOR_HELLO'
+  | 'VISITOR_LEAVE'
+  | 'REALM_SNAPSHOT'
+  | 'ROOM_STATE'
+  | 'ACTION_DAMAGE'
+  | 'ACTION_TAKE'
+  | 'ACTION_RESULT'
+  | 'MONSTER_DEFEATED'
+  | 'HOST_AWAY';
+
+/** Live, host-decided state of one room: monster HP by id and the items on the floor. */
+export interface RoomLiveState {
+  roomId: string;
+  monsters: { id: string; hp: number }[];
+  items: EquipmentItem[];
+}
+
+/** Payload for host-authority packets. Which fields are set depends on the packet type. */
+export interface AuthorityPayload {
+  /** VISITOR_HELLO */
+  visitor?: { level: number; archetype: ArchetypeClass };
+  /** REALM_SNAPSHOT: the host's real realm delta, as a base64 cartridge */
+  realmDeltaBase64?: string;
+  /** REALM_SNAPSHOT / ROOM_STATE */
+  rooms?: RoomLiveState[];
+  /** ACTION_* and ACTION_RESULT correlation */
+  requestId?: string;
+  /** ACTION_DAMAGE / MONSTER_DEFEATED */
+  monsterId?: string;
+  damage?: number;
+  /** ACTION_TAKE */
+  itemIds?: string[];
+  /** ACTION_RESULT */
+  ok?: boolean;
+  reason?: string;
+  items?: EquipmentItem[];
+  /** MONSTER_DEFEATED: everyone who damaged the monster gets rewards */
+  creditPeerIds?: string[];
+}
 
 export interface NetworkPeerVisitor {
   peerId: string;
@@ -818,7 +872,11 @@ export interface NetworkPacket {
   type: NetworkPacketType;
   gateAddress: string;
   roomId?: string;
-  realmCartridgeBase64?: string;
+  /** Set for packets meant for one peer; everyone else ignores them. */
+  toPeerId?: string;
+  /** Set locally (never trusted from the wire) when a host forwarded this packet. */
+  relayedBy?: string;
+  authority?: AuthorityPayload;
   combatIntent?: CommandIntent;
   gravestone?: GuestbookGravestoneEntry;
   tradeItem?: EquipmentItem;
